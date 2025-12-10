@@ -11,7 +11,7 @@ import '../models/medical_note_model.dart';
 /// Implementación del repositorio de notas médicas.
 ///
 /// - Data layer: usa [MedicalNotesRemoteDatasource] (Firestore) y, opcionalmente,
-///   [MedicalNotesLocalDatasource] para cache/local (aún sin usar).
+///   [MedicalNotesLocalDatasource] para cache/local.
 /// - Domain layer: expone y consume [MedicalNoteEntity].
 final class MedicalNotesRepositoryImpl extends MedicalNotesRepository {
   MedicalNotesRepositoryImpl({
@@ -26,74 +26,91 @@ final class MedicalNotesRepositoryImpl extends MedicalNotesRepository {
   Future<Result<List<MedicalNoteEntity>, Failure>> getNotesByPatient(
     String patientId,
   ) async {
-    // 🔹 Solo usamos remoto por ahora. Más adelante puedes agregar cache local.
-    final models = await remoteDatasource.getNotesByPatient(patientId);
+    try {
+      final models = await remoteDatasource.getNotesByPatient(patientId);
+      final entities = models.map((m) => m.toEntity()).toList();
 
-    final entities = models.map((m) => m.toEntity()).toList();
+      // Podrías también cachear aquí:
+      // await localDatasource.cacheNotes(patientId, models);
 
-    // ⛔ IMPORTANTE:
-    // Ajusta esta línea según cómo se construye un Result exitoso en tu proyecto.
-    return Result.success(entities);
+      return Result.success(entities);
+    } catch (e) {
+      final failure = Failure.mapExceptionToFailure(e);
+      return Result.error(failure);
+    }
   }
 
   @override
   Future<Result<MedicalNoteEntity?, Failure>> getNoteById(
     String id,
   ) async {
-    final model = await remoteDatasource.getNoteById(id);
+    try {
+      final model = await remoteDatasource.getNoteById(id);
+      final entity = model?.toEntity();
 
-    final entity = model?.toEntity();
-
-    return Result.success(entity);
+      return Result.success(entity);
+    } catch (e) {
+      final failure = Failure.mapExceptionToFailure(e);
+      return Result.error(failure);
+    }
   }
 
   @override
   Future<Result<MedicalNoteEntity, Failure>> createNote(
     MedicalNoteEntity note,
   ) async {
-    // 1) Convertimos la entidad de dominio a modelo de datos
-    final model = MedicalNoteModel.fromEntity(note);
+    try {
+      // 1) Dominio → modelo
+      final model = MedicalNoteModel.fromEntity(note);
 
-    // 2) Creamos la nota en Firestore
-    final newId = await remoteDatasource.createNote(model);
+      // 2) Crear en Firestore
+      final newId = await remoteDatasource.createNote(model);
 
-    // 3) Volvemos a leerla desde remoto para tener la versión "real"
-    final createdModel = await remoteDatasource.getNoteById(newId);
+      // 3) Releer para obtener la versión persistida
+      final createdModel = await remoteDatasource.getNoteById(newId);
 
-    if (createdModel == null) {
-      // Aquí podrías mapear a un Failure más específico
-      throw Exception('Created medical note not found after Firestore insert.');
+      if (createdModel == null) {
+        return Result.error(
+          const Failure(
+            type: FailureType.unknown,
+            message: 'Created medical note not found after Firestore insert.',
+          ),
+        );
+      }
+
+      final entity = createdModel.toEntity();
+      return Result.success(entity);
+    } catch (e) {
+      final failure = Failure.mapExceptionToFailure(e);
+      return Result.error(failure);
     }
-
-    final entity = createdModel.toEntity();
-
-    return Result.success(entity);
   }
 
   @override
   Future<Result<MedicalNoteEntity, Failure>> updateNote(
     MedicalNoteEntity note,
   ) async {
-    // Convertimos la entidad a modelo
-    final model = MedicalNoteModel.fromEntity(note);
+    try {
+      final model = MedicalNoteModel.fromEntity(note);
 
-    // Actualizamos en Firestore
-    await remoteDatasource.updateNote(model);
+      await remoteDatasource.updateNote(model);
 
-    // Opciones:
-    // - O vuelves a leer la nota desde remoto para asegurarte (más I/O),
-    // - O devuelves la misma entidad que recibiste (más rápido).
-    //
-    // Aquí devolvemos la misma entidad que recibimos:
-    return Result.success(note);
+      // Podríamos releer desde remoto, pero por simplicidad devolvemos la misma entidad.
+      return Result.success(note);
+    } catch (e) {
+      final failure = Failure.mapExceptionToFailure(e);
+      return Result.error(failure);
+    }
   }
 
   @override
   Future<Result<void, Failure>> deleteNote(String id) async {
-    await remoteDatasource.deleteNote(id);
-
-    // Según tu implementación de Result<void, Failure>, puede que no necesites
-    // pasar ningún valor. Si tu Result tiene otra forma, ajusta esta línea.
-    return Result.success(null);
+    try {
+      await remoteDatasource.deleteNote(id);
+      return const Result.success(null);
+    } catch (e) {
+      final failure = Failure.mapExceptionToFailure(e);
+      return Result.error(failure);
+    }
   }
 }
