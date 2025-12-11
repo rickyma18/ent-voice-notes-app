@@ -3,11 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/base/failure.dart';
-import '../../../../presentation/core/application_state/current_doctor_provider/current_doctor_provider.dart';
 import '../controllers/medical_notes_controller.dart';
 import '../../domain/entities/medical_note_entity.dart';
-import 'create_medical_note_page.dart';
-import 'medical_note_detail_page.dart';
 
 class MedicalNotesListPage extends ConsumerStatefulWidget {
   const MedicalNotesListPage({
@@ -70,16 +67,9 @@ class _MedicalNotesListPageState
               return _MedicalNoteTile(
                 note: note,
                 onTap: () {
-                  // US 1.1: Navigation to detail page will be implemented in US 1.4
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Vista de detalle disponible en próxima versión',
-                        textAlign: TextAlign.center,
-                      ),
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
+                  // US 1.4: Navigate to detail page using GoRouter
+                  // Pass the note entity via the extra parameter
+                  context.push('detail', extra: note);
                 },
                 onDelete: () async {
                   final shouldDelete = await showDialog<bool>(

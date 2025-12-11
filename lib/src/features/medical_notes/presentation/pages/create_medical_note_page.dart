@@ -421,145 +421,236 @@ class _CreateMedicalNotePageState
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              Text(
-                'Datos principales',
-                style: theme.textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _motivoController,
-                decoration: const InputDecoration(
-                  labelText: 'Motivo de consulta',
-                  border: OutlineInputBorder(),
+              // ========================================
+              // SECCIÓN 1: MOTIVO DE CONSULTA
+              // ========================================
+              _SectionCard(
+                title: '1. Motivo de consulta',
+                icon: Icons.help_outline,
+                child: TextFormField(
+                  controller: _motivoController,
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo de consulta',
+                    hintText: 'Ej: Dolor de oído derecho persistente',
+                    border: OutlineInputBorder(),
+                  ),
+                  textInputAction: TextInputAction.next,
+                  maxLines: 2,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Ingresa el motivo de consulta';
+                    }
+                    return null;
+                  },
                 ),
-                textInputAction: TextInputAction.next,
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Ingresa el motivo de consulta';
-                  }
-                  return null;
-                },
               ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _antecedentesController,
-                decoration: const InputDecoration(
-                  labelText: 'Antecedentes',
-                  border: OutlineInputBorder(),
+              const SizedBox(height: 16),
+
+              // ========================================
+              // SECCIÓN 2: ANTECEDENTES
+              // ========================================
+              _SectionCard(
+                title: '2. Antecedentes',
+                icon: Icons.history,
+                child: TextFormField(
+                  controller: _antecedentesController,
+                  decoration: const InputDecoration(
+                    labelText: 'Antecedentes médicos relevantes',
+                    hintText: 'Ej: Paciente con historial de otitis media crónica',
+                    border: OutlineInputBorder(),
+                  ),
+                  textInputAction: TextInputAction.next,
+                  maxLines: 3,
                 ),
-                maxLines: 3,
               ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _exploracionController,
-                decoration: const InputDecoration(
-                  labelText: 'Exploración física ORL',
-                  border: OutlineInputBorder(),
+              const SizedBox(height: 16),
+
+              // ========================================
+              // SECCIÓN 3: EXPLORACIÓN FÍSICA ORL
+              // ========================================
+              _SectionCard(
+                title: '3. Exploración física ORL',
+                icon: Icons.medical_services,
+                child: TextFormField(
+                  controller: _exploracionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Hallazgos de la exploración física',
+                    hintText: 'Ej: Otoscopia: membrana timpánica hiperémia...',
+                    border: OutlineInputBorder(),
+                  ),
+                  textInputAction: TextInputAction.next,
+                  maxLines: 4,
                 ),
-                maxLines: 3,
               ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _diagnosticoController,
-                decoration: const InputDecoration(
-                  labelText: 'Diagnóstico',
-                  border: OutlineInputBorder(),
+              const SizedBox(height: 16),
+
+              // ========================================
+              // SECCIÓN 4: DIAGNÓSTICO
+              // ========================================
+              _SectionCard(
+                title: '4. Diagnóstico',
+                icon: Icons.local_hospital,
+                highlighted: true,
+                child: TextFormField(
+                  controller: _diagnosticoController,
+                  decoration: const InputDecoration(
+                    labelText: 'Diagnóstico clínico',
+                    hintText: 'Ej: Otitis media aguda derecha',
+                    border: OutlineInputBorder(),
+                  ),
+                  textInputAction: TextInputAction.next,
+                  maxLines: 2,
                 ),
-                maxLines: 2,
               ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _planController,
-                decoration: const InputDecoration(
-                  labelText: 'Plan de tratamiento',
-                  border: OutlineInputBorder(),
+              const SizedBox(height: 16),
+
+              // ========================================
+              // SECCIÓN 5: PLAN / INDICACIONES
+              // ========================================
+              _SectionCard(
+                title: '5. Plan de tratamiento',
+                icon: Icons.medication,
+                highlighted: true,
+                child: TextFormField(
+                  controller: _planController,
+                  decoration: const InputDecoration(
+                    labelText: 'Plan terapéutico e indicaciones',
+                    hintText: 'Ej: Amoxicilina 500mg c/8h por 7 días...',
+                    border: OutlineInputBorder(),
+                  ),
+                  textInputAction: TextInputAction.next,
+                  maxLines: 4,
                 ),
-                maxLines: 3,
               ),
               const SizedBox(height: 24),
 
-              Text(
-                'IA y transcripción',
-                style: theme.textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: (_isSaving || _isGeneratingIA || _isTranscribing)
-                          ? null
-                          : _onRecordAudioAndProcess,
-                      style: _isRecording
-                          ? OutlinedButton.styleFrom(
-                              foregroundColor: Colors.red,
-                              side: const BorderSide(color: Colors.red),
-                            )
-                          : null,
-                      icon: _isTranscribing
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Icon(_isRecording ? Icons.stop : Icons.mic),
-                      label: Text(
-                        _isTranscribing
-                            ? 'Procesando…'
-                            : (_isRecording ? 'Detener grabación' : 'Grabar audio'),
+              // ========================================
+              // SECCIÓN 6: IA Y TRANSCRIPCIÓN
+              // ========================================
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.auto_awesome, color: theme.colorScheme.primary, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            'IA y transcripción',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _isGeneratingIA ? null : _onGenerateWithIA,
-                      icon: _isGeneratingIA
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.auto_awesome),
-                      label: Text(
-                        _isGeneratingIA ? 'Generando…' : 'Generar con IA',
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: (_isSaving || _isGeneratingIA || _isTranscribing)
+                                  ? null
+                                  : _onRecordAudioAndProcess,
+                              style: _isRecording
+                                  ? OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.red,
+                                      side: const BorderSide(color: Colors.red),
+                                    )
+                                  : null,
+                              icon: _isTranscribing
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : Icon(_isRecording ? Icons.stop : Icons.mic),
+                              label: Text(
+                                _isTranscribing
+                                    ? 'Procesando…'
+                                    : (_isRecording ? 'Detener grabación' : 'Grabar audio'),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _isGeneratingIA ? null : _onGenerateWithIA,
+                              icon: _isGeneratingIA
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.auto_awesome),
+                              label: Text(
+                                _isGeneratingIA ? 'Generando…' : 'Generar con IA',
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _rawTranscriptController,
+                        decoration: const InputDecoration(
+                          labelText: 'Transcripción cruda (raw_transcript)',
+                          hintText: 'Audio transcrito por IA o texto dictado',
+                          border: OutlineInputBorder(),
+                        ),
+                        maxLines: 4,
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _rawTranscriptController,
-                decoration: const InputDecoration(
-                  labelText: 'Transcripción cruda (raw_transcript)',
-                  border: OutlineInputBorder(),
                 ),
-                maxLines: 4,
               ),
               const SizedBox(height: 24),
 
-              Text(
-                'Opcionales',
-                style: theme.textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _resumenController,
-                decoration: const InputDecoration(
-                  labelText: 'Resumen',
-                  border: OutlineInputBorder(),
+              // ========================================
+              // SECCIÓN 7: INFORMACIÓN ADICIONAL (OPCIONAL)
+              // ========================================
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.note_add, color: theme.colorScheme.secondary, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Información adicional (opcional)',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _resumenController,
+                        decoration: const InputDecoration(
+                          labelText: 'Resumen',
+                          hintText: 'Resumen generado por IA de la consulta',
+                          border: OutlineInputBorder(),
+                        ),
+                        maxLines: 2,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _notaAdicionalController,
+                        decoration: const InputDecoration(
+                          labelText: 'Nota adicional',
+                          hintText: 'Comentarios o notas adicionales del doctor',
+                          border: OutlineInputBorder(),
+                        ),
+                        maxLines: 2,
+                      ),
+                    ],
+                  ),
                 ),
-                maxLines: 2,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _notaAdicionalController,
-                decoration: const InputDecoration(
-                  labelText: 'Nota adicional',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 2,
               ),
 
               const SizedBox(height: 24),
@@ -583,6 +674,62 @@ class _CreateMedicalNotePageState
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Reusable section card for ENT clinical fields
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({
+    required this.title,
+    required this.icon,
+    required this.child,
+    this.highlighted = false,
+  });
+
+  final String title;
+  final IconData icon;
+  final Widget child;
+  final bool highlighted;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Card(
+      color: highlighted
+          ? theme.colorScheme.primaryContainer.withOpacity(0.3)
+          : null,
+      elevation: highlighted ? 2 : 1,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  icon,
+                  color: highlighted
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurface.withOpacity(0.7),
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: highlighted ? theme.colorScheme.primary : null,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            child,
+          ],
         ),
       ),
     );

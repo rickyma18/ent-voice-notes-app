@@ -45,6 +45,30 @@ List<RouteBase> _medicalNotesRoutes(ref) {
             );
           },
         ),
+        GoRoute(
+          path: Routes.detailMedicalNote,
+          name: Routes.detailMedicalNote,
+          pageBuilder: (context, state) {
+            // US 1.4: Pass the note entity via the extra parameter
+            final note = state.extra as MedicalNoteEntity?;
+
+            if (note == null) {
+              // If no note is provided, show an error page
+              return MaterialPage(
+                child: Scaffold(
+                  appBar: AppBar(title: const Text('Error')),
+                  body: const Center(
+                    child: Text('Error: No se pudo cargar la nota médica.'),
+                  ),
+                ),
+              );
+            }
+
+            return MaterialPage(
+              child: MedicalNoteDetailPage(note: note),
+            );
+          },
+        ),
       ],
     ),
   ];

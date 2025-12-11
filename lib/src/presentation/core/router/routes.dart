@@ -15,4 +15,5 @@ class Routes {
 
   static const String medicalNotesList = '/medical-notes';
   static const String createMedicalNote = 'create';
+  static const String detailMedicalNote = 'detail';
 }

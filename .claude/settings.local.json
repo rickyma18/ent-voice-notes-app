@@ -5,7 +5,8 @@
       "Bash(tree:*)",
       "Bash(find:*)",
       "Bash(cat:*)",
-      "Bash(dart run build_runner build:*)"
+      "Bash(dart run build_runner build:*)",
+      "Bash(flutter analyze:*)"
     ]
   }
 }

@@ -21,6 +21,8 @@ import 'router_state/router_state_provider.dart';
 import 'routes.dart';
 import '../../../features/medical_notes/presentation/pages/medical_notes_list_page.dart';
 import '../../../features/medical_notes/presentation/pages/create_medical_note_page.dart';
+import '../../../features/medical_notes/presentation/pages/medical_note_detail_page.dart';
+import '../../../features/medical_notes/domain/entities/medical_note_entity.dart';
 import '../application_state/current_doctor_provider/current_doctor_provider.dart';
 
 part 'parts/authentication_routes.dart';

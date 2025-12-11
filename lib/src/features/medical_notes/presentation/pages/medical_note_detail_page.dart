@@ -1,34 +1,39 @@
 // lib/src/features/medical_notes/presentation/pages/medical_note_detail_page.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../domain/entities/medical_note_entity.dart';
-import '../controllers/medical_note_detail_controller.dart';
-import '../../../../core/base/failure.dart';
 import 'create_medical_note_page.dart';
 
-class MedicalNoteDetailPage extends ConsumerWidget {
-  const MedicalNoteDetailPage({super.key, required this.noteId});
+/// Detail page for viewing a medical note (read-only)
+///
+/// US 1.4: View note detail
+/// - Displays all clinical fields from MedicalNoteEntity
+/// - Read-only mode (no editing)
+/// - Takes the full entity as a parameter (no need to fetch by ID)
+/// - Edit functionality will be added in US 1.5
+class MedicalNoteDetailPage extends StatelessWidget {
+  const MedicalNoteDetailPage({
+    super.key,
+    required this.note,
+  });
 
-  /// Id de la nota que se va a mostrar.
-  final String noteId;
+  /// The medical note to display
+  final MedicalNoteEntity note;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final noteState = ref.watch(medicalNoteDetailControllerProvider(noteId));
-
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Detalle de nota médica'),
         actions: [
           IconButton(
             icon: const Icon(Icons.edit),
-            onPressed: () {
-              final note = noteState.value;
-              if (note == null) return;
-
-              Navigator.of(context).push(
+            tooltip: 'Editar nota',
+            onPressed: () async {
+              // US 1.5: Navigate to edit form
+              await Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => CreateMedicalNotePage(
                     patientId: note.patientId,
@@ -37,84 +42,21 @@ class MedicalNoteDetailPage extends ConsumerWidget {
                   ),
                 ),
               );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              ref
-                  .read(medicalNoteDetailControllerProvider(noteId).notifier)
-                  .refresh(noteId);
+
+              // Note: After returning from edit, the controller's state is already updated.
+              // The list page will show updated data when user navigates back.
+              // TODO (Optional Enhancement): Refresh detail page to show updated data without going back to list.
+              // Current behavior: User sees updated data when they go back to list and tap the note again.
             },
           ),
         ],
       ),
-      body: noteState.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stackTrace) => _ErrorView(
-          error: error,
-          onRetry: () {
-            ref
-                .read(medicalNoteDetailControllerProvider(noteId).notifier)
-                .refresh(noteId);
-          },
-        ),
-        data: (note) {
-          if (note == null) {
-            return const Center(
-              child: Text('La nota no existe o fue eliminada.'),
-            );
-          }
-
-          return _MedicalNoteDetailContent(note: note);
-        },
-      ),
+      body: _MedicalNoteDetailContent(note: note),
     );
   }
 }
 
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.error, required this.onRetry});
-
-  final Object error;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final message = error is Failure
-        ? (error as Failure).message
-        : error.toString();
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Ocurrió un error al cargar la nota:',
-              style: Theme.of(context).textTheme.titleMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              message,
-              style: Theme.of(context).textTheme.bodyMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Reintentar'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
+/// Content widget that displays all medical note details
 class _MedicalNoteDetailContent extends StatelessWidget {
   const _MedicalNoteDetailContent({required this.note});
 
@@ -123,135 +65,410 @@ class _MedicalNoteDetailContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final createdAtStr =
-        '${note.createdAt.day.toString().padLeft(2, '0')}/'
-        '${note.createdAt.month.toString().padLeft(2, '0')}/'
-        '${note.createdAt.year}';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          Text(note.motivoConsulta, style: theme.textTheme.headlineSmall),
-          const SizedBox(height: 8),
-          Text(
-            'Creada el $createdAtStr · Estado: ${note.status.displayName}',
-            style: theme.textTheme.bodySmall,
+          // Patient and Date Info Card
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: theme.colorScheme.primaryContainer,
+                        child: Icon(
+                          Icons.person,
+                          color: theme.colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _getPatientName(note.patientId),
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Paciente ID: ${note.patientId}',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  _InfoRow(
+                    icon: Icons.calendar_today,
+                    label: 'Fecha de creación',
+                    value: _formatDateTime(note.createdAt),
+                  ),
+                  const SizedBox(height: 8),
+                  _InfoRow(
+                    icon: Icons.update,
+                    label: 'Última actualización',
+                    value: _formatDateTime(note.updatedAt),
+                  ),
+                  const SizedBox(height: 8),
+                  _InfoRow(
+                    icon: Icons.assignment,
+                    label: 'Estado',
+                    value: note.status.displayName,
+                  ),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 16),
-          const Divider(),
 
-          // Secciones principales de la nota
-          _Section(title: 'Antecedentes', content: note.antecedentes),
-          _Section(
+          // Clinical Data Sections
+          _SectionCard(
+            title: 'Motivo de consulta',
+            icon: Icons.help_outline,
+            content: note.motivoConsulta,
+          ),
+          const SizedBox(height: 12),
+
+          _SectionCard(
+            title: 'Antecedentes',
+            icon: Icons.history,
+            content: note.antecedentes,
+          ),
+          const SizedBox(height: 12),
+
+          _SectionCard(
             title: 'Exploración física ORL',
+            icon: Icons.medical_services,
             content: note.exploracionFisicaOrl,
           ),
-          _Section(title: 'Diagnóstico', content: note.diagnostico),
-          _Section(title: 'Plan de tratamiento', content: note.planTratamiento),
-          _Section(title: 'Resumen', content: note.resumen, isOptional: true),
-          _Section(
-            title: 'Nota adicional',
-            content: note.notaAdicional,
-            isOptional: true,
-          ),
+          const SizedBox(height: 12),
 
+          _SectionCard(
+            title: 'Diagnóstico',
+            icon: Icons.local_hospital,
+            content: note.diagnostico,
+            highlighted: true,
+          ),
+          const SizedBox(height: 12),
+
+          _SectionCard(
+            title: 'Plan de tratamiento',
+            icon: Icons.medication,
+            content: note.planTratamiento,
+            highlighted: true,
+          ),
+          const SizedBox(height: 12),
+
+          if (note.resumen != null && note.resumen!.isNotEmpty) ...[
+            _SectionCard(
+              title: 'Resumen',
+              icon: Icons.summarize,
+              content: note.resumen!,
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          if (note.notaAdicional != null && note.notaAdicional!.isNotEmpty) ...[
+            _SectionCard(
+              title: 'Nota adicional',
+              icon: Icons.note_add,
+              content: note.notaAdicional!,
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          // Medications
+          if (note.medicamentosRecetados.isNotEmpty) ...[
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.medication, color: theme.colorScheme.primary, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Medicamentos recetados',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    ...note.medicamentosRecetados.map((med) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('• '),
+                              Expanded(
+                                child: Text(
+                                  '${med.nombre} - ${med.dosis}\n${med.frecuencia} por ${med.duracion}',
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          // Studies
+          if (note.estudiosIndicados.isNotEmpty) ...[
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.biotech, color: theme.colorScheme.primary, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Estudios indicados',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    ...note.estudiosIndicados.map((study) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('• '),
+                              Expanded(
+                                child: Text(
+                                  '${study.tipo}: ${study.descripcion}',
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          // Next appointment
+          if (note.proximaCita != null) ...[
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(Icons.event, color: theme.colorScheme.primary),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Próxima cita',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _formatDateTime(note.proximaCita!),
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          // Tags
+          if (note.tags.isNotEmpty) ...[
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.label, color: theme.colorScheme.primary, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Etiquetas',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: note.tags.map((tag) => Chip(
+                            label: Text(tag),
+                            labelStyle: theme.textTheme.bodySmall,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                          )).toList(),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          // Raw transcript (collapsible or at the end)
+          _SectionCard(
+            title: 'Transcripción original',
+            icon: Icons.mic,
+            content: note.rawTranscript,
+          ),
           const SizedBox(height: 24),
-
-          // Secciones adicionales
-          Text(
-            'Medicamentos recetados (${note.medicamentosRecetados.length})',
-            style: theme.textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          if (note.medicamentosRecetados.isEmpty)
-            const Text(
-              'No se recetaron medicamentos',
-              style: TextStyle(color: Colors.grey),
-            )
-          else
-            ...note.medicamentosRecetados.map(
-              (med) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text('• ${med.nombre} - ${med.dosis}'),
-              ),
-            ),
-
-          const SizedBox(height: 16),
-          Text(
-            'Estudios indicados (${note.estudiosIndicados.length})',
-            style: theme.textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          if (note.estudiosIndicados.isEmpty)
-            const Text(
-              'No se indicaron estudios',
-              style: TextStyle(color: Colors.grey),
-            )
-          else
-            ...note.estudiosIndicados.map(
-              (study) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text('• $study'),
-              ),
-            ),
-
-          const SizedBox(height: 16),
-          Text(
-            'Archivos adjuntos (${note.attachments.length})',
-            style: theme.textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          if (note.attachments.isEmpty)
-            const Text(
-              'No hay archivos adjuntos',
-              style: TextStyle(color: Colors.grey),
-            )
-          else
-            ...note.attachments.map(
-              (attachment) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text('• $attachment'),
-              ),
-            ),
         ],
+      ),
+    );
+  }
+
+  /// Mock helper to get patient name from patientId
+  /// TODO: Replace with actual patient repository/service
+  String _getPatientName(String patientId) {
+    final mockPatients = {
+      'patient-demo-001': 'Juan Pérez García',
+      'patient-demo-002': 'María López Torres',
+      'patient-demo-003': 'Carlos Rodríguez Sánchez',
+    };
+    return mockPatients[patientId] ?? 'Paciente Desconocido';
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    final dateFormat = DateFormat('dd/MM/yyyy');
+    final timeFormat = DateFormat('HH:mm');
+    return '${dateFormat.format(dateTime)} a las ${timeFormat.format(dateTime)}';
+  }
+}
+
+/// Reusable section card for clinical data
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({
+    required this.title,
+    required this.icon,
+    required this.content,
+    this.highlighted = false,
+  });
+
+  final String title;
+  final IconData icon;
+  final String content;
+  final bool highlighted;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Card(
+      color: highlighted ? theme.colorScheme.primaryContainer.withOpacity(0.3) : null,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  icon,
+                  color: highlighted ? theme.colorScheme.primary : theme.colorScheme.onSurface.withOpacity(0.7),
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: highlighted ? theme.colorScheme.primary : null,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              content.isEmpty ? '(No especificado)' : content,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: content.isEmpty ? theme.colorScheme.onSurface.withOpacity(0.5) : null,
+                fontStyle: content.isEmpty ? FontStyle.italic : null,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _Section extends StatelessWidget {
-  const _Section({
-    required this.title,
-    required this.content,
-    this.isOptional = false,
+/// Reusable info row for metadata
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
   });
 
-  final String title;
-  final String? content;
-  final bool isOptional;
+  final IconData icon;
+  final String label;
+  final String value;
 
   @override
   Widget build(BuildContext context) {
-    final contentText = content?.trim();
-    if (isOptional && (contentText == null || contentText.isEmpty)) {
-      return const SizedBox.shrink();
-    }
-
     final theme = Theme.of(context);
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: theme.textTheme.titleMedium),
-          const SizedBox(height: 4),
-          Text(contentText ?? '—', style: theme.textTheme.bodyMedium),
-        ],
-      ),
+    return Row(
+      children: [
+        Icon(
+          icon,
+          size: 16,
+          color: theme.colorScheme.onSurface.withOpacity(0.6),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '$label: ',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurface.withOpacity(0.6),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: theme.textTheme.bodyMedium,
+          ),
+        ),
+      ],
     );
   }
 }
