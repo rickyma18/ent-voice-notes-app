@@ -187,4 +187,17 @@ class AppLocalizationsAr extends AppLocalizations {
   @override
   String get passwordSpecialCharValidation =>
       'يجب أن تحتوي كلمة المرور على رمز خاص واحد على الأقل';
+
+  @override
+  String get medicalNotesTitle => 'الملاحظات الطبية';
+
+  @override
+  String get medicalNotesSubtitle =>
+      'ملاحظات سريرية صوتية لطب الأنف والأذن والحنجرة';
+
+  @override
+  String get viewMedicalNotes => 'عرض الملاحظات الطبية';
+
+  @override
+  String get createNewNote => 'إنشاء ملاحظة جديدة';
 }

@@ -17,7 +17,7 @@ class LoginResponseModel extends LoginResponseEntity
     required super.accessToken,
     required this.gender,
     required this.refreshToken,
-  });
+  }) : super(doctorId: id.toString());
 
   final int id;
   final String username;

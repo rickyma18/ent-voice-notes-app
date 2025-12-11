@@ -19,10 +19,14 @@ import '../widgets/app_startup/startup_widget.dart';
 import '../widgets/navigation_shell.dart';
 import 'router_state/router_state_provider.dart';
 import 'routes.dart';
+import '../../../features/medical_notes/presentation/pages/medical_notes_list_page.dart';
+import '../../../features/medical_notes/presentation/pages/create_medical_note_page.dart';
+import '../application_state/current_doctor_provider/current_doctor_provider.dart';
 
 part 'parts/authentication_routes.dart';
 part 'parts/on_boarding_routes.dart';
 part 'parts/shell_routes.dart';
+part 'parts/medical_notes_routes.dart';
 part 'router.g.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'Root');
@@ -60,6 +64,7 @@ GoRouter goRouter(Ref ref) {
       ),
       ..._onboardingRoutes(ref),
       ..._authenticationRoutes(ref),
+      ..._medicalNotesRoutes(ref),
       _shellRoutes(ref),
     ],
   );

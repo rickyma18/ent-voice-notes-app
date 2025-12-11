@@ -193,4 +193,17 @@ class AppLocalizationsBn extends AppLocalizations {
   @override
   String get passwordSpecialCharValidation =>
       'পাসওয়ার্ডে কমপক্ষে একটি বিশেষ অক্ষর থাকতে হবে';
+
+  @override
+  String get medicalNotesTitle => 'চিকিৎসা নোট';
+
+  @override
+  String get medicalNotesSubtitle =>
+      'ইএনটি-এর জন্য ভয়েস-ভিত্তিক ক্লিনিকাল নোট';
+
+  @override
+  String get viewMedicalNotes => 'চিকিৎসা নোট দেখুন';
+
+  @override
+  String get createNewNote => 'নতুন নোট তৈরি করুন';
 }

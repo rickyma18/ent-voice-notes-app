@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/base/failure.dart';
+import '../../../../presentation/core/application_state/current_doctor_provider/current_doctor_provider.dart';
 import '../controllers/medical_notes_controller.dart';
 import '../../domain/entities/medical_note_entity.dart';
+import 'create_medical_note_page.dart';
+import 'medical_note_detail_page.dart';
 
 class MedicalNotesListPage extends ConsumerStatefulWidget {
   const MedicalNotesListPage({
@@ -66,13 +70,63 @@ class _MedicalNotesListPageState
               return _MedicalNoteTile(
                 note: note,
                 onTap: () {
-                  // TODO: Navegar al detalle de la nota
-                  // Navigator.push(...);
+                  // US 1.1: Navigation to detail page will be implemented in US 1.4
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Vista de detalle disponible en próxima versión',
+                        textAlign: TextAlign.center,
+                      ),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
                 },
-                onDelete: () {
-                  ref
-                      .read(medicalNotesControllerProvider.notifier)
-                      .deleteMedicalNote(note.id);
+                onDelete: () async {
+                  final shouldDelete = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Eliminar nota'),
+                      content: const Text('¿Estás seguro de que deseas eliminar esta nota médica?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: const Text('Cancelar'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (shouldDelete == true) {
+                    try {
+                      await ref
+                          .read(medicalNotesControllerProvider.notifier)
+                          .deleteMedicalNote(note.id);
+
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Nota médica eliminada exitosamente'),
+                            backgroundColor: Colors.green,
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error al eliminar la nota: ${e.toString()}'),
+                            backgroundColor: Colors.red,
+                            duration: const Duration(seconds: 3),
+                          ),
+                        );
+                      }
+                    }
+                  }
                 },
               );
             },
@@ -81,10 +135,12 @@ class _MedicalNotesListPageState
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          // TODO: Navegar a pantalla de creación de nota
-          // Navigator.push(...);
+          // Navigate to create note page using GoRouter (relative path)
+          // The route is already configured to handle patientId and doctorId
+          context.push('create');
         },
         child: const Icon(Icons.add),
+        tooltip: 'Crear nueva nota médica',
       ),
     );
   }
@@ -159,29 +215,72 @@ class _MedicalNoteTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final createdAtStr =
         '${note.createdAt.day.toString().padLeft(2, '0')}/'
         '${note.createdAt.month.toString().padLeft(2, '0')}/'
         '${note.createdAt.year}';
 
+    // Mock patient name based on patientId
+    // TODO: Replace with actual patient service in future stories
+    final patientName = _getPatientName(note.patientId);
+
     return Card(
       child: ListTile(
         onTap: onTap,
+        leading: CircleAvatar(
+          backgroundColor: theme.colorScheme.primaryContainer,
+          child: Icon(
+            Icons.person,
+            color: theme.colorScheme.onPrimaryContainer,
+          ),
+        ),
         title: Text(
           note.motivoConsulta,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w500),
         ),
-        subtitle: Text(
-          'Creada el $createdAtStr · Estado: ${note.status.displayName}',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              'Paciente: $patientName',
+              style: TextStyle(
+                fontSize: 13,
+                color: theme.colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Fecha: $createdAtStr · ${note.status.displayName}',
+              style: TextStyle(
+                fontSize: 12,
+                color: theme.colorScheme.onSurface.withOpacity(0.6),
+              ),
+            ),
+          ],
         ),
         trailing: IconButton(
           icon: const Icon(Icons.delete_outline),
           onPressed: onDelete,
+          tooltip: 'Eliminar nota',
         ),
+        isThreeLine: true,
       ),
     );
+  }
+
+  /// Mock helper to get patient name from patientId
+  /// TODO: Replace with actual patient repository/service
+  String _getPatientName(String patientId) {
+    // Simple mock mapping for demo purposes
+    final mockPatients = {
+      'patient-demo-001': 'Juan Pérez García',
+      'patient-demo-002': 'María López Torres',
+      'patient-demo-003': 'Carlos Rodríguez Sánchez',
+    };
+    return mockPatients[patientId] ?? 'Paciente Desconocido';
   }
 }

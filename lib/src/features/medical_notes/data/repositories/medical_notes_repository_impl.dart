@@ -10,9 +10,21 @@ import '../models/medical_note_model.dart';
 
 /// Implementación del repositorio de notas médicas.
 ///
-/// - Data layer: usa [MedicalNotesRemoteDatasource] (Firestore) y, opcionalmente,
-///   [MedicalNotesLocalDatasource] para cache/local.
-/// - Domain layer: expone y consume [MedicalNoteEntity].
+/// CURRENT STATE (US 1.1 - US 1.3):
+/// - Currently using FakeMedicalNotesRemoteDatasource (in-memory storage)
+///   wired through medical_notes_providers.dart
+/// - All CRUD operations go through proper Clean Architecture layers:
+///   UI → Controller → UseCase → Repository → FakeDatasource
+///
+/// TODO (EPIC 5 - Real Backend Integration):
+/// - Replace FakeMedicalNotesRemoteDatasource with MedicalNotesRemoteDatasourceImpl
+///   in medical_notes_providers.dart to use real Firestore
+/// - This file (repository implementation) requires NO changes when switching
+/// - Just update the provider to return MedicalNotesRemoteDatasourceImpl()
+///
+/// Architecture:
+/// - Data layer: usa [MedicalNotesRemoteDatasource] (abstraction)
+/// - Domain layer: expone y consume [MedicalNoteEntity]
 final class MedicalNotesRepositoryImpl extends MedicalNotesRepository {
   MedicalNotesRepositoryImpl({
     required this.remoteDatasource,

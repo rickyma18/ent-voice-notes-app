@@ -13,7 +13,11 @@ class LoginRequestEntity extends LoginEntity {
 }
 
 class LoginResponseEntity extends LoginEntity {
-  LoginResponseEntity({required this.accessToken});
+  LoginResponseEntity({
+    required this.accessToken,
+    required this.doctorId,
+  });
 
   final String accessToken;
+  final String doctorId;
 }

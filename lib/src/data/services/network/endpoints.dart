@@ -1,14 +1,16 @@
 class Endpoints {
-  static const base = 'https://dummyjson.com';
+  // Mientras usamos el repositorio FAKE, solo necesitamos
+  // que esto sea una URL válida. No se va a llamar realmente.
+  static const base = 'https://example.com';
 
   /// Authentication
-  static const String register = '/auth/register/';
+  static const String register = '/auth/register';
   static const String login = '/auth/login';
-  static const String forgotPassword = '/auth/forgot_password/';
-  static const String resetPassword = '/auth/reset_password/';
-  static const String refreshToken = '/auth/refresh_token/';
+  static const String forgotPassword = '/auth/forgot_password';
+  static const String resetPassword = '/auth/reset_password';
+  static const String refreshToken = '/auth/refresh_token';
 
   /// OTP
-  static const String verifyOtp = '/otp/verify_otp/';
-  static const String resendOtp = '/otp/resend_otp/';
+  static const String verifyOtp = '/otp/verify_otp';
+  static const String resendOtp = '/otp/resend_otp';
 }

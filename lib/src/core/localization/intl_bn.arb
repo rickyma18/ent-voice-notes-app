@@ -79,5 +79,9 @@
     "passwordNumberValidation": "পাসওয়ার্ডে কমপক্ষে একটি সংখ্যা থাকতে হবে",
     "passwordLowerCaseValidation": "পাসওয়ার্ডে কমপক্ষে একটি ছোট হাতের অক্ষর থাকতে হবে",
     "passwordUpperCaseValidation": "পাসওয়ার্ডে কমপক্ষে একটি বড় হাতের অক্ষর থাকতে হবে",
-    "passwordSpecialCharValidation": "পাসওয়ার্ডে কমপক্ষে একটি বিশেষ অক্ষর থাকতে হবে"
+    "passwordSpecialCharValidation": "পাসওয়ার্ডে কমপক্ষে একটি বিশেষ অক্ষর থাকতে হবে",
+    "medicalNotesTitle": "চিকিৎসা নোট",
+    "medicalNotesSubtitle": "ইএনটি-এর জন্য ভয়েস-ভিত্তিক ক্লিনিকাল নোট",
+    "viewMedicalNotes": "চিকিৎসা নোট দেখুন",
+    "createNewNote": "নতুন নোট তৈরি করুন"
 }

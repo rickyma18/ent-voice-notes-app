@@ -79,5 +79,9 @@
     "passwordNumberValidation": "يجب أن تحتوي كلمة المرور على رقم واحد على الأقل",
     "passwordLowerCaseValidation": "يجب أن تحتوي كلمة المرور على حرف صغير واحد على الأقل",
     "passwordUpperCaseValidation": "يجب أن تحتوي كلمة المرور على حرف كبير واحد على الأقل",
-    "passwordSpecialCharValidation": "يجب أن تحتوي كلمة المرور على رمز خاص واحد على الأقل"
+    "passwordSpecialCharValidation": "يجب أن تحتوي كلمة المرور على رمز خاص واحد على الأقل",
+    "medicalNotesTitle": "الملاحظات الطبية",
+    "medicalNotesSubtitle": "ملاحظات سريرية صوتية لطب الأنف والأذن والحنجرة",
+    "viewMedicalNotes": "عرض الملاحظات الطبية",
+    "createNewNote": "إنشاء ملاحظة جديدة"
 }

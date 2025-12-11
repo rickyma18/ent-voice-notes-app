@@ -4,45 +4,67 @@ import '../../domain/entities/login_entity.dart';
 import '../../domain/entities/sign_up_entity.dart';
 import '../../domain/repositories/authentication_repository.dart';
 import '../models/login_model.dart';
+import '../models/sign_up_model.dart';
 import '../services/cache/cache_service.dart';
 import '../services/network/rest_client.dart';
 
 final class AuthenticationRepositoryImpl extends AuthenticationRepository {
-  AuthenticationRepositoryImpl({required this.remote, required this.local});
+  AuthenticationRepositoryImpl({
+    required this.remote,
+    required this.local,
+  });
 
   final RestClient remote;
   final CacheService local;
 
+  // ---------------------------------------------------------------------------
+  // 🚀 REGISTER (FAKE - funciona sin backend)
+  // ---------------------------------------------------------------------------
   @override
   Future<SignUpResponseEntity> register(SignUpRequestEntity data) async {
-    // TODO: implement resetPassword
-    throw UnimplementedError();
+    // Simulación de llamada al servidor
+    await Future.delayed(const Duration(seconds: 1));
+
+    // Guardar sesión automáticamente
+    await _saveSession();
+
+    // ← Ajusta a tu modelo si tiene más campos
+    return SignUpResponseEntity(
+      accessToken: 'fake-token-${DateTime.now().millisecondsSinceEpoch}',
+    );
   }
 
+  // ---------------------------------------------------------------------------
+  // 🚀 LOGIN (FAKE - funciona sin backend)
+  // ---------------------------------------------------------------------------
   @override
   Future<Result<LoginResponseEntity, Failure>> login(
     LoginRequestEntity data,
   ) async {
-    return asyncGuard(() async {
-      final model = LoginRequestModel.fromEntity(data);
-      final response = await remote.login(model.toJson());
+    await Future.delayed(const Duration(milliseconds: 800));
 
-      // Save the session if the user has selected the "Remember Me" option
-      if (data.shouldRemeber ?? false) await _saveSession();
+    final fake = LoginResponseEntity(
+      accessToken: 'fake-login-token',
+      doctorId: '1', // Usa el ID que tu app necesite
+    );
 
-      return LoginResponseModel.fromJson(response.data);
-    });
+    // Guardar sesión
+    await _saveSession();
+    await local.save(CacheKey.doctorId, fake.doctorId);
+
+    return Success(fake);
   }
 
+  // ---------------------------------------------------------------------------
+  // 🧠 Función interna para marcar sesión iniciada
+  // ---------------------------------------------------------------------------
   Future<void> _saveSession() async {
     await local.save(CacheKey.isLoggedIn, true);
   }
 
-  /// Manages the "Remember Me" functionality.
-  ///
-  /// When [rememberMe] is null, retrieves the current setting from cache.
-  /// When [rememberMe] has a value, updates the setting in cache.
-  /// Returns the current or newly saved value, defaulting to false on errors.
+  // ---------------------------------------------------------------------------
+  // ✔ "Recordarme" (ya estaba correcto)
+  // ---------------------------------------------------------------------------
   @override
   Future<bool> rememberMe({bool? rememberMe}) async {
     try {
@@ -51,39 +73,44 @@ final class AuthenticationRepositoryImpl extends AuthenticationRepository {
       }
 
       await local.save(CacheKey.rememberMe, rememberMe);
-
       return rememberMe;
-    } catch (e) {
+    } catch (_) {
       return false;
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // ❌ Métodos NO implementados todavía
+  // ---------------------------------------------------------------------------
   @override
-  Future<String> forgotPassword(Map<String, dynamic> data) {
-    // TODO: implement forgotPassword
-    throw UnimplementedError();
+  Future<String> forgotPassword(Map<String, dynamic> data) async {
+    throw UnimplementedError('Forgot password feature not yet implemented');
   }
 
   @override
-  Future<String> resetPassword(Map<String, dynamic> data) {
-    // TODO: implement resetPassword
-    throw UnimplementedError();
+  Future<String> resetPassword(Map<String, dynamic> data) async {
+    throw UnimplementedError('Reset password feature not yet implemented');
   }
 
   @override
-  Future<String> verifyOTP(Map<String, dynamic> data) {
-    // TODO: implement verifyOTP
-    throw UnimplementedError();
+  Future<String> verifyOTP(Map<String, dynamic> data) async {
+    throw UnimplementedError('OTP verification feature not yet implemented');
   }
 
   @override
-  Future<String> resendOTP(Map<String, dynamic> data) {
-    // TODO: implement resendOTP
-    throw UnimplementedError();
+  Future<String> resendOTP(Map<String, dynamic> data) async {
+    throw UnimplementedError('OTP resend feature not yet implemented');
   }
 
+  // ---------------------------------------------------------------------------
+  // 🚪 LOGOUT
+  // ---------------------------------------------------------------------------
   @override
   Future<void> logout() async {
-    await local.remove([CacheKey.isLoggedIn, CacheKey.rememberMe]);
+    await local.remove([
+      CacheKey.isLoggedIn,
+      CacheKey.rememberMe,
+      CacheKey.doctorId,
+    ]);
   }
 }

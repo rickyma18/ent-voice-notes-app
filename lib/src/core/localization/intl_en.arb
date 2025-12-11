@@ -79,5 +79,9 @@
     "passwordNumberValidation": "Password must contain at least one number",
     "passwordLowerCaseValidation": "Password must contain at least one lowercase letter",
     "passwordUpperCaseValidation": "Password must contain at least one uppercase letter",
-    "passwordSpecialCharValidation": "Password must contain at least one special character"
+    "passwordSpecialCharValidation": "Password must contain at least one special character",
+    "medicalNotesTitle": "Medical Notes",
+    "medicalNotesSubtitle": "Voice-based clinical notes for ENT",
+    "viewMedicalNotes": "View Medical Notes",
+    "createNewNote": "Create New Note"
 }

@@ -192,4 +192,16 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get passwordSpecialCharValidation =>
       'Password must contain at least one special character';
+
+  @override
+  String get medicalNotesTitle => 'Medical Notes';
+
+  @override
+  String get medicalNotesSubtitle => 'Voice-based clinical notes for ENT';
+
+  @override
+  String get viewMedicalNotes => 'View Medical Notes';
+
+  @override
+  String get createNewNote => 'Create New Note';
 }

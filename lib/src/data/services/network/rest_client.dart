@@ -12,4 +12,7 @@ abstract class RestClient {
 
   @POST(Endpoints.login)
   Future<HttpResponse> login(@Body() Map<String, dynamic> request);
+
+  @POST(Endpoints.register)
+  Future<HttpResponse> register(@Body() Map<String, dynamic> request);
 }

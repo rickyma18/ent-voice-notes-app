@@ -429,6 +429,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Password must contain at least one special character'**
   String get passwordSpecialCharValidation;
+
+  /// No description provided for @medicalNotesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Medical Notes'**
+  String get medicalNotesTitle;
+
+  /// No description provided for @medicalNotesSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice-based clinical notes for ENT'**
+  String get medicalNotesSubtitle;
+
+  /// No description provided for @viewMedicalNotes.
+  ///
+  /// In en, this message translates to:
+  /// **'View Medical Notes'**
+  String get viewMedicalNotes;
+
+  /// No description provided for @createNewNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Create New Note'**
+  String get createNewNote;
 }
 
 class _AppLocalizationsDelegate

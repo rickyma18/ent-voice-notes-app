@@ -1,24 +1,33 @@
 // lib/src/features/medical_notes/medical_notes_providers.dart
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'application/note_ai_service.dart';
+import 'application/audio_recording_service.dart';
 
 import 'data/datasources/medical_notes_local_datasource.dart';
 import 'data/datasources/medical_notes_remote_datasource.dart';
+import 'data/datasources/medical_notes_fake_datasource.dart';
 import 'data/repositories/medical_notes_repository_impl.dart';
 import 'domain/repositories/medical_notes_repository.dart';
 import 'domain/usecases/create_medical_note_use_case.dart';
 import 'domain/usecases/delete_medical_note_use_case.dart';
 import 'domain/usecases/get_medical_notes_use_case.dart';
 import 'domain/usecases/update_medical_note_use_case.dart';
+import 'domain/usecases/get_medical_note_by_id_use_case.dart';
+
+
 
 part 'medical_notes_providers.g.dart';
 
 /// Remote datasource provider
+///
+/// Currently using FAKE in-memory implementation for US 1.1.
+/// TODO: Replace with MedicalNotesRemoteDatasourceImpl() when Firestore is ready.
 @riverpod
 MedicalNotesRemoteDatasource medicalNotesRemoteDatasource(
   MedicalNotesRemoteDatasourceRef ref,
 ) {
-  return MedicalNotesRemoteDatasourceImpl();
+  return FakeMedicalNotesRemoteDatasource();
 }
 
 /// Local datasource provider
@@ -27,6 +36,24 @@ MedicalNotesLocalDatasource medicalNotesLocalDatasource(
   MedicalNotesLocalDatasourceRef ref,
 ) {
   return MedicalNotesLocalDatasourceImpl();
+}
+
+@riverpod
+NoteAIService noteAIService(
+  NoteAIServiceRef ref,
+) {
+  // Más adelante, Claude puede cambiar esto a NoteAIServiceImpl(...)
+  // que use APIs reales. Por ahora dejamos el stub.
+  return const NoteAIServiceStub();
+}
+
+@riverpod
+AudioRecordingService audioRecordingService(
+  AudioRecordingServiceRef ref,
+) {
+  // Stub para pruebas. Más adelante se reemplaza con implementación real
+  // que use un paquete de grabación de audio.
+  return AudioRecordingServiceStub();
 }
 
 /// Repository provider
@@ -47,6 +74,15 @@ GetMedicalNotesUseCase getMedicalNotesUseCase(
   GetMedicalNotesUseCaseRef ref,
 ) {
   return GetMedicalNotesUseCase(
+    ref.watch(medicalNotesRepositoryProvider),
+  );
+}
+
+@riverpod
+GetMedicalNoteByIdUseCase getMedicalNoteByIdUseCase(
+  GetMedicalNoteByIdUseCaseRef ref,
+) {
+  return GetMedicalNoteByIdUseCase(
     ref.watch(medicalNotesRepositoryProvider),
   );
 }

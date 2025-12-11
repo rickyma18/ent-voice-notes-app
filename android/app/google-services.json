@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "526286259534",
+    "project_id": "ent-voice-notes-app",
+    "storage_bucket": "ent-voice-notes-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:526286259534:android:642122d7602f404efaca1f",
+        "android_client_info": {
+          "package_name": "com.ent.voice.notes"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBMsAeIkeZu7_9h8QKD0rVFuBSzMLGn8Oc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
