@@ -27,4 +27,5 @@ class Routes {
   static const String patientsList = '/patients';
   static const String createPatient = 'create';
   static const String patientDetail = 'detail';
+  static const String selectPatient = 'select';
 }

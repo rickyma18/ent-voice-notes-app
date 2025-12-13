@@ -97,4 +97,17 @@ final class PatientsRepositoryImpl extends PatientsRepository {
       return Result.error(failure);
     }
   }
+
+  @override
+  Future<Result<PatientEntity?, Failure>> getPatientById(String id) async {
+    try {
+      final model = await remoteDatasource.getPatientById(id);
+      final entity = model?.toEntity();
+
+      return Result.success(entity);
+    } catch (e) {
+      final failure = Failure.mapExceptionToFailure(e);
+      return Result.error(failure);
+    }
+  }
 }

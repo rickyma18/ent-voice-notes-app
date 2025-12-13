@@ -141,6 +141,21 @@ final class FakeMedicalNotesRemoteDatasource
   }
 
   @override
+  Future<List<MedicalNoteModel>> getNotesByDoctor(String doctorId) async {
+    // Simulate network delay
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    final notes = _notesStore.values
+        .where((note) => note.doctorId == doctorId)
+        .toList();
+
+    // Sort by createdAt descending (most recent first)
+    notes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    return notes;
+  }
+
+  @override
   Future<MedicalNoteModel?> getNoteById(String id) async {
     // Simulate network delay
     await Future.delayed(const Duration(milliseconds: 300));

@@ -149,6 +149,18 @@ final class FakePatientsRemoteDatasource extends PatientsRemoteDatasource {
     _patientsStore.removeWhere((p) => p.id == patientId);
   }
 
+  @override
+  Future<PatientModel?> getPatientById(String id) async {
+    // Simulate network delay
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    try {
+      return _patientsStore.firstWhere((p) => p.id == id);
+    } catch (e) {
+      return null; // Patient not found
+    }
+  }
+
   /// Utility method to clear all data (useful for testing)
   static void clearAll() {
     _patientsStore.clear();

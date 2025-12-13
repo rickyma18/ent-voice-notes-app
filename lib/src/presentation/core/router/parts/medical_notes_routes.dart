@@ -9,13 +9,9 @@ List<RouteBase> _medicalNotesRoutes(ref) {
         // US 4.2: Accept patient context from navigation extra
         final patient = state.extra as PatientEntity?;
 
-        // For backward compatibility, if no patient provided, use demo patient
-        const demoPatientId = 'patient-demo-001';
-
         return MaterialPage(
           child: MedicalNotesListPage(
             patient: patient,
-            patientId: patient == null ? demoPatientId : null,
           ),
         );
       },
@@ -24,17 +20,24 @@ List<RouteBase> _medicalNotesRoutes(ref) {
           path: Routes.createMedicalNote,
           name: RouteNames.medicalNotesCreate,
           pageBuilder: (context, state) {
-            // US 4.2: Accept patient context from navigation extra
+            // US-D1: Patient context is required
             final patient = state.extra as PatientEntity?;
 
-            // For backward compatibility, if no patient provided, use demo patient
-            final patientId = patient?.id ?? 'patient-demo-001';
+            if (patient == null) {
+              return MaterialPage(
+                child: Scaffold(
+                  appBar: AppBar(title: const Text('Error')),
+                  body: const Center(
+                    child: Text('Error: No se proporcionó un paciente.'),
+                  ),
+                ),
+              );
+            }
 
             // Get the current doctor ID from the provider
             final doctorId = ref.read(currentDoctorIdProvider);
 
             if (doctorId == null) {
-              // If no doctor ID, show an error page or redirect
               return MaterialPage(
                 child: Scaffold(
                   appBar: AppBar(title: const Text('Error')),
@@ -47,7 +50,7 @@ List<RouteBase> _medicalNotesRoutes(ref) {
 
             return MaterialPage(
               child: CreateMedicalNotePage(
-                patientId: patientId,
+                patientId: patient.id,
                 doctorId: doctorId,
               ),
             );

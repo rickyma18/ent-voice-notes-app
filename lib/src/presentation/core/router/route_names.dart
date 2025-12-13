@@ -27,4 +27,5 @@ class RouteNames {
   static const String patientsList = 'patientsList';
   static const String patientsCreate = 'patientsCreate';
   static const String patientsDetail = 'patientsDetail';
+  static const String selectPatient = 'selectPatient';
 }

@@ -41,6 +41,31 @@ class MedicalNotesController extends _$MedicalNotesController {
     }
   }
 
+  /// US-D2: Carga todas las notas médicas de un doctor.
+  Future<void> loadMedicalNotesForDoctor(String doctorId) async {
+    state = const AsyncLoading();
+
+    try {
+      final result = await ref
+          .read(getMedicalNotesByDoctorUseCaseProvider)
+          .call(doctorId);
+
+      result.when(
+        success: (notes) {
+          state = AsyncValue.data(notes);
+        },
+        error: (failure) {
+          state = AsyncValue.error(
+            failure,
+            failure.stackTrace ?? StackTrace.current,
+          );
+        },
+      );
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+    }
+  }
+
   /// Crea una nueva nota médica.
   Future<void> createMedicalNote(MedicalNoteEntity note) async {
     // Opcional: puedes mostrar loading durante la creación:

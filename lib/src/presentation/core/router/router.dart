@@ -20,6 +20,7 @@ import '../widgets/navigation_shell.dart';
 import 'router_state/router_state_provider.dart';
 import 'routes.dart';
 import 'route_names.dart';
+import 'route_error_page.dart';
 import '../../../features/medical_notes/presentation/pages/medical_notes_list_page.dart';
 import '../../../features/medical_notes/presentation/pages/create_medical_note_page.dart';
 import '../../../features/medical_notes/presentation/pages/medical_note_detail_page.dart';
@@ -27,6 +28,7 @@ import '../../../features/medical_notes/domain/entities/medical_note_entity.dart
 import '../../../features/patients/presentation/pages/patients_list_page.dart';
 import '../../../features/patients/presentation/pages/create_patient_page.dart';
 import '../../../features/patients/presentation/pages/patient_detail_page.dart';
+import '../../../features/patients/presentation/pages/select_patient_page.dart';
 import '../../../features/patients/domain/entities/patient_entity.dart';
 import '../application_state/current_doctor_provider/current_doctor_provider.dart';
 
@@ -46,6 +48,10 @@ GoRouter goRouter(Ref ref) {
     debugLogDiagnostics: true,
     refreshListenable: ref.asListenable(routerStateProvider),
     initialLocation: Routes.initial,
+    errorBuilder: (context, state) {
+      Log.error('Router error: ${state.error}');
+      return RouteErrorPage(error: state.error);
+    },
     redirect: (context, state) {
       Log.info('Redirecting to ${state.uri}');
       if ([

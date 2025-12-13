@@ -44,6 +44,15 @@ List<RouteBase> _patientsRoutes(ref) {
             );
           },
         ),
+        GoRoute(
+          path: Routes.selectPatient,             // /patients/select
+          name: RouteNames.selectPatient,         // ✅ SELECT
+          pageBuilder: (context, state) {
+            return const MaterialPage(
+              child: SelectPatientPage(),
+            );
+          },
+        ),
       ],
     ),
   ];

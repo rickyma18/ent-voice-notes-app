@@ -22,6 +22,6 @@ abstract base class PatientsRepository extends Repository {
   /// Elimina un paciente por ID (US 4.6)
   Future<Result<void, Failure>> deletePatient(String patientId);
 
-  // Future methods for later user stories:
-  // Future<Result<PatientEntity?, Failure>> getPatientById(String id);
+  /// Obtiene un paciente por ID (US-D2: needed for "Ver paciente" navigation)
+  Future<Result<PatientEntity?, Failure>> getPatientById(String id);
 }

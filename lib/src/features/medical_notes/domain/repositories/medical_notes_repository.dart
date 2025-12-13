@@ -9,6 +9,11 @@ abstract base class MedicalNotesRepository extends Repository {
     String patientId,
   );
 
+  /// US-D2: Obtiene todas las notas médicas de un doctor específico
+  Future<Result<List<MedicalNoteEntity>, Failure>> getNotesByDoctor(
+    String doctorId,
+  );
+
   /// Obtiene una nota médica por su ID
   Future<Result<MedicalNoteEntity?, Failure>> getNoteById(String id);
 

@@ -15,6 +15,11 @@ abstract base class MedicalNotesRemoteDatasource {
   /// siempre que el campo exista.
   Future<List<MedicalNoteModel>> getNotesByPatient(String patientId);
 
+  /// US-D2: Obtiene todas las notas de un doctor específico.
+  ///
+  /// Devuelve la lista de modelos ordenados por `created_at` (descendente).
+  Future<List<MedicalNoteModel>> getNotesByDoctor(String doctorId);
+
   /// Obtiene una nota médica por su ID de documento en Firestore.
   ///
   /// Devuelve null si el documento no existe.
@@ -49,6 +54,25 @@ final class MedicalNotesRemoteDatasourceImpl
   ) async {
     final querySnapshot = await _collection
         .where('patient_id', isEqualTo: patientId)
+        .orderBy('created_at', descending: true)
+        .get();
+
+    return querySnapshot.docs.map((doc) {
+      final data = doc.data();
+
+      // Aseguramos que el campo "id" interno coincida con doc.id
+      data['id'] ??= doc.id;
+
+      return MedicalNoteModel.fromJson(data);
+    }).toList();
+  }
+
+  @override
+  Future<List<MedicalNoteModel>> getNotesByDoctor(
+    String doctorId,
+  ) async {
+    final querySnapshot = await _collection
+        .where('doctor_id', isEqualTo: doctorId)
         .orderBy('created_at', descending: true)
         .get();
 

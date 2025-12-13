@@ -11,6 +11,7 @@ import 'data/datasources/medical_notes_remote_datasource.dart';
 import 'data/datasources/medical_notes_fake_datasource.dart';
 import 'data/repositories/medical_notes_repository_impl.dart';
 import 'domain/repositories/medical_notes_repository.dart';
+import 'domain/usecases/get_medical_notes_by_doctor_use_case.dart';
 import 'domain/usecases/create_medical_note_use_case.dart';
 import 'domain/usecases/delete_medical_note_use_case.dart';
 import 'domain/usecases/get_medical_notes_use_case.dart';
@@ -86,6 +87,15 @@ GetMedicalNotesUseCase getMedicalNotesUseCase(
 ) {
   return GetMedicalNotesUseCase(
     ref.watch(medicalNotesRepositoryProvider),
+  );
+}
+
+@riverpod
+GetMedicalNotesByDoctorUseCase getMedicalNotesByDoctorUseCase(
+  GetMedicalNotesByDoctorUseCaseRef ref,
+) {
+  return GetMedicalNotesByDoctorUseCase(
+    repository: ref.watch(medicalNotesRepositoryProvider),
   );
 }
 
