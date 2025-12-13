@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../core/extensions/app_localization.dart';
-import '../../../../core/router/routes.dart';
+import '../../../../core/router/route_names.dart';
 import '../../../../core/theme/theme.dart';
 
 class CreateNewPasswordPage extends StatelessWidget {
@@ -36,7 +36,7 @@ class CreateNewPasswordPage extends StatelessWidget {
               const SizedBox(height: 32),
               FilledButton(
                 onPressed: () {
-                  context.pushReplacementNamed(Routes.resetPasswordSuccess);
+                  context.pushReplacementNamed(RouteNames.resetPasswordSuccess);
                 },
                 child: Text(context.locale.resetPassword),
               ),

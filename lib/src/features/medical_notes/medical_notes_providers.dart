@@ -1,8 +1,10 @@
 // lib/src/features/medical_notes/medical_notes_providers.dart
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'application/note_ai_service.dart';
 import 'application/audio_recording_service.dart';
+import 'application/speech_to_text_service.dart';
 
 import 'data/datasources/medical_notes_local_datasource.dart';
 import 'data/datasources/medical_notes_remote_datasource.dart';
@@ -54,6 +56,15 @@ AudioRecordingService audioRecordingService(
   // Stub para pruebas. Más adelante se reemplaza con implementación real
   // que use un paquete de grabación de audio.
   return AudioRecordingServiceStub();
+}
+
+@riverpod
+SpeechToTextService speechToTextService(
+  Ref ref,
+) {
+  // Stub para pruebas. Más adelante se reemplaza con implementación real
+  // que use OpenAI Whisper API o similar.
+  return SpeechToTextServiceStub();
 }
 
 /// Repository provider

@@ -6,7 +6,9 @@
       "Bash(find:*)",
       "Bash(cat:*)",
       "Bash(dart run build_runner build:*)",
-      "Bash(flutter analyze:*)"
+      "Bash(flutter analyze:*)",
+      "Bash(Select-String -Pattern \"error -\" -Context 0,1)",
+      "Bash(grep:*)"
     ]
   }
 }

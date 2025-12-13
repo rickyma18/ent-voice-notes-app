@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/extensions/app_localization.dart';
-import '../../../core/router/routes.dart';
+import '../../../core/router/route_names.dart';
 import '../../../core/theme/theme.dart';
 
 part '../model/onboarding_model.dart';
@@ -99,7 +99,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage>
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: FilledButton(
                     onPressed: () {
-                      context.goNamed(Routes.login);
+                      context.goNamed(RouteNames.login);
                     },
                     child: Text(context.locale.getStarted),
                   ),

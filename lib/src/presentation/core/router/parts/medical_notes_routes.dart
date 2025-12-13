@@ -4,23 +4,31 @@ List<RouteBase> _medicalNotesRoutes(ref) {
   return [
     GoRoute(
       path: Routes.medicalNotesList,
-      name: Routes.medicalNotesList,
+      name: RouteNames.medicalNotesList,
       pageBuilder: (context, state) {
-        // For MVP, using a demo patient ID
-        // This can be enhanced later with patient selection
+        // US 4.2: Accept patient context from navigation extra
+        final patient = state.extra as PatientEntity?;
+
+        // For backward compatibility, if no patient provided, use demo patient
         const demoPatientId = 'patient-demo-001';
 
         return MaterialPage(
-          child: MedicalNotesListPage(patientId: demoPatientId),
+          child: MedicalNotesListPage(
+            patient: patient,
+            patientId: patient == null ? demoPatientId : null,
+          ),
         );
       },
       routes: [
         GoRoute(
           path: Routes.createMedicalNote,
-          name: Routes.createMedicalNote,
+          name: RouteNames.medicalNotesCreate,
           pageBuilder: (context, state) {
-            // For MVP, using a demo patient ID
-            const demoPatientId = 'patient-demo-001';
+            // US 4.2: Accept patient context from navigation extra
+            final patient = state.extra as PatientEntity?;
+
+            // For backward compatibility, if no patient provided, use demo patient
+            final patientId = patient?.id ?? 'patient-demo-001';
 
             // Get the current doctor ID from the provider
             final doctorId = ref.read(currentDoctorIdProvider);
@@ -39,7 +47,7 @@ List<RouteBase> _medicalNotesRoutes(ref) {
 
             return MaterialPage(
               child: CreateMedicalNotePage(
-                patientId: demoPatientId,
+                patientId: patientId,
                 doctorId: doctorId,
               ),
             );
@@ -47,7 +55,7 @@ List<RouteBase> _medicalNotesRoutes(ref) {
         ),
         GoRoute(
           path: Routes.detailMedicalNote,
-          name: Routes.detailMedicalNote,
+          name: RouteNames.medicalNotesDetail,
           pageBuilder: (context, state) {
             // US 1.4: Pass the note entity via the extra parameter
             final note = state.extra as MedicalNoteEntity?;

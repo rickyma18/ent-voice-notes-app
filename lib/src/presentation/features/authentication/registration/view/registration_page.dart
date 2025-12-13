@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../core/extensions/app_localization.dart';
 import '../../../../../core/extensions/go_router_extension.dart';
-import '../../../../core/router/routes.dart';
+import '../../../../core/router/route_names.dart';
 import '../../../../core/widgets/link_text.dart';
 import '../../../../core/widgets/loading_indicator.dart';
 import '../riverpod/register_provider.dart';
@@ -30,7 +30,7 @@ class _RegistrationPageState extends ConsumerState<RegistrationPage> {
     ref.listenManual(registerProvider, (previous, next) {
       switch (next) {
         case AsyncData(:final value) when value != null:
-          context.pushReplacementNamed(Routes.home);
+          context.pushReplacementNamed(RouteNames.home);
         case AsyncError(:final error):
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(error.toString())),
@@ -141,7 +141,7 @@ class _RegistrationPageState extends ConsumerState<RegistrationPage> {
                 text: context.locale.alreadyHaveAccount,
                 linkText: context.locale.signIn,
                 onTap: () {
-                  context.pushNamedAndRemoveUntil(Routes.login);
+                  context.pushNamedAndRemoveUntil(RouteNames.login);
                 },
               ),
             ],

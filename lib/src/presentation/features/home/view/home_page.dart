@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/extensions/app_localization.dart';
 import '../../../core/application_state/logout_provider/logout_provider.dart';
-import '../../../core/router/routes.dart';
+import '../../../core/router/route_names.dart';
 import '../../../core/widgets/loading_indicator.dart';
 
 class HomePage extends ConsumerStatefulWidget {
@@ -21,11 +21,10 @@ class _HomePageState extends ConsumerState<HomePage> {
     ref.listenManual(logoutProvider, (previous, next) {
       switch (next) {
         case AsyncData(:final value) when value == true:
-          context.pushReplacementNamed(Routes.login);
+          context.pushReplacementNamed(RouteNames.login);
         case AsyncError(:final error):
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(error.toString())));
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(error.toString())));
       }
     });
   }
@@ -42,7 +41,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           IconButton(
             icon: const Icon(Icons.person),
             onPressed: () {
-              context.pushNamed(Routes.profile);
+              context.pushNamed(RouteNames.profile);
             },
             tooltip: context.locale.profile,
           ),
@@ -55,7 +54,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 40),
-              // App Title & Icon
+
               Row(
                 children: [
                   Container(
@@ -93,9 +92,9 @@ class _HomePageState extends ConsumerState<HomePage> {
                   ),
                 ],
               ),
+
               const SizedBox(height: 48),
 
-              // Primary Actions
               Text(
                 'Quick Actions',
                 style: theme.textTheme.titleMedium?.copyWith(
@@ -104,12 +103,28 @@ class _HomePageState extends ConsumerState<HomePage> {
               ),
               const SizedBox(height: 16),
 
-              // View Medical Notes Button
+              // Patients List Button
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
                   onPressed: () {
-                    context.pushNamed(Routes.medicalNotesList);
+                    context.pushNamed(RouteNames.patientsList);
+                  },
+                  icon: const Icon(Icons.people_rounded),
+                  label: const Text('Pacientes'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // View Medical Notes Button
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                  onPressed: () {
+                    context.pushNamed(RouteNames.medicalNotesList);
                   },
                   icon: const Icon(Icons.list_alt_rounded),
                   label: Text(context.locale.viewMedicalNotes),
@@ -123,14 +138,13 @@ class _HomePageState extends ConsumerState<HomePage> {
               // Create New Note Button
               SizedBox(
                 width: double.infinity,
-                child: FilledButton.tonalIcon(
+                child: OutlinedButton.icon(
                   onPressed: () {
-                    // Navigate to create note page (nested route under medical-notes)
-                    context.push('/medical-notes/create');
+                    context.pushNamed(RouteNames.medicalNotesCreate);
                   },
                   icon: const Icon(Icons.add_circle_outline),
                   label: Text(context.locale.createNewNote),
-                  style: FilledButton.styleFrom(
+                  style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
                 ),

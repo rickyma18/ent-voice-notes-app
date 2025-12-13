@@ -10,7 +10,7 @@ StatefulShellRoute _shellRoutes(ref) {
         routes: [
           GoRoute(
             path: Routes.home,
-            name: Routes.home,
+            name: RouteNames.home,
             pageBuilder: (context, state) {
               return const MaterialPage(child: HomePage());
             },
@@ -21,7 +21,7 @@ StatefulShellRoute _shellRoutes(ref) {
         routes: [
           GoRoute(
             path: Routes.profile,
-            name: Routes.profile,
+            name: RouteNames.profile,
             pageBuilder: (context, state) {
               return const MaterialPage(child: ProfilePage());
             },

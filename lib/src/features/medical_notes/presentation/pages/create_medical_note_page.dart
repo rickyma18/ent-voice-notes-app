@@ -51,6 +51,9 @@ class _CreateMedicalNotePageState
   bool _isRecording = false;
   bool _isTranscribing = false;
 
+  /// Tracks which field is currently being dictated to (for per-field dictation)
+  TextEditingController? _dictatingController;
+
   @override
   void initState() {
     super.initState();
@@ -407,6 +410,230 @@ class _CreateMedicalNotePageState
     }
   }
 
+  /// Per-field voice dictation
+  ///
+  /// US 5.2: Voice dictation for rawTranscript (Speech-to-Text only, no AI)
+  /// - First tap: Start recording
+  /// - Second tap: Stop recording and transcribe to rawTranscript field
+  Future<void> _onVoiceDictation() async {
+    final audioService = ref.read(audioRecordingServiceProvider);
+    final sttService = ref.read(speechToTextServiceProvider);
+
+    // If already recording, stop and transcribe
+    if (_isRecording && _dictatingController == null) {
+      setState(() {
+        _isTranscribing = true;
+      });
+
+      try {
+        // 1. Stop recording
+        final audioFilePath = await audioService.stopRecording();
+
+        if (audioFilePath == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Error: No se pudo obtener el archivo de audio'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+
+        // 2. Transcribe audio using Speech-to-Text service
+        final transcript = await sttService.transcribeAudio(audioFilePath);
+
+        // 3. Update rawTranscript field
+        _rawTranscriptController.text = transcript;
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Audio transcrito correctamente'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error al transcribir audio: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isRecording = false;
+            _isTranscribing = false;
+          });
+        }
+      }
+    } else {
+      // State guard: prevent starting if any operation is in progress
+      if (_isRecording || _isTranscribing || _isSaving || _isGeneratingIA) {
+        return;
+      }
+
+      // Start recording
+      setState(() {
+        _isRecording = true;
+      });
+
+      try {
+        final started = await audioService.startRecording();
+
+        if (!started) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Error: No se pudo iniciar la grabación'),
+                backgroundColor: Colors.red,
+              ),
+            );
+            setState(() {
+              _isRecording = false;
+            });
+          }
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('🎤 Grabando... Toca nuevamente para detener'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error al iniciar grabación: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          setState(() {
+            _isRecording = false;
+          });
+        }
+      }
+    }
+  }
+
+  /// US 3.1: Allows dictating text for a specific field.
+  /// - First tap: Start recording
+  /// - Second tap: Stop recording, transcribe, and append/set text
+  /// - Appends to existing text with a space, or sets if field is empty
+  Future<void> _onDictateForField(TextEditingController targetController) async {
+    final audioService = ref.read(audioRecordingServiceProvider);
+    final aiService = ref.read(noteAIServiceProvider);
+
+    // If we're dictating to this specific field, stop and process
+    if (_dictatingController == targetController && _isRecording) {
+      setState(() {
+        _isTranscribing = true;
+      });
+
+      try {
+        // 1. Stop recording
+        final audioFilePath = await audioService.stopRecording();
+
+        if (audioFilePath == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Error: No se pudo obtener el archivo de audio'),
+              ),
+            );
+          }
+          return;
+        }
+
+        // 2. Transcribe audio
+        final transcript = await aiService.transcribeAudio(audioFilePath);
+
+        // 3. Append or set text to the target field
+        if (targetController.text.trim().isEmpty) {
+          targetController.text = transcript;
+        } else {
+          targetController.text = '${targetController.text} $transcript';
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Texto dictado agregado'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error al procesar audio: $e'),
+            ),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isRecording = false;
+            _isTranscribing = false;
+            _dictatingController = null;
+          });
+        }
+      }
+      return;
+    }
+
+    // State guard: prevent starting if any operation is in progress
+    if (_isRecording || _isTranscribing || _isSaving || _isGeneratingIA) {
+      return;
+    }
+
+    // Start recording for this field
+    setState(() {
+      _isRecording = true;
+      _dictatingController = targetController;
+    });
+
+    try {
+      final started = await audioService.startRecording();
+
+      if (!started) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Error: No se pudo iniciar la grabación'),
+            ),
+          );
+          setState(() {
+            _isRecording = false;
+            _dictatingController = null;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al iniciar grabación: $e'),
+          ),
+        );
+        setState(() {
+          _isRecording = false;
+          _dictatingController = null;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -429,10 +656,17 @@ class _CreateMedicalNotePageState
                 icon: Icons.help_outline,
                 child: TextFormField(
                   controller: _motivoController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Motivo de consulta',
                     hintText: 'Ej: Dolor de oído derecho persistente',
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: _RecordingMicIcon(
+                        isRecording: _isRecording && _dictatingController == _motivoController,
+                      ),
+                      tooltip: 'Dictar con voz',
+                      onPressed: () => _onDictateForField(_motivoController),
+                    ),
                   ),
                   textInputAction: TextInputAction.next,
                   maxLines: 2,
@@ -473,10 +707,17 @@ class _CreateMedicalNotePageState
                 icon: Icons.medical_services,
                 child: TextFormField(
                   controller: _exploracionController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Hallazgos de la exploración física',
                     hintText: 'Ej: Otoscopia: membrana timpánica hiperémia...',
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: _RecordingMicIcon(
+                        isRecording: _isRecording && _dictatingController == _exploracionController,
+                      ),
+                      tooltip: 'Dictar con voz',
+                      onPressed: () => _onDictateForField(_exploracionController),
+                    ),
                   ),
                   textInputAction: TextInputAction.next,
                   maxLines: 4,
@@ -500,6 +741,12 @@ class _CreateMedicalNotePageState
                   ),
                   textInputAction: TextInputAction.next,
                   maxLines: 2,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Ingresa el diagnóstico clínico';
+                    }
+                    return null;
+                  },
                 ),
               ),
               const SizedBox(height: 16),
@@ -513,13 +760,26 @@ class _CreateMedicalNotePageState
                 highlighted: true,
                 child: TextFormField(
                   controller: _planController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Plan terapéutico e indicaciones',
                     hintText: 'Ej: Amoxicilina 500mg c/8h por 7 días...',
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: IconButton(
+                      icon: _RecordingMicIcon(
+                        isRecording: _isRecording && _dictatingController == _planController,
+                      ),
+                      tooltip: 'Dictar con voz',
+                      onPressed: () => _onDictateForField(_planController),
+                    ),
                   ),
                   textInputAction: TextInputAction.next,
                   maxLines: 4,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Ingresa el plan de tratamiento';
+                    }
+                    return null;
+                  },
                 ),
               ),
               const SizedBox(height: 24),
@@ -546,6 +806,44 @@ class _CreateMedicalNotePageState
                         ],
                       ),
                       const SizedBox(height: 16),
+
+                      // US 5.2: Voice Dictation Button (Speech-to-Text only)
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.tonalIcon(
+                          onPressed:
+                              (_isSaving || _isGeneratingIA || _isTranscribing)
+                                  ? null
+                                  : _onVoiceDictation,
+                          style: (_isRecording && _dictatingController == null)
+                              ? FilledButton.styleFrom(
+                                  backgroundColor: Colors.red.shade100,
+                                  foregroundColor: Colors.red.shade900,
+                                )
+                              : null,
+                          icon: _isTranscribing
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : (_isRecording && _dictatingController == null)
+                                  ? const Icon(Icons.stop_circle)
+                                  : const Icon(Icons.mic),
+                          label: Text(
+                            _isTranscribing
+                                ? 'Transcribiendo audio...'
+                                : ((_isRecording &&
+                                        _dictatingController == null)
+                                    ? 'Detener dictado'
+                                    : 'Dictar nota por voz'),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
                       Row(
                         children: [
                           Expanded(
@@ -553,7 +851,7 @@ class _CreateMedicalNotePageState
                               onPressed: (_isSaving || _isGeneratingIA || _isTranscribing)
                                   ? null
                                   : _onRecordAudioAndProcess,
-                              style: _isRecording
+                              style: (_isRecording && _dictatingController == null)
                                   ? OutlinedButton.styleFrom(
                                       foregroundColor: Colors.red,
                                       side: const BorderSide(color: Colors.red),
@@ -565,11 +863,17 @@ class _CreateMedicalNotePageState
                                       height: 18,
                                       child: CircularProgressIndicator(strokeWidth: 2),
                                     )
-                                  : Icon(_isRecording ? Icons.stop : Icons.mic),
+                                  : (_isRecording && _dictatingController == null)
+                                      ? const Icon(Icons.stop)
+                                      : _RecordingMicIcon(
+                                          isRecording: _isRecording && _dictatingController == null,
+                                        ),
                               label: Text(
                                 _isTranscribing
                                     ? 'Procesando…'
-                                    : (_isRecording ? 'Detener grabación' : 'Grabar audio'),
+                                    : ((_isRecording && _dictatingController == null)
+                                        ? 'Detener grabación'
+                                        : 'IA y transcripción'),
                               ),
                             ),
                           ),
@@ -732,6 +1036,80 @@ class _SectionCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Recording mic icon with pulsing animation
+///
+/// Shows a red pulsing mic icon when recording, normal mic icon otherwise.
+/// Used for visual feedback in US 3.2.
+class _RecordingMicIcon extends StatefulWidget {
+  const _RecordingMicIcon({
+    required this.isRecording,
+  });
+
+  final bool isRecording;
+
+  @override
+  State<_RecordingMicIcon> createState() => _RecordingMicIconState();
+}
+
+class _RecordingMicIconState extends State<_RecordingMicIcon>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _opacityAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1000),
+      vsync: this,
+    );
+
+    _opacityAnimation = Tween<double>(begin: 0.3, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+
+    if (widget.isRecording) {
+      _controller.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_RecordingMicIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isRecording != oldWidget.isRecording) {
+      if (widget.isRecording) {
+        _controller.repeat(reverse: true);
+      } else {
+        _controller.stop();
+        _controller.reset();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.isRecording) {
+      return const Icon(Icons.mic);
+    }
+
+    return AnimatedBuilder(
+      animation: _opacityAnimation,
+      builder: (context, child) {
+        return Icon(
+          Icons.mic,
+          color: Colors.red.withOpacity(_opacityAnimation.value),
+        );
+      },
     );
   }
 }

@@ -3,59 +3,78 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/base/failure.dart';
+import '../../../../presentation/core/router/route_names.dart';
+import '../../../patients/domain/entities/patient_entity.dart';
 import '../controllers/medical_notes_controller.dart';
 import '../../domain/entities/medical_note_entity.dart';
 
 class MedicalNotesListPage extends ConsumerStatefulWidget {
-  const MedicalNotesListPage({
-    super.key,
-    required this.patientId,
-  });
+  const MedicalNotesListPage({super.key, this.patient, this.patientId});
 
-  /// Id del paciente cuyas notas se van a listar.
-  final String patientId;
+  /// Contexto del paciente (US 4.2).
+  /// Cuando se proporciona, la lista se filtra para mostrar solo las notas de este paciente.
+  final PatientEntity? patient;
+
+  /// Id del paciente cuyas notas se van a listar (fallback para compatibilidad).
+  /// Si patient != null, se usa patient.id; si no, se usa este valor.
+  final String? patientId;
 
   @override
   ConsumerState<MedicalNotesListPage> createState() =>
       _MedicalNotesListPageState();
 }
 
-class _MedicalNotesListPageState
-    extends ConsumerState<MedicalNotesListPage> {
+class _MedicalNotesListPageState extends ConsumerState<MedicalNotesListPage> {
+  /// Obtiene el ID del paciente efectivo (de patient.id o patientId fallback)
+  String? get _effectivePatientId => widget.patient?.id ?? widget.patientId;
+
   @override
   void initState() {
     super.initState();
     // Cargamos las notas al entrar a la pantalla
+    // Si hay patientId efectivo, cargamos las notas de ese paciente
+    // Si no (modo global), podríamos cargar todas las notas o usar un default
     Future.microtask(() {
+      final patientId = _effectivePatientId ?? 'patient-demo-001';
       ref
           .read(medicalNotesControllerProvider.notifier)
-          .loadMedicalNotes(widget.patientId);
+          .loadMedicalNotes(patientId);
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final notesState = ref.watch(medicalNotesControllerProvider);
+    final theme = Theme.of(context);
+
+    // Determinar el título del AppBar
+    final appBarTitle = widget.patient != null
+        ? 'Notas de ${widget.patient!.fullName}'
+        : 'Notas médicas';
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Notas médicas'),
-      ),
+      appBar: AppBar(title: Text(appBarTitle)),
       body: notesState.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(),
-        ),
+        loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stackTrace) => _ErrorView(
           error: error,
           onRetry: () {
+            final patientId = _effectivePatientId ?? 'patient-demo-001';
             ref
                 .read(medicalNotesControllerProvider.notifier)
-                .loadMedicalNotes(widget.patientId);
+                .loadMedicalNotes(patientId);
           },
         ),
-        data: (notes) {
+        data: (allNotes) {
+          // US 4.2: Filtrar las notas según el paciente seleccionado
+          final notes = widget.patient != null
+              ? allNotes
+                    .where((n) => n.patientId == widget.patient!.id)
+                    .toList()
+              : allNotes;
+
           if (notes.isEmpty) {
-            return const _EmptyView();
+            return _EmptyView(patientName: widget.patient?.fullName);
           }
 
           return ListView.separated(
@@ -69,14 +88,16 @@ class _MedicalNotesListPageState
                 onTap: () {
                   // US 1.4: Navigate to detail page using GoRouter
                   // Pass the note entity via the extra parameter
-                  context.push('detail', extra: note);
+                  context.pushNamed(RouteNames.medicalNotesDetail, extra: note);
                 },
                 onDelete: () async {
                   final shouldDelete = await showDialog<bool>(
                     context: context,
                     builder: (context) => AlertDialog(
                       title: const Text('Eliminar nota'),
-                      content: const Text('¿Estás seguro de que deseas eliminar esta nota médica?'),
+                      content: const Text(
+                        '¿Estás seguro de que deseas eliminar esta nota médica?',
+                      ),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.of(context).pop(false),
@@ -84,7 +105,10 @@ class _MedicalNotesListPageState
                         ),
                         TextButton(
                           onPressed: () => Navigator.of(context).pop(true),
-                          child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
+                          child: const Text(
+                            'Eliminar',
+                            style: TextStyle(color: Colors.red),
+                          ),
                         ),
                       ],
                     ),
@@ -109,7 +133,9 @@ class _MedicalNotesListPageState
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text('Error al eliminar la nota: ${e.toString()}'),
+                            content: Text(
+                              'Error al eliminar la nota: ${e.toString()}',
+                            ),
                             backgroundColor: Colors.red,
                             duration: const Duration(seconds: 3),
                           ),
@@ -125,9 +151,15 @@ class _MedicalNotesListPageState
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          // Navigate to create note page using GoRouter (relative path)
-          // The route is already configured to handle patientId and doctorId
-          context.push('create');
+          // US 4.2: Pass patient context to create page when available
+          if (widget.patient != null) {
+            context.pushNamed(
+              RouteNames.medicalNotesCreate,
+              extra: widget.patient,
+            );
+          } else {
+            context.pushNamed(RouteNames.medicalNotesCreate);
+          }
         },
         child: const Icon(Icons.add),
         tooltip: 'Crear nueva nota médica',
@@ -137,21 +169,22 @@ class _MedicalNotesListPageState
 }
 
 class _EmptyView extends StatelessWidget {
-  const _EmptyView();
+  const _EmptyView({this.patientName});
+
+  final String? patientName;
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Text('No hay notas médicas para este paciente.'),
-    );
+    final message = patientName != null
+        ? 'No hay notas médicas para $patientName.'
+        : 'No hay notas médicas para este paciente.';
+
+    return Center(child: Text(message));
   }
 }
 
 class _ErrorView extends StatelessWidget {
-  const _ErrorView({
-    required this.error,
-    required this.onRetry,
-  });
+  const _ErrorView({required this.error, required this.onRetry});
 
   final Object error;
   final VoidCallback onRetry;
@@ -237,10 +270,7 @@ class _MedicalNoteTile extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               'Paciente: $patientName',
-              style: TextStyle(
-                fontSize: 13,
-                color: theme.colorScheme.primary,
-              ),
+              style: TextStyle(fontSize: 13, color: theme.colorScheme.primary),
             ),
             const SizedBox(height: 2),
             Text(

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../core/extensions/app_localization.dart';
-import '../../../../core/router/routes.dart';
+import '../../../../core/router/route_names.dart';
 import '../../../../core/theme/theme.dart';
 
 class ResetPasswordPage extends StatelessWidget {
@@ -45,7 +45,7 @@ class ResetPasswordPage extends StatelessWidget {
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: () {
-                  context.pushReplacementNamed(Routes.emailVerification);
+                  context.pushReplacementNamed(RouteNames.emailVerification);
                 },
                 child: Text(context.locale.continueAction),
               ),

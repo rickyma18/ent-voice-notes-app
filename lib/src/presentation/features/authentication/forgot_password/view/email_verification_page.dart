@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../core/extensions/app_localization.dart';
-import '../../../../core/router/routes.dart';
+import '../../../../core/router/route_names.dart';
 import '../../../../core/theme/theme.dart';
 import '../../../../core/widgets/link_text.dart';
 
@@ -48,7 +48,7 @@ class EmailVerificationPage extends StatelessWidget {
                   text: context.locale.didNotReceiveEmail,
                   linkText: context.locale.tryAnotherEmail,
                   onTap: () {
-                    context.pushReplacementNamed(Routes.resetPassword);
+                    context.pushReplacementNamed(RouteNames.resetPassword);
                   },
                 ),
               ],
@@ -89,7 +89,7 @@ class _OTPFieldState extends State<_OTPField> {
                   if (index == 3 && value.length == 1) {
                     FocusScope.of(context).unfocus();
                     //TODO: Callback function
-                    context.pushReplacementNamed(Routes.createNewPassword);
+                    context.pushReplacementNamed(RouteNames.createNewPassword);
                   } else if (value.length == 1) {
                     FocusScope.of(context).nextFocus();
                   }
