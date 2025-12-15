@@ -11,9 +11,12 @@ import '../models/medical_note_model.dart';
 abstract base class MedicalNotesRemoteDatasource {
   /// Obtiene todas las notas de un paciente específico.
   ///
-  /// Devuelve la lista de modelos ordenados por `created_at` (descendente),
-  /// siempre que el campo exista.
-  Future<List<MedicalNoteModel>> getNotesByPatient(String patientId);
+  /// IMPORTANT: Must filter by both patient_id AND doctor_id for security.
+  /// Devuelve la lista de modelos ordenados por `created_at` (descendente).
+  Future<List<MedicalNoteModel>> getNotesByPatient(
+    String patientId,
+    String doctorId,
+  );
 
   /// US-D2: Obtiene todas las notas de un doctor específico.
   ///
@@ -51,8 +54,11 @@ final class MedicalNotesRemoteDatasourceImpl
   @override
   Future<List<MedicalNoteModel>> getNotesByPatient(
     String patientId,
+    String doctorId,
   ) async {
+    // CRITICAL: Filter by BOTH patient_id AND doctor_id for security rules
     final querySnapshot = await _collection
+        .where('doctor_id', isEqualTo: doctorId)
         .where('patient_id', isEqualTo: patientId)
         .orderBy('created_at', descending: true)
         .get();
@@ -104,15 +110,18 @@ final class MedicalNotesRemoteDatasourceImpl
 
   @override
   Future<String> createNote(MedicalNoteModel note) async {
-    // Tomamos el JSON tal cual lo define el modelo
     final data = note.toJson();
 
-    // Para evitar inconsistencias, quitamos cualquier "id" que venga del modelo
+    // Remove id from data since Firestore will generate it
     data.remove('id');
+
+    // Set server timestamps for create
+    data['created_at'] = FieldValue.serverTimestamp();
+    data['updated_at'] = FieldValue.serverTimestamp();
 
     final docRef = await _collection.add(data);
 
-    // Guardamos el id también dentro del documento, ya que tu modelo lo usa
+    // Update with generated ID (model expects id field)
     await docRef.update({'id': docRef.id});
 
     return docRef.id;
@@ -120,13 +129,16 @@ final class MedicalNotesRemoteDatasourceImpl
 
   @override
   Future<void> updateNote(MedicalNoteModel note) async {
-    // El modelo ya tiene un id lógico
-    final noteId = note.id;
+    final data = note.toJson();
 
-    final data = note.toJson()
-      ..['id'] = noteId; // Aseguramos que el campo id coincida
+    // Remove fields that shouldn't be updated
+    data.remove('id');
+    data.remove('created_at'); // Don't overwrite creation timestamp
 
-    await _collection.doc(noteId).update(data);
+    // Set server timestamp for update
+    data['updated_at'] = FieldValue.serverTimestamp();
+
+    await _collection.doc(note.id).update(data);
   }
 
   @override

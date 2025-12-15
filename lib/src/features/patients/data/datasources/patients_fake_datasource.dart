@@ -72,14 +72,11 @@ final class FakePatientsRemoteDatasource extends PatientsRemoteDatasource {
   }
 
   @override
-  Future<List<PatientModel>> getPatients({String? doctorId}) async {
+  Future<List<PatientModel>> getPatients(String doctorId) async {
     // Simulate network delay
     await Future.delayed(const Duration(milliseconds: 300));
 
-    if (doctorId == null) {
-      return List.from(_patientsStore);
-    }
-
+    // CRITICAL: ALWAYS filter by doctorId to match real Firestore behavior
     return _patientsStore
         .where((patient) => patient.doctorId == doctorId)
         .toList();

@@ -1,16 +1,30 @@
 part of '../dependency_injection.dart';
 
 @Riverpod(keepAlive: true)
+AuthenticationRemoteDatasource authenticationRemoteDatasource(Ref ref) {
+  return FirebaseAuthenticationRemoteDatasourceImpl();
+}
+
+@Riverpod(keepAlive: true)
+DoctorsRemoteDatasource doctorsRemoteDatasource(Ref ref) {
+  return DoctorsRemoteDatasourceImpl();
+}
+
+@Riverpod(keepAlive: true)
 AuthenticationRepository authenticationRepository(Ref ref) {
   return AuthenticationRepositoryImpl(
-    remote: ref.read(restClientServiceProvider),
+    remoteDatasource: ref.read(authenticationRemoteDatasourceProvider),
     local: ref.read(cacheServiceProvider),
+    doctorsDatasource: ref.read(doctorsRemoteDatasourceProvider),
   );
 }
 
 @Riverpod(keepAlive: true)
 RouterRepository routerRepository(Ref ref) {
-  return RouterRepositoryImpl(cacheService: ref.read(cacheServiceProvider));
+  return RouterRepositoryImpl(
+    cacheService: ref.read(cacheServiceProvider),
+    firebaseAuth: FirebaseAuth.instance,
+  );
 }
 
 @Riverpod(keepAlive: true)

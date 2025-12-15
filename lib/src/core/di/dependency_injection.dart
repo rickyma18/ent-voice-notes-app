@@ -1,13 +1,16 @@
 import 'package:dio/dio.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../data/datasources/authentication_remote_datasource.dart';
 import '../../data/repositories/authentication_repository_impl.dart';
 import '../../data/repositories/locale_repository_impl.dart';
 import '../../data/repositories/router_repository_impl.dart';
+import '../../features/doctors/data/datasources/doctors_remote_datasource.dart';
 import '../../data/services/cache/cache_service.dart';
 import '../../data/services/network/endpoints.dart';
 import '../../data/services/network/interceptor/token_manager.dart';

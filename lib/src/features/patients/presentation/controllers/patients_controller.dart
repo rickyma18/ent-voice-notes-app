@@ -4,6 +4,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../../core/base/failure.dart';
 import '../../../../core/base/result.dart';
+import '../../../../presentation/core/application_state/current_doctor_provider/current_doctor_provider.dart';
 import '../../domain/entities/patient_entity.dart';
 import '../../patients_providers.dart';
 
@@ -19,14 +20,26 @@ class PatientsController extends _$PatientsController {
     return const AsyncValue.loading();
   }
 
-  /// Carga la lista de pacientes (opcionalmente filtrados por doctor).
-  Future<void> _loadPatients({String? doctorId}) async {
+  /// Loads the list of patients for the current authenticated doctor.
+  ///
+  /// CRITICAL: Always requires authenticated doctor - returns error if not logged in.
+  Future<void> _loadPatients() async {
     state = const AsyncLoading();
 
     try {
+      // CRITICAL: Get current doctor ID for multi-tenant filtering
+      final doctorId = ref.read(currentDoctorIdProvider);
+      if (doctorId == null) {
+        state = AsyncValue.error(
+          Exception('Doctor not authenticated'),
+          StackTrace.current,
+        );
+        return;
+      }
+
       final result = await ref
           .read(getPatientsUseCaseProvider)
-          .call(doctorId: doctorId);
+          .call(doctorId);
 
       result.when(
         success: (patients) {
@@ -44,9 +57,9 @@ class PatientsController extends _$PatientsController {
     }
   }
 
-  /// Refresca la lista de pacientes
-  Future<void> refresh({String? doctorId}) async {
-    await _loadPatients(doctorId: doctorId);
+  /// Refreshes the patient list for the current doctor.
+  Future<void> refresh() async {
+    await _loadPatients();
   }
 
   /// Actualiza un paciente existente (US 4.5)

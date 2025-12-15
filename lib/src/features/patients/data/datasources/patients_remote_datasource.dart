@@ -6,8 +6,13 @@ import '../models/patient_model.dart';
 ///
 /// Defines the contract for fetching patient data from a remote source
 /// (Firebase, REST API, etc.). For US 4.1, we use a fake in-memory implementation.
+///
+/// SECURITY: All list queries MUST filter by doctorId to enforce multi-tenant isolation.
 abstract base class PatientsRemoteDatasource {
-  Future<List<PatientModel>> getPatients({String? doctorId});
+  /// Gets all patients for a specific doctor.
+  ///
+  /// CRITICAL: doctorId is REQUIRED for security - ensures multi-tenant isolation.
+  Future<List<PatientModel>> getPatients(String doctorId);
 
   /// Crea un nuevo paciente y retorna su ID generado (US 4.3)
   Future<String> createPatient(PatientModel patient);
@@ -37,14 +42,13 @@ final class PatientsRemoteDatasourceImpl implements PatientsRemoteDatasource {
       _firestore.collection('patients');
 
   @override
-  Future<List<PatientModel>> getPatients({String? doctorId}) async {
-    Query<Map<String, dynamic>> query = _collection;
-
-    if (doctorId != null) {
-      query = query.where('doctor_id', isEqualTo: doctorId);
-    }
-
-    final querySnapshot = await query.get();
+  Future<List<PatientModel>> getPatients(String doctorId) async {
+    // CRITICAL: ALWAYS filter by doctor_id for multi-tenant isolation
+    // This ensures Firestore security rules can validate the query
+    final querySnapshot = await _collection
+        .where('doctor_id', isEqualTo: doctorId)
+        .orderBy('created_at', descending: true)
+        .get();
 
     return querySnapshot.docs.map((doc) {
       final data = doc.data();

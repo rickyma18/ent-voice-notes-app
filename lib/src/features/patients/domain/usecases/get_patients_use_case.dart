@@ -8,9 +8,7 @@ final class GetPatientsUseCase {
 
   final PatientsRepository repository;
 
-  Future<Result<List<PatientEntity>, Failure>> call({
-    String? doctorId,
-  }) async {
-    return repository.getPatients(doctorId: doctorId);
+  Future<Result<List<PatientEntity>, Failure>> call(String doctorId) async {
+    return repository.getPatients(doctorId);
   }
 }

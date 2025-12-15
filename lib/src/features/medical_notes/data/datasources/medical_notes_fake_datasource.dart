@@ -126,12 +126,17 @@ final class FakeMedicalNotesRemoteDatasource
   }
 
   @override
-  Future<List<MedicalNoteModel>> getNotesByPatient(String patientId) async {
+  Future<List<MedicalNoteModel>> getNotesByPatient(
+    String patientId,
+    String doctorId,
+  ) async {
     // Simulate network delay
     await Future.delayed(const Duration(milliseconds: 500));
 
+    // CRITICAL: Filter by BOTH patient_id AND doctor_id for security
+    // Matches real Firestore implementation behavior
     final notes = _notesStore.values
-        .where((note) => note.patientId == patientId)
+        .where((note) => note.patientId == patientId && note.doctorId == doctorId)
         .toList();
 
     // Sort by createdAt descending (most recent first)

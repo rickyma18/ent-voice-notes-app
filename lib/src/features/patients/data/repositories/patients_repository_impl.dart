@@ -27,11 +27,11 @@ final class PatientsRepositoryImpl extends PatientsRepository {
   final PatientsRemoteDatasource remoteDatasource;
 
   @override
-  Future<Result<List<PatientEntity>, Failure>> getPatients({
-    String? doctorId,
-  }) async {
+  Future<Result<List<PatientEntity>, Failure>> getPatients(
+    String doctorId,
+  ) async {
     try {
-      final models = await remoteDatasource.getPatients(doctorId: doctorId);
+      final models = await remoteDatasource.getPatients(doctorId);
       final entities = models.map((m) => m.toEntity()).toList();
 
       return Result.success(entities);

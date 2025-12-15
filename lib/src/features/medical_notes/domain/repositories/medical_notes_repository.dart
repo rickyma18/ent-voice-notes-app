@@ -5,8 +5,11 @@ import '../entities/medical_note_entity.dart';
 
 abstract base class MedicalNotesRepository extends Repository {
   /// Obtiene todas las notas médicas de un paciente específico
+  ///
+  /// IMPORTANT: Requires doctorId for security - ensures only authorized doctor can access notes
   Future<Result<List<MedicalNoteEntity>, Failure>> getNotesByPatient(
     String patientId,
+    String doctorId,
   );
 
   /// US-D2: Obtiene todas las notas médicas de un doctor específico

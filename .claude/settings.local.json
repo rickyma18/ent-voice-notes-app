@@ -8,7 +8,9 @@
       "Bash(dart run build_runner build:*)",
       "Bash(flutter analyze:*)",
       "Bash(Select-String -Pattern \"error -\" -Context 0,1)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(dir /B \"C:\\Users\\richi\\Downloads\\ent-voice-notes-app\\lib\\src\\data\")",
+      "Bash(flutter pub get:*)"
     ]
   }
 }

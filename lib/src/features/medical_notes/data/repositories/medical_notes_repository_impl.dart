@@ -37,13 +37,17 @@ final class MedicalNotesRepositoryImpl extends MedicalNotesRepository {
   @override
   Future<Result<List<MedicalNoteEntity>, Failure>> getNotesByPatient(
     String patientId,
+    String doctorId,
   ) async {
     try {
-      final models = await remoteDatasource.getNotesByPatient(patientId);
-      final entities = models.map((m) => m.toEntity()).toList();
+      // CRITICAL: Pass both patientId and doctorId for security
+      // This ensures Firestore security rules can validate the query
+      final models = await remoteDatasource.getNotesByPatient(
+        patientId,
+        doctorId,
+      );
 
-      // Podrías también cachear aquí:
-      // await localDatasource.cacheNotes(patientId, models);
+      final entities = models.map((m) => m.toEntity()).toList();
 
       return Result.success(entities);
     } catch (e) {

@@ -8,7 +8,7 @@ import 'application/speech_to_text_service.dart';
 
 import 'data/datasources/medical_notes_local_datasource.dart';
 import 'data/datasources/medical_notes_remote_datasource.dart';
-import 'data/datasources/medical_notes_fake_datasource.dart';
+// import 'data/datasources/medical_notes_fake_datasource.dart'; // Fake kept for testing
 import 'data/repositories/medical_notes_repository_impl.dart';
 import 'domain/repositories/medical_notes_repository.dart';
 import 'domain/usecases/get_medical_notes_by_doctor_use_case.dart';
@@ -24,13 +24,20 @@ part 'medical_notes_providers.g.dart';
 
 /// Remote datasource provider
 ///
-/// Currently using FAKE in-memory implementation for US 1.1.
-/// TODO: Replace with MedicalNotesRemoteDatasourceImpl() when Firestore is ready.
+/// PRODUCTION MODE: Uses Firestore for medical notes storage.
+///
+/// To switch to fake datasource (development/testing):
+/// - Uncomment: return FakeMedicalNotesRemoteDatasource();
+/// - Comment out: return MedicalNotesRemoteDatasourceImpl();
 @riverpod
 MedicalNotesRemoteDatasource medicalNotesRemoteDatasource(
   MedicalNotesRemoteDatasourceRef ref,
 ) {
-  return FakeMedicalNotesRemoteDatasource();
+  // Production: Use Firestore implementation
+  return MedicalNotesRemoteDatasourceImpl();
+
+  // Development: Use fake in-memory datasource (for testing)
+  // return FakeMedicalNotesRemoteDatasource();
 }
 
 /// Local datasource provider

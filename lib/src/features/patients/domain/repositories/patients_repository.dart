@@ -4,10 +4,11 @@ import '../../../../core/base/result.dart';
 import '../entities/patient_entity.dart';
 
 abstract base class PatientsRepository extends Repository {
-  /// Obtiene todos los pacientes (opcionalmente filtrados por doctor)
-  Future<Result<List<PatientEntity>, Failure>> getPatients({
-    String? doctorId,
-  });
+  /// Gets all patients for a specific doctor.
+  ///
+  /// CRITICAL: doctorId is REQUIRED for multi-tenant security.
+  /// Each doctor can ONLY see their own patients.
+  Future<Result<List<PatientEntity>, Failure>> getPatients(String doctorId);
 
   /// Crea un nuevo paciente (US 4.3)
   Future<Result<PatientEntity, Failure>> createPatient(

@@ -1,0 +1,114 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if user is the document owner
+    function isOwner(doctorId) {
+      return isAuthenticated() && request.auth.uid == doctorId;
+    }
+
+    // Helper function to validate required fields
+    function hasRequiredFields(requiredFields) {
+      return request.resource.data.keys().hasAll(requiredFields);
+    }
+
+    // ============================================================================
+    // DOCTORS COLLECTION
+    // ============================================================================
+    // Collection: doctors/{doctorId}
+    // - Document ID must match authenticated user's UID
+    // - Each doctor can only read/write their own profile
+    match /doctors/{doctorId} {
+      // Allow read only if the doctor is reading their own profile
+      allow read: if isOwner(doctorId);
+
+      // Allow create/update only for own profile
+      // Ensure the document ID matches the authenticated user's UID
+      allow create, update: if isOwner(doctorId)
+                            && request.resource.data.id == request.auth.uid
+                            && hasRequiredFields(['id', 'email']);
+
+      // Allow delete only for own profile
+      allow delete: if isOwner(doctorId);
+    }
+
+    // ============================================================================
+    // PATIENTS COLLECTION
+    // ============================================================================
+    // Collection: patients/{patientId}
+    // - Each patient document must have a doctor_id field
+    // - Doctors can only access patients assigned to them
+    match /patients/{patientId} {
+      // Allow read if patient belongs to the requesting doctor
+      allow read: if isAuthenticated()
+                  && resource.data.doctor_id == request.auth.uid;
+
+      // Allow create if doctor_id matches authenticated user
+      // Ensure required fields are present
+      allow create: if isAuthenticated()
+                    && request.resource.data.doctor_id == request.auth.uid
+                    && hasRequiredFields(['full_name', 'age', 'sex', 'doctor_id']);
+
+      // Allow update if patient belongs to the requesting doctor
+      // Prevent changing doctor_id after creation
+      allow update: if isAuthenticated()
+                    && resource.data.doctor_id == request.auth.uid
+                    && request.resource.data.doctor_id == resource.data.doctor_id;
+
+      // Allow delete if patient belongs to the requesting doctor
+      allow delete: if isAuthenticated()
+                    && resource.data.doctor_id == request.auth.uid;
+    }
+
+    // ============================================================================
+    // MEDICAL NOTES COLLECTION
+    // ============================================================================
+    // Collection: medical_notes/{noteId}
+    // - Each note must have both doctor_id and patient_id
+    // - Doctors can only access notes they created
+    match /medical_notes/{noteId} {
+      // Allow read if note belongs to the requesting doctor
+      allow read: if isAuthenticated()
+                  && resource.data.doctor_id == request.auth.uid;
+
+      // Allow create if doctor_id matches authenticated user
+      // Ensure required fields are present
+      allow create: if isAuthenticated()
+                    && request.resource.data.doctor_id == request.auth.uid
+                    && hasRequiredFields([
+                      'doctor_id',
+                      'patient_id',
+                      'motivo_consulta',
+                      'antecedentes',
+                      'exploracion_fisica_orl',
+                      'diagnostico',
+                      'plan_tratamiento',
+                      'raw_transcript'
+                    ]);
+
+      // Allow update if note belongs to the requesting doctor
+      // Prevent changing doctor_id or patient_id after creation
+      allow update: if isAuthenticated()
+                    && resource.data.doctor_id == request.auth.uid
+                    && request.resource.data.doctor_id == resource.data.doctor_id
+                    && request.resource.data.patient_id == resource.data.patient_id;
+
+      // Allow delete if note belongs to the requesting doctor
+      allow delete: if isAuthenticated()
+                    && resource.data.doctor_id == request.auth.uid;
+    }
+
+    // ============================================================================
+    // DENY ALL OTHER ACCESS
+    // ============================================================================
+    // Explicitly deny access to any other collections or documents
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

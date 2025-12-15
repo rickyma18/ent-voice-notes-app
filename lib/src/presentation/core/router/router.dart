@@ -31,6 +31,8 @@ import '../../../features/patients/presentation/pages/patient_detail_page.dart';
 import '../../../features/patients/presentation/pages/select_patient_page.dart';
 import '../../../features/patients/domain/entities/patient_entity.dart';
 import '../application_state/current_doctor_provider/current_doctor_provider.dart';
+import '../application_state/auth_state_provider/auth_state_provider.dart';
+import '../../../core/di/dependency_injection.dart';
 
 part 'parts/authentication_routes.dart';
 part 'parts/on_boarding_routes.dart';
@@ -43,6 +45,10 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'Root');
 
 @Riverpod(keepAlive: true)
 GoRouter goRouter(Ref ref) {
+  // Watch auth state to trigger router refresh on auth changes
+  // This ensures router redirects work correctly when user logs in/out
+  ref.watch(authStateChangesProvider);
+
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     debugLogDiagnostics: true,
@@ -53,14 +59,36 @@ GoRouter goRouter(Ref ref) {
       return RouteErrorPage(error: state.error);
     },
     redirect: (context, state) {
-      Log.info('Redirecting to ${state.uri}');
+      final path = state.uri.path;
+      Log.info('Redirecting to $path');
+
+      // Special handling for initial/splash/onboarding
       if ([
         Routes.initial,
         Routes.onboarding,
         Routes.splash,
-      ].contains(state.uri.path)) {
+      ].contains(path)) {
         return ref.asListenable(routerStateProvider).value;
       }
+
+      // Get current auth status
+      final isLoggedIn = ref.read(getUserLoginStatusUseCaseProvider).call();
+
+      // Auth guards
+      if (path == Routes.login || path.startsWith('${Routes.login}/')) {
+        // If user is authenticated and trying to access login/register
+        if (isLoggedIn) {
+          Log.info('User authenticated, redirecting from $path to home');
+          return Routes.home;
+        }
+      } else {
+        // All other routes require authentication
+        if (!isLoggedIn) {
+          Log.info('User not authenticated, redirecting from $path to login');
+          return Routes.login;
+        }
+      }
+
       return null;
     },
     routes: [

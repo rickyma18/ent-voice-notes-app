@@ -8,9 +8,10 @@ final class GetMedicalNotesUseCase {
 
   final MedicalNotesRepository repository;
 
-  Future<Result<List<MedicalNoteEntity>, Failure>> call(
-    String patientId,
-  ) async {
-    return repository.getNotesByPatient(patientId);
+  Future<Result<List<MedicalNoteEntity>, Failure>> call({
+    required String patientId,
+    required String doctorId,
+  }) async {
+    return repository.getNotesByPatient(patientId, doctorId);
   }
 }

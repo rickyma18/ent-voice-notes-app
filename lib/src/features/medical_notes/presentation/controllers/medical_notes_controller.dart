@@ -3,6 +3,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../../core/base/result.dart';
+import '../../../../presentation/core/application_state/current_doctor_provider/current_doctor_provider.dart';
 import '../../domain/entities/medical_note_entity.dart';
 import '../../medical_notes_providers.dart';
 
@@ -21,9 +22,19 @@ class MedicalNotesController extends _$MedicalNotesController {
     state = const AsyncLoading();
 
     try {
+      // Get current doctor ID for security filtering
+      final doctorId = ref.read(currentDoctorIdProvider);
+      if (doctorId == null) {
+        state = AsyncValue.error(
+          Exception('Doctor not authenticated'),
+          StackTrace.current,
+        );
+        return;
+      }
+
       final result = await ref
           .read(getMedicalNotesUseCaseProvider)
-          .call(patientId);
+          .call(patientId: patientId, doctorId: doctorId);
 
       result.when(
         success: (notes) {

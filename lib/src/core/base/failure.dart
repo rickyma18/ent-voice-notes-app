@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dio/dio.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 
@@ -80,6 +81,59 @@ abstract class Failure with _$Failure {
           type: FailureType.unknown,
           message: error?.message ?? 'Something went wrong.',
           code: error?.code,
+          stackTrace: e.stackTrace,
+        ),
+      };
+    }
+
+    if (e is FirebaseException) {
+      return switch (e.code) {
+        'permission-denied' => Failure(
+          type: FailureType.unauthorized,
+          message: 'Permission denied. You do not have access to this resource.',
+          code: e.code,
+          stackTrace: e.stackTrace,
+        ),
+        'not-found' => Failure(
+          type: FailureType.notFound,
+          message: 'The requested resource was not found.',
+          code: e.code,
+          stackTrace: e.stackTrace,
+        ),
+        'unavailable' => Failure(
+          type: FailureType.network,
+          message: 'Service is currently unavailable. Please try again later.',
+          code: e.code,
+          stackTrace: e.stackTrace,
+        ),
+        'invalid-argument' || 'failed-precondition' => Failure(
+          type: FailureType.validation,
+          message: e.message ?? 'Invalid request parameters.',
+          code: e.code,
+          stackTrace: e.stackTrace,
+        ),
+        'already-exists' => Failure(
+          type: FailureType.illegalOperation,
+          message: 'The resource already exists.',
+          code: e.code,
+          stackTrace: e.stackTrace,
+        ),
+        'resource-exhausted' => Failure(
+          type: FailureType.badResponse,
+          message: 'Resource limit exceeded. Please try again later.',
+          code: e.code,
+          stackTrace: e.stackTrace,
+        ),
+        'unauthenticated' => Failure(
+          type: FailureType.unauthorized,
+          message: 'Authentication required.',
+          code: e.code,
+          stackTrace: e.stackTrace,
+        ),
+        _ => Failure(
+          type: FailureType.unknown,
+          message: e.message ?? 'Firestore operation failed.',
+          code: e.code,
           stackTrace: e.stackTrace,
         ),
       };
