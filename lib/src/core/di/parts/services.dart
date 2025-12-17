@@ -2,8 +2,10 @@ part of '../dependency_injection.dart';
 
 @Riverpod(keepAlive: true)
 CacheService cacheService(Ref ref) {
+  // ✅ SAFE: Uses synchronous provider that's guaranteed to be overridden
+  // in main() with pre-initialized SharedPreferences instance
   return SharedPreferencesService(
-    ref.read(sharedPreferencesProvider).requireValue,
+    ref.read(initializedSharedPreferencesProvider),
   );
 }
 

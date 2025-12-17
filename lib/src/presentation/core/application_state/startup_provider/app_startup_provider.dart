@@ -12,7 +12,10 @@ Future<void> appStartup(Ref ref) async {
     ref.invalidate(sharedPreferencesProvider);
   });
 
+  // ✅ SharedPreferences already initialized in main(), this completes immediately
+  // We keep this line to maintain explicit dependency and self-documenting code
   await ref.watch(sharedPreferencesProvider.future);
 
+  // Load current locale from SharedPreferences
   await ref.read(localizationProvider.notifier).setCurrentLocal();
 }

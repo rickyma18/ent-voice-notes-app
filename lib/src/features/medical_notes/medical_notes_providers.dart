@@ -1,10 +1,14 @@
 // lib/src/features/medical_notes/medical_notes_providers.dart
 
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'application/note_ai_service.dart';
+import 'application/note_ai_service_impl.dart';
 import 'application/audio_recording_service.dart';
+import 'application/audio_recording_service_impl.dart';
 import 'application/speech_to_text_service.dart';
+import 'application/speech_to_text_service_impl.dart';
 
 import 'data/datasources/medical_notes_local_datasource.dart';
 import 'data/datasources/medical_notes_remote_datasource.dart';
@@ -48,31 +52,92 @@ MedicalNotesLocalDatasource medicalNotesLocalDatasource(
   return MedicalNotesLocalDatasourceImpl();
 }
 
+/// OpenAI API Key provider.
+///
+/// MUST be overridden in main() with the actual API key.
+/// The API key should come from:
+/// - Environment variables (recommended for production)
+/// - Secure storage
+/// - Configuration file (excluded from version control)
+///
+/// Example override in main():
+/// ```dart
+/// container.overrideWith((ref) => 'sk-...');
+/// ```
+@Riverpod(keepAlive: true)
+String openAIApiKey(Ref ref) {
+  throw UnimplementedError(
+    'openAIApiKeyProvider must be overridden in main() with your OpenAI API key.\n'
+    'Never commit API keys to version control.\n'
+    'Use environment variables: const String.fromEnvironment("OPENAI_API_KEY")',
+  );
+}
+
+/// OpenAI Client provider.
+///
+/// Creates a configured OpenAI client with the API key.
+@riverpod
+OpenAIClient openAIClient(Ref ref) {
+  final apiKey = ref.watch(openAIApiKeyProvider);
+  return OpenAIClient(
+    apiKey: apiKey,
+    dio: Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 60),
+      ),
+    ),
+  );
+}
+
+/// NoteAI Service provider.
+///
+/// PRODUCTION MODE: Uses real OpenAI APIs (Whisper + GPT-4).
+/// TEST MODE: Uncomment the stub below for UI testing without API calls.
 @riverpod
 NoteAIService noteAIService(
   NoteAIServiceRef ref,
 ) {
-  // Más adelante, Claude puede cambiar esto a NoteAIServiceImpl(...)
-  // que use APIs reales. Por ahora dejamos el stub.
-  return const NoteAIServiceStub();
+  // PRODUCTION MODE: Real AI implementation
+  return NoteAIServiceImpl(
+    openAIClient: ref.watch(openAIClientProvider),
+  );
+
+  // TEST MODE: Stub for UI testing (no real API calls)
+  // return const NoteAIServiceStub();
 }
 
 @riverpod
 AudioRecordingService audioRecordingService(
   AudioRecordingServiceRef ref,
 ) {
-  // Stub para pruebas. Más adelante se reemplaza con implementación real
-  // que use un paquete de grabación de audio.
-  return AudioRecordingServiceStub();
+  // CRITICAL: Keep provider alive to prevent disposal during recording
+  // Without this, the provider can be disposed between startRecording() and stopRecording(),
+  // causing "not recording" errors when stop is called on a new instance.
+  ref.keepAlive();
+
+  // PRODUCTION MODE: Real audio recording implementation
+  return AudioRecordingServiceImpl();
+
+  // For testing purposes, you can uncomment the stub below:
+  // return AudioRecordingServiceStub();
 }
 
+/// SpeechToText Service provider.
+///
+/// PRODUCTION MODE: Uses real OpenAI Whisper API for transcription.
+/// TEST MODE: Uncomment the stub below for UI testing without API calls.
 @riverpod
 SpeechToTextService speechToTextService(
   Ref ref,
 ) {
-  // Stub para pruebas. Más adelante se reemplaza con implementación real
-  // que use OpenAI Whisper API o similar.
-  return SpeechToTextServiceStub();
+  // PRODUCTION MODE: Real Whisper transcription
+  return SpeechToTextServiceImpl(
+    openAIClient: ref.watch(openAIClientProvider),
+  );
+
+  // TEST MODE: Stub for UI testing (no real API calls)
+  // return SpeechToTextServiceStub();
 }
 
 /// Repository provider

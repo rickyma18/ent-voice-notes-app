@@ -35,7 +35,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     ref.listenManual(loginProvider, (previous, next) {
       switch (next) {
         case AsyncData(:final value) when value != null:
-          context.pushReplacementNamed(RouteNames.home);
+          context.goNamed(RouteNames.home);
         case AsyncError(:final error):
           ScaffoldMessenger.of(
             context,

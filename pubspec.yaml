@@ -36,7 +36,7 @@ dependencies:
   # State management
   flutter_riverpod: ^2.5.1
   # Navigation
-  go_router: ^14.2.8
+  go_router: ^17.0.1
   # Cache & Database
   shared_preferences: ^2.3.1
   # Generator and Annotations
@@ -58,15 +58,21 @@ dependencies:
   intl: ^0.20.2
   equatable: ^2.0.7
   cloud_firestore: ^6.1.0
-  firebase_core: 4.2.1
+  firebase_core: ^4.3.0
   firebase_auth: ^6.1.2
+  # Audio recording and file paths
+  record: ^6.1.2
+  path_provider: ^2.1.5
+  path: ^1.9.1
+  permission_handler: ^12.0.1
+  uuid: ^4.5.1
 
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
-  flutter_lints: ^4.0.0
+  flutter_lints: ^6.0.0
   build_runner:
   custom_lint:
   flutter_guardian:

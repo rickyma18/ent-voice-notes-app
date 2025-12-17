@@ -40,7 +40,7 @@ android {
 
     defaultConfig {
         applicationId = "com.ent.voice.notes"
-        minSdk = flutter.minSdkVersion
+        minSdk = 24  // Required for permission_handler and record packages
         targetSdk = flutter.targetSdkVersion
         versionCode = flutterVersionCode.toInteger()
         versionName = flutterVersionName

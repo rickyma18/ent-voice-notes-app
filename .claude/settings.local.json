@@ -10,7 +10,11 @@
       "Bash(Select-String -Pattern \"error -\" -Context 0,1)",
       "Bash(grep:*)",
       "Bash(dir /B \"C:\\Users\\richi\\Downloads\\ent-voice-notes-app\\lib\\src\\data\")",
-      "Bash(flutter pub get:*)"
+      "Bash(flutter pub get:*)",
+      "Bash(dir /B \"C:\\Users\\richi\\Downloads\\ent-voice-notes-app\\test\")",
+      "Bash(flutter clean:*)",
+      "Bash(flutter test)",
+      "Bash(flutter test:*)"
     ]
   }
 }
