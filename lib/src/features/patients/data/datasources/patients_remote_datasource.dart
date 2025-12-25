@@ -65,7 +65,15 @@ final class PatientsRemoteDatasourceImpl implements PatientsRemoteDatasource {
     // Remove id from data since Firestore will generate it
     data.remove('id');
 
+    // Set server timestamps for create
+    data['created_at'] = FieldValue.serverTimestamp();
+    data['updated_at'] = FieldValue.serverTimestamp();
+
     final docRef = await _collection.add(data);
+
+    // Update with generated ID (model expects id field)
+    await docRef.update({'id': docRef.id});
+
     return docRef.id;
   }
 
@@ -75,6 +83,10 @@ final class PatientsRemoteDatasourceImpl implements PatientsRemoteDatasource {
 
     // Remove id from data since it's the document ID
     data.remove('id');
+    // Don't overwrite creation timestamp
+    data.remove('created_at');
+    // Set server timestamp for update
+    data['updated_at'] = FieldValue.serverTimestamp();
 
     await _collection.doc(patient.id).update(data);
 

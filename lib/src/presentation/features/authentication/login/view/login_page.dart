@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../../core/extensions/app_localization.dart';
 import '../../../../../core/extensions/validation.dart';
-import '../../../../../core/utiliity/validation/validation.dart';
+import '../../../../../core/utility/validation/validation.dart';
 import '../../../../core/router/route_names.dart';
 import '../../../../core/theme/theme.dart';
 import '../../../../core/widgets/link_text.dart';

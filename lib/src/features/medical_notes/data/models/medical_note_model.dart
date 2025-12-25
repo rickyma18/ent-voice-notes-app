@@ -1,3 +1,4 @@
+import '../../../../core/utility/firestore_timestamp_parser.dart';
 import '../../domain/entities/attachment_entity.dart';
 import '../../domain/entities/medical_note_entity.dart';
 import '../../domain/entities/medication_entity.dart';
@@ -36,14 +37,16 @@ class MedicalNoteModel extends MedicalNoteEntity {
       id: json['id'] as String,
       patientId: json['patient_id'] as String,
       doctorId: json['doctor_id'] as String,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      // Use FirestoreTimestampParser to handle both Timestamp and ISO String
+      createdAt: FirestoreTimestampParser.parse(json['created_at']),
+      updatedAt: FirestoreTimestampParser.parse(json['updated_at']),
       motivoConsulta: json['motivo_consulta'] as String,
       antecedentes: json['antecedentes'] as String,
       exploracionFisicaOrl: json['exploracion_fisica_orl'] as String,
       diagnostico: json['diagnostico'] as String,
       planTratamiento: json['plan_tratamiento'] as String,
-      rawTranscript: json['raw_transcript'] as String,
+      // Ensure raw_transcript is always present (fallback to empty string for legacy data)
+      rawTranscript: (json['raw_transcript'] as String?) ?? '',
       resumen: json['resumen'] as String?,
       notaAdicional: json['nota_adicional'] as String?,
       status: _parseNoteStatus(json['status'] as String?),
@@ -55,9 +58,8 @@ class MedicalNoteModel extends MedicalNoteEntity {
               ?.map((e) => StudyModel.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      proximaCita: json['proxima_cita'] != null
-          ? DateTime.parse(json['proxima_cita'] as String)
-          : null,
+      // Use FirestoreTimestampParser for optional timestamp
+      proximaCita: FirestoreTimestampParser.tryParse(json['proxima_cita']),
       attachments: (json['attachments'] as List<dynamic>?)
               ?.map((e) => AttachmentModel.fromJson(e as Map<String, dynamic>))
               .toList() ??

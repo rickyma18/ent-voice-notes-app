@@ -1,3 +1,4 @@
+import '../../../../core/utility/firestore_timestamp_parser.dart';
 import '../../domain/entities/attachment_entity.dart';
 
 class AttachmentModel extends AttachmentEntity {
@@ -18,7 +19,8 @@ class AttachmentModel extends AttachmentEntity {
       url: json['url'] as String,
       tipo: _parseAttachmentType(json['tipo'] as String?),
       size_in_bytes: json['size_in_bytes'] as int,
-      fechaSubida: DateTime.parse(json['fecha_subida'] as String),
+      // Use FirestoreTimestampParser to handle both Timestamp and ISO String
+      fechaSubida: FirestoreTimestampParser.parse(json['fecha_subida']),
       thumbnail: json['thumbnail'] as String?,
     );
   }

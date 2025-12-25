@@ -14,7 +14,10 @@
       "Bash(dir /B \"C:\\Users\\richi\\Downloads\\ent-voice-notes-app\\test\")",
       "Bash(flutter clean:*)",
       "Bash(flutter test)",
-      "Bash(flutter test:*)"
+      "Bash(flutter test:*)",
+      "Bash(where:*)",
+      "Bash(node:*)",
+      "Bash(npm:*)"
     ]
   }
 }

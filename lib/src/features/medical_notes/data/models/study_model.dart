@@ -1,3 +1,4 @@
+import '../../../../core/utility/firestore_timestamp_parser.dart';
 import '../../domain/entities/study_entity.dart';
 
 class StudyModel extends StudyEntity {
@@ -15,9 +16,8 @@ class StudyModel extends StudyEntity {
       descripcion: json['descripcion'] as String,
       urgencia: _parseStudyUrgency(json['urgencia'] as String?),
       resultadoAdjunto: json['resultado_adjunto'] as String?,
-      fechaRealizado: json['fecha_realizado'] != null
-          ? DateTime.parse(json['fecha_realizado'] as String)
-          : null,
+      // Use FirestoreTimestampParser to handle both Timestamp and ISO String
+      fechaRealizado: FirestoreTimestampParser.tryParse(json['fecha_realizado']),
     );
   }
 

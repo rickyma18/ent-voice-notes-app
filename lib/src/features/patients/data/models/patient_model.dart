@@ -1,3 +1,4 @@
+import '../../../../core/utility/firestore_timestamp_parser.dart';
 import '../../domain/entities/patient_entity.dart';
 
 class PatientModel extends PatientEntity {
@@ -19,12 +20,9 @@ class PatientModel extends PatientEntity {
       age: json['age'] as int,
       sex: json['sex'] as String,
       phone: json['phone'] as String?,
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
-          : null,
-      updatedAt: json['updated_at'] != null
-          ? DateTime.parse(json['updated_at'] as String)
-          : null,
+      // Use FirestoreTimestampParser to handle both Timestamp and ISO String
+      createdAt: FirestoreTimestampParser.tryParse(json['created_at']),
+      updatedAt: FirestoreTimestampParser.tryParse(json['updated_at']),
       doctorId: json['doctor_id'] as String?,
     );
   }

@@ -2,6 +2,7 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../../../core/utility/firestore_timestamp_parser.dart';
 import '../../domain/entities/doctor_entity.dart';
 
 class DoctorModel extends DoctorEntity {
@@ -15,18 +16,15 @@ class DoctorModel extends DoctorEntity {
   });
 
   /// From Firestore document
+  /// Uses FirestoreTimestampParser to handle both Timestamp and ISO String
   factory DoctorModel.fromJson(Map<String, dynamic> json) {
     return DoctorModel(
       id: json['id'] as String,
       email: json['email'] as String,
       firstName: json['first_name'] as String?,
       lastName: json['last_name'] as String?,
-      createdAt: json['created_at'] != null
-          ? (json['created_at'] as Timestamp).toDate()
-          : null,
-      updatedAt: json['updated_at'] != null
-          ? (json['updated_at'] as Timestamp).toDate()
-          : null,
+      createdAt: FirestoreTimestampParser.tryParse(json['created_at']),
+      updatedAt: FirestoreTimestampParser.tryParse(json['updated_at']),
     );
   }
 
