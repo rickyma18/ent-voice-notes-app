@@ -38,8 +38,13 @@ class MedicalNoteModel extends MedicalNoteEntity {
       patientId: json['patient_id'] as String,
       doctorId: json['doctor_id'] as String,
       // Use FirestoreTimestampParser to handle both Timestamp and ISO String
-      createdAt: FirestoreTimestampParser.parse(json['created_at']),
-      updatedAt: FirestoreTimestampParser.parse(json['updated_at']),
+      createdAt:
+          FirestoreTimestampParser.tryParse(json['created_at']) ??
+          DateTime.now(),
+      updatedAt:
+          FirestoreTimestampParser.tryParse(json['updated_at']) ??
+          DateTime.now(),
+
       motivoConsulta: json['motivo_consulta'] as String,
       antecedentes: json['antecedentes'] as String,
       exploracionFisicaOrl: json['exploracion_fisica_orl'] as String,
@@ -50,23 +55,25 @@ class MedicalNoteModel extends MedicalNoteEntity {
       resumen: json['resumen'] as String?,
       notaAdicional: json['nota_adicional'] as String?,
       status: _parseNoteStatus(json['status'] as String?),
-      medicamentosRecetados: (json['medicamentos_recetados'] as List<dynamic>?)
+      medicamentosRecetados:
+          (json['medicamentos_recetados'] as List<dynamic>?)
               ?.map((e) => MedicationModel.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      estudiosIndicados: (json['estudios_indicados'] as List<dynamic>?)
+      estudiosIndicados:
+          (json['estudios_indicados'] as List<dynamic>?)
               ?.map((e) => StudyModel.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
       // Use FirestoreTimestampParser for optional timestamp
       proximaCita: FirestoreTimestampParser.tryParse(json['proxima_cita']),
-      attachments: (json['attachments'] as List<dynamic>?)
+      attachments:
+          (json['attachments'] as List<dynamic>?)
               ?.map((e) => AttachmentModel.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      tags: (json['tags'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList() ??
+      tags:
+          (json['tags'] as List<dynamic>?)?.map((e) => e as String).toList() ??
           const [],
       isFavorite: json['is_favorite'] as bool? ?? false,
     );
@@ -145,35 +152,41 @@ class MedicalNoteModel extends MedicalNoteEntity {
       notaAdicional: notaAdicional,
       status: status,
       medicamentosRecetados: medicamentosRecetados
-          .map((e) => MedicationEntity(
-                nombre: e.nombre,
-                dosis: e.dosis,
-                frecuencia: e.frecuencia,
-                duracion: e.duracion,
-                viaAdministracion: e.viaAdministracion,
-                indicaciones: e.indicaciones,
-              ))
+          .map(
+            (e) => MedicationEntity(
+              nombre: e.nombre,
+              dosis: e.dosis,
+              frecuencia: e.frecuencia,
+              duracion: e.duracion,
+              viaAdministracion: e.viaAdministracion,
+              indicaciones: e.indicaciones,
+            ),
+          )
           .toList(),
       estudiosIndicados: estudiosIndicados
-          .map((e) => StudyEntity(
-                tipo: e.tipo,
-                descripcion: e.descripcion,
-                urgencia: e.urgencia,
-                resultadoAdjunto: e.resultadoAdjunto,
-                fechaRealizado: e.fechaRealizado,
-              ))
+          .map(
+            (e) => StudyEntity(
+              tipo: e.tipo,
+              descripcion: e.descripcion,
+              urgencia: e.urgencia,
+              resultadoAdjunto: e.resultadoAdjunto,
+              fechaRealizado: e.fechaRealizado,
+            ),
+          )
           .toList(),
       proximaCita: proximaCita,
       attachments: attachments
-          .map((e) => AttachmentEntity(
-                id: e.id,
-                nombre: e.nombre,
-                url: e.url,
-                tipo: e.tipo,
-                size_in_bytes: e.size_in_bytes,
-                fechaSubida: e.fechaSubida,
-                thumbnail: e.thumbnail,
-              ))
+          .map(
+            (e) => AttachmentEntity(
+              id: e.id,
+              nombre: e.nombre,
+              url: e.url,
+              tipo: e.tipo,
+              size_in_bytes: e.size_in_bytes,
+              fechaSubida: e.fechaSubida,
+              thumbnail: e.thumbnail,
+            ),
+          )
           .toList(),
       tags: tags,
       isFavorite: isFavorite,
