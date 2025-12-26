@@ -233,6 +233,149 @@ class _CreateMedicalNotePageState
     }
   }
 
+  /// Maps AI field keys to their corresponding controllers
+  Map<String, TextEditingController> get _fieldControllers => {
+        'motivoConsulta': _motivoController,
+        'antecedentes': _antecedentesController,
+        'exploracionFisicaOrl': _exploracionController,
+        'diagnostico': _diagnosticoController,
+        'planTratamiento': _planController,
+        'resumen': _resumenController,
+        'notaAdicional': _notaAdicionalController,
+      };
+
+  /// Computes which fields would be overwritten by AI suggestions.
+  /// Returns list of field keys where controller is non-empty AND suggestion is non-empty.
+  List<String> _computeOverwrites(Map<String, String> suggestions) {
+    final overwrites = <String>[];
+    final controllers = _fieldControllers;
+
+    for (final entry in suggestions.entries) {
+      final controller = controllers[entry.key];
+      if (controller != null &&
+          controller.text.trim().isNotEmpty &&
+          entry.value.trim().isNotEmpty) {
+        overwrites.add(entry.key);
+      }
+    }
+    return overwrites;
+  }
+
+  /// Applies AI suggestions to form controllers.
+  ///
+  /// [onlyEmpty]: If true, only fills controllers that are currently empty.
+  /// If false, overwrites all controllers where suggestion is non-empty.
+  void _applySuggestions(Map<String, String> suggestions, {bool onlyEmpty = false}) {
+    final controllers = _fieldControllers;
+
+    for (final entry in suggestions.entries) {
+      final controller = controllers[entry.key];
+      if (controller != null && entry.value.trim().isNotEmpty) {
+        if (onlyEmpty) {
+          // Only apply if controller is empty
+          if (controller.text.trim().isEmpty) {
+            controller.text = entry.value;
+          }
+        } else {
+          // Replace regardless of current content
+          controller.text = entry.value;
+        }
+      }
+    }
+  }
+
+  /// Shows a bottom sheet asking the user how to handle field overwrites.
+  ///
+  /// Returns the user's choice:
+  /// - 'empty': Apply only to empty fields
+  /// - 'all': Replace all fields
+  /// - null: User cancelled
+  Future<String?> _showOverwriteDialog(List<String> fieldsToOverwrite) async {
+    final fieldNames = {
+      'motivoConsulta': 'Motivo de consulta',
+      'antecedentes': 'Antecedentes',
+      'exploracionFisicaOrl': 'Exploración física ORL',
+      'diagnostico': 'Diagnóstico',
+      'planTratamiento': 'Plan de tratamiento',
+      'resumen': 'Resumen',
+      'notaAdicional': 'Nota adicional',
+    };
+
+    final overwriteNames = fieldsToOverwrite
+        .map((key) => fieldNames[key] ?? key)
+        .join(', ');
+
+    return showModalBottomSheet<String>(
+      context: context,
+      builder: (context) {
+        final theme = Theme.of(context);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded,
+                        color: theme.colorScheme.error),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Campos con contenido',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Los siguientes campos ya tienen texto y serían reemplazados:',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  overwriteNames,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.pop(context, 'empty'),
+                    icon: const Icon(Icons.playlist_add_check),
+                    label: const Text('Aplicar solo a campos vacíos'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.pop(context, 'all'),
+                    icon: const Icon(Icons.sync),
+                    label: const Text('Reemplazar todo'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context, null),
+                    child: const Text('Cancelar'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _onGenerateWithIA() async {
     final raw = _rawTranscriptController.text.trim();
 
@@ -256,48 +399,50 @@ class _CreateMedicalNotePageState
       // Pide a la IA sugerencias de campos estructurados
       final suggestions = await aiService.suggestStructuredFields(raw);
 
-      // Mapeamos campos sugeridos a los TextEditingControllers
-      if (suggestions['motivoConsulta'] != null &&
-          suggestions['motivoConsulta']!.trim().isNotEmpty) {
-        _motivoController.text = suggestions['motivoConsulta']!;
-      }
+      // Check which fields would be overwritten
+      final overwrites = _computeOverwrites(suggestions);
 
-      if (suggestions['antecedentes'] != null &&
-          suggestions['antecedentes']!.trim().isNotEmpty) {
-        _antecedentesController.text = suggestions['antecedentes']!;
-      }
+      if (overwrites.isEmpty) {
+        // No overwrites, apply all suggestions
+        _applySuggestions(suggestions);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Campos sugeridos por IA aplicados.'),
+            ),
+          );
+        }
+      } else {
+        // There would be overwrites, ask user
+        if (mounted) {
+          setState(() {
+            _isGeneratingIA = false;
+          });
 
-      if (suggestions['exploracionFisicaOrl'] != null &&
-          suggestions['exploracionFisicaOrl']!.trim().isNotEmpty) {
-        _exploracionController.text = suggestions['exploracionFisicaOrl']!;
-      }
+          final choice = await _showOverwriteDialog(overwrites);
 
-      if (suggestions['diagnostico'] != null &&
-          suggestions['diagnostico']!.trim().isNotEmpty) {
-        _diagnosticoController.text = suggestions['diagnostico']!;
-      }
-
-      if (suggestions['planTratamiento'] != null &&
-          suggestions['planTratamiento']!.trim().isNotEmpty) {
-        _planController.text = suggestions['planTratamiento']!;
-      }
-
-      if (suggestions['resumen'] != null &&
-          suggestions['resumen']!.trim().isNotEmpty) {
-        _resumenController.text = suggestions['resumen']!;
-      }
-
-      if (suggestions['notaAdicional'] != null &&
-          suggestions['notaAdicional']!.trim().isNotEmpty) {
-        _notaAdicionalController.text = suggestions['notaAdicional']!;
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Campos sugeridos por IA aplicados.'),
-          ),
-        );
+          if (choice == 'empty') {
+            _applySuggestions(suggestions, onlyEmpty: true);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('IA aplicada a campos vacíos.'),
+                ),
+              );
+            }
+          } else if (choice == 'all') {
+            _applySuggestions(suggestions);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Todos los campos reemplazados con IA.'),
+                ),
+              );
+            }
+          }
+          // If choice is null (cancelled), do nothing
+          return;
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -356,49 +501,61 @@ class _CreateMedicalNotePageState
 
         final suggestions = await aiService.suggestStructuredFields(transcript);
 
-        // 5. Pre-llenar los campos del formulario
-        if (suggestions['motivoConsulta'] != null &&
-            suggestions['motivoConsulta']!.trim().isNotEmpty) {
-          _motivoController.text = suggestions['motivoConsulta']!;
-        }
+        // 5. Check for overwrites and apply suggestions safely
+        final overwrites = _computeOverwrites(suggestions);
 
-        if (suggestions['antecedentes'] != null &&
-            suggestions['antecedentes']!.trim().isNotEmpty) {
-          _antecedentesController.text = suggestions['antecedentes']!;
-        }
+        if (overwrites.isEmpty) {
+          // No overwrites, apply all suggestions
+          _applySuggestions(suggestions);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✅ Nota médica generada desde audio'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        } else {
+          // There would be overwrites, ask user
+          if (mounted) {
+            setState(() {
+              _isGeneratingIA = false;
+            });
 
-        if (suggestions['exploracionFisicaOrl'] != null &&
-            suggestions['exploracionFisicaOrl']!.trim().isNotEmpty) {
-          _exploracionController.text = suggestions['exploracionFisicaOrl']!;
-        }
+            final choice = await _showOverwriteDialog(overwrites);
 
-        if (suggestions['diagnostico'] != null &&
-            suggestions['diagnostico']!.trim().isNotEmpty) {
-          _diagnosticoController.text = suggestions['diagnostico']!;
-        }
-
-        if (suggestions['planTratamiento'] != null &&
-            suggestions['planTratamiento']!.trim().isNotEmpty) {
-          _planController.text = suggestions['planTratamiento']!;
-        }
-
-        if (suggestions['resumen'] != null &&
-            suggestions['resumen']!.trim().isNotEmpty) {
-          _resumenController.text = suggestions['resumen']!;
-        }
-
-        if (suggestions['notaAdicional'] != null &&
-            suggestions['notaAdicional']!.trim().isNotEmpty) {
-          _notaAdicionalController.text = suggestions['notaAdicional']!;
-        }
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Nota médica generada desde audio'),
-              duration: Duration(seconds: 2),
-            ),
-          );
+            if (choice == 'empty') {
+              _applySuggestions(suggestions, onlyEmpty: true);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('✅ IA aplicada a campos vacíos'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
+            } else if (choice == 'all') {
+              _applySuggestions(suggestions);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('✅ Todos los campos reemplazados'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
+            } else {
+              // User cancelled, but transcript was already updated
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Transcripción guardada. Campos no modificados.'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
+            }
+          }
         }
       } catch (e) {
         if (mounted) {
