@@ -136,13 +136,14 @@ class NoteAIServiceImpl implements NoteAIService {
   /// - Use Spanish medical terminology
   /// - Output ONLY valid JSON
   /// - Use exact field names
-  /// - Omit fields when insufficient data
+  /// - Use structured headings for antecedentes and exploracionFisicaOrl
+  /// - Omit fields when insufficient data (except structured sections)
   /// - Not hallucinate diagnoses or medications
   String _buildStructuredFieldsPrompt(String rawTranscript) {
     return '''
 Eres un asistente médico especializado en otorrinolaringología (ORL).
 
-Tu tarea es convertir la siguiente transcripción de una consulta médica en una nota estructurada.
+Tu tarea es convertir la siguiente transcripción de una consulta médica en una nota clínica estructurada.
 
 REGLAS ESTRICTAS:
 1. Debes responder ÚNICAMENTE con un objeto JSON válido.
@@ -156,13 +157,36 @@ REGLAS ESTRICTAS:
    - resumen
    - notaAdicional
 
-4. Si no hay suficiente información para un campo, OMÍTELO (no lo incluyas en el JSON).
-5. NO inventes diagnósticos si los datos son insuficientes.
-6. NO inventes medicamentos ni dosis.
-7. Usa terminología médica profesional en español.
-8. Sé conciso y clínico.
-9. Todos los valores deben ser strings.
-10. NO uses arrays ni objetos anidados.
+4. FORMATO OBLIGATORIO para "antecedentes":
+   El valor DEBE ser UN SOLO string con los siguientes encabezados en MAYÚSCULAS, cada uno en su propia línea:
+   HEREDOFAMILIARES:
+   (contenido o "Sin datos relevantes.")
+   NO PATOLOGICOS:
+   (contenido o "Sin datos relevantes.")
+   PATOLOGICOS:
+   (contenido o "Sin datos relevantes.")
+   PADECIMIENTO ACTUAL:
+   (contenido o "Sin datos relevantes.")
+
+5. FORMATO OBLIGATORIO para "exploracionFisicaOrl":
+   El valor DEBE ser UN SOLO string con los siguientes encabezados en MAYÚSCULAS, cada uno en su propia línea:
+   OTOSCOPIA:
+   (contenido o "Sin datos relevantes.")
+   RINOSCOPIA:
+   (contenido o "Sin datos relevantes.")
+   OROFARINGE:
+   (contenido o "Sin datos relevantes.")
+   CUELLO:
+   (contenido o "Sin datos relevantes.")
+   LARINGOSCOPIA:
+   (contenido o "Sin datos relevantes.")
+
+6. Si no hay suficiente información para motivoConsulta, diagnostico, planTratamiento, resumen o notaAdicional, OMITE ese campo del JSON.
+7. NUNCA inventes diagnósticos si los datos son insuficientes.
+8. NUNCA inventes medicamentos, dosis ni tratamientos.
+9. Usa terminología médica profesional en español.
+10. Sé conciso y clínico.
+11. Todos los valores deben ser strings (NO arrays, NO objetos anidados).
 
 TRANSCRIPCIÓN:
 """
