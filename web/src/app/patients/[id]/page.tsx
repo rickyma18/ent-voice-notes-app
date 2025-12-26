@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
@@ -13,9 +13,9 @@ import { getNotesByPatient, createNote, deleteNote } from '@/lib/medical-notes';
 export default function PatientDetailPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: { id: string };
 }) {
-  const { id } = use(params);
+  const { id } = params;
   return (
     <AuthGuard>
       <PatientDetailContent patientId={id} />
