@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { AuthGuard } from '@/components/AuthGuard';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
-import { Patient, MedicalNote, MedicalNoteFormData } from '@/types';
+import { Patient, MedicalNote, MedicalNoteFormData, MedicalNoteType } from '@/types';
 import { getPatientById } from '@/lib/patients';
 import { getNotesByPatient, createNote, deleteNote } from '@/lib/medical-notes';
 
@@ -33,6 +33,7 @@ function PatientDetailContent({ patientId }: { patientId: string }) {
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
   const [noteFormData, setNoteFormData] = useState<MedicalNoteFormData>({
+    type: 'clinical_history',
     motivoConsulta: '',
     antecedentes: '',
     exploracionFisicaOrl: '',
@@ -109,6 +110,7 @@ function PatientDetailContent({ patientId }: { patientId: string }) {
   const resetNoteForm = () => {
     setShowNoteForm(false);
     setNoteFormData({
+      type: 'clinical_history',
       motivoConsulta: '',
       antecedentes: '',
       exploracionFisicaOrl: '',
@@ -271,6 +273,45 @@ function PatientDetailContent({ patientId }: { patientId: string }) {
             <div className="bg-white p-6 rounded-lg shadow mb-6">
               <h3 className="text-lg font-semibold mb-4">Nueva Nota Medica</h3>
               <form onSubmit={handleCreateNote} className="space-y-4">
+                {/* Note Type Selector */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Tipo de Nota
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNoteFormData({ ...noteFormData, type: 'clinical_history', surgicalData: undefined })
+                      }
+                      className={`flex-1 px-4 py-2 rounded-md border ${
+                        noteFormData.type === 'clinical_history'
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      Historia Clinica
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNoteFormData({
+                          ...noteFormData,
+                          type: 'surgical_note',
+                          surgicalData: { tecnicaQuirurgica: '', hallazgos: '', observaciones: '', complicaciones: '' },
+                        })
+                      }
+                      className={`flex-1 px-4 py-2 rounded-md border ${
+                        noteFormData.type === 'surgical_note'
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      Nota Quirurgica
+                    </button>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Motivo de Consulta *
@@ -341,6 +382,95 @@ function PatientDetailContent({ patientId }: { patientId: string }) {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
+                {/* Surgical Note Fields - Only show for surgical notes */}
+                {noteFormData.type === 'surgical_note' && (
+                  <div className="bg-purple-50 p-4 rounded-lg border border-purple-200 space-y-4">
+                    <h4 className="text-md font-semibold text-purple-800">Datos Quirurgicos</h4>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Tecnica Quirurgica *
+                      </label>
+                      <textarea
+                        value={noteFormData.surgicalData?.tecnicaQuirurgica || ''}
+                        onChange={(e) =>
+                          setNoteFormData({
+                            ...noteFormData,
+                            surgicalData: {
+                              ...noteFormData.surgicalData!,
+                              tecnicaQuirurgica: e.target.value,
+                            },
+                          })
+                        }
+                        required={noteFormData.type === 'surgical_note'}
+                        rows={3}
+                        placeholder="Descripcion de la tecnica quirurgica utilizada..."
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Hallazgos
+                      </label>
+                      <textarea
+                        value={noteFormData.surgicalData?.hallazgos || ''}
+                        onChange={(e) =>
+                          setNoteFormData({
+                            ...noteFormData,
+                            surgicalData: {
+                              ...noteFormData.surgicalData!,
+                              hallazgos: e.target.value,
+                            },
+                          })
+                        }
+                        rows={2}
+                        placeholder="Hallazgos intraoperatorios..."
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Observaciones
+                      </label>
+                      <textarea
+                        value={noteFormData.surgicalData?.observaciones || ''}
+                        onChange={(e) =>
+                          setNoteFormData({
+                            ...noteFormData,
+                            surgicalData: {
+                              ...noteFormData.surgicalData!,
+                              observaciones: e.target.value,
+                            },
+                          })
+                        }
+                        rows={2}
+                        placeholder="Observaciones adicionales..."
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Complicaciones
+                      </label>
+                      <textarea
+                        value={noteFormData.surgicalData?.complicaciones || ''}
+                        onChange={(e) =>
+                          setNoteFormData({
+                            ...noteFormData,
+                            surgicalData: {
+                              ...noteFormData.surgicalData!,
+                              complicaciones: e.target.value,
+                            },
+                          })
+                        }
+                        rows={2}
+                        placeholder="Complicaciones durante el procedimiento..."
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Texto de la Nota (equivale a transcripcion en movil)
@@ -430,14 +560,21 @@ function PatientDetailContent({ patientId }: { patientId: string }) {
                 >
                   <div className="flex justify-between items-start mb-4">
                     <div>
-                      <span
-                        className={`inline-block px-2 py-1 text-xs font-semibold rounded ${getStatusColor(
-                          note.status
-                        )}`}
-                      >
-                        {getStatusDisplay(note.status)}
-                      </span>
-                      <p className="text-sm text-gray-500 mt-1">
+                      <div className="flex gap-2 mb-1">
+                        <span
+                          className={`inline-block px-2 py-1 text-xs font-semibold rounded ${getStatusColor(
+                            note.status
+                          )}`}
+                        >
+                          {getStatusDisplay(note.status)}
+                        </span>
+                        {note.type === 'surgical_note' && (
+                          <span className="inline-block px-2 py-1 text-xs font-semibold rounded bg-purple-100 text-purple-800">
+                            Quirurgica
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-500">
                         {formatDate(note.createdAt)}
                       </p>
                     </div>

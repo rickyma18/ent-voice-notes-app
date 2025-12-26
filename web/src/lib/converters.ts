@@ -4,12 +4,15 @@ import {
   PatientFirestore,
   MedicalNote,
   MedicalNoteFirestore,
+  MedicalNoteType,
   Medication,
   MedicationFirestore,
   Study,
   StudyFirestore,
   Attachment,
   AttachmentFirestore,
+  SurgicalData,
+  SurgicalDataFirestore,
   NoteStatus,
   StudyUrgency,
   AttachmentType,
@@ -145,15 +148,41 @@ function attachmentToFirestore(att: Attachment): AttachmentFirestore {
 }
 
 // ============================================================================
+// SURGICAL DATA CONVERTERS
+// ============================================================================
+function surgicalDataFromFirestore(data: SurgicalDataFirestore): SurgicalData {
+  return {
+    tecnicaQuirurgica: data.tecnica_quirurgica || '',
+    hallazgos: data.hallazgos || '',
+    observaciones: data.observaciones || '',
+    complicaciones: data.complicaciones || '',
+  };
+}
+
+function surgicalDataToFirestore(data: SurgicalData): SurgicalDataFirestore {
+  return {
+    tecnica_quirurgica: data.tecnicaQuirurgica,
+    hallazgos: data.hallazgos,
+    observaciones: data.observaciones,
+    complicaciones: data.complicaciones,
+  };
+}
+
+// ============================================================================
 // MEDICAL NOTE CONVERTERS
 // ============================================================================
 export function medicalNoteFromFirestore(data: MedicalNoteFirestore, docId: string): MedicalNote {
+  // Parse note type, default to clinical_history for backward compatibility
+  const noteType: MedicalNoteType =
+    (data.type === 'surgical_note') ? 'surgical_note' : 'clinical_history';
+
   return {
     id: data.id || docId,
     patientId: data.patient_id,
     doctorId: data.doctor_id,
     createdAt: parseTimestamp(data.created_at) || new Date(),
     updatedAt: parseTimestamp(data.updated_at) || new Date(),
+    type: noteType,
     motivoConsulta: data.motivo_consulta,
     antecedentes: data.antecedentes,
     exploracionFisicaOrl: data.exploracion_fisica_orl,
@@ -169,6 +198,9 @@ export function medicalNoteFromFirestore(data: MedicalNoteFirestore, docId: stri
     attachments: data.attachments?.map(attachmentFromFirestore) || [],
     tags: data.tags || [],
     isFavorite: data.is_favorite || false,
+    surgicalData: data.surgical_data
+      ? surgicalDataFromFirestore(data.surgical_data)
+      : undefined,
   };
 }
 
@@ -178,6 +210,7 @@ export function medicalNoteToFirestore(note: Partial<MedicalNote>): Partial<Medi
   if (note.id !== undefined) data.id = note.id;
   if (note.patientId !== undefined) data.patient_id = note.patientId;
   if (note.doctorId !== undefined) data.doctor_id = note.doctorId;
+  if (note.type !== undefined) data.type = note.type;
   if (note.motivoConsulta !== undefined) data.motivo_consulta = note.motivoConsulta;
   if (note.antecedentes !== undefined) data.antecedentes = note.antecedentes;
   if (note.exploracionFisicaOrl !== undefined) data.exploracion_fisica_orl = note.exploracionFisicaOrl;
@@ -201,6 +234,10 @@ export function medicalNoteToFirestore(note: Partial<MedicalNote>): Partial<Medi
   }
   if (note.tags !== undefined) data.tags = note.tags;
   if (note.isFavorite !== undefined) data.is_favorite = note.isFavorite;
+  // Only include surgical_data for surgical notes
+  if (note.type === 'surgical_note' && note.surgicalData !== undefined) {
+    data.surgical_data = surgicalDataToFirestore(note.surgicalData);
+  }
 
   return data;
 }

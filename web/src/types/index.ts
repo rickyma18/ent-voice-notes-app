@@ -43,6 +43,24 @@ export interface PatientFirestore {
 // ============================================================================
 export type NoteStatus = 'draft' | 'in_review' | 'signed' | 'sent' | 'archived';
 
+// Note type: clinical_history (existing) or surgical_note (new)
+export type MedicalNoteType = 'clinical_history' | 'surgical_note';
+
+// Surgical note specific data
+export interface SurgicalData {
+  tecnicaQuirurgica: string;
+  hallazgos: string;
+  observaciones: string;
+  complicaciones: string;
+}
+
+export interface SurgicalDataFirestore {
+  tecnica_quirurgica: string;
+  hallazgos: string;
+  observaciones: string;
+  complicaciones: string;
+}
+
 export interface Medication {
   nombre: string;
   dosis: string;
@@ -80,6 +98,8 @@ export interface MedicalNote {
   doctorId: string;
   createdAt: Date;
   updatedAt: Date;
+  // Note type (clinical_history or surgical_note)
+  type: MedicalNoteType;
   // Clinical data (SOAP adapted for ENT)
   motivoConsulta: string;
   antecedentes: string;
@@ -98,6 +118,8 @@ export interface MedicalNote {
   attachments: Attachment[];
   tags: string[];
   isFavorite: boolean;
+  // Surgical note specific data (only for surgical notes)
+  surgicalData?: SurgicalData;
 }
 
 // Firestore document shape (snake_case)
@@ -107,6 +129,8 @@ export interface MedicalNoteFirestore {
   doctor_id: string;
   created_at?: Timestamp;
   updated_at?: Timestamp;
+  // Note type (defaults to clinical_history for backward compatibility)
+  type?: string;
   motivo_consulta: string;
   antecedentes: string;
   exploracion_fisica_orl: string;
@@ -122,6 +146,8 @@ export interface MedicalNoteFirestore {
   attachments?: AttachmentFirestore[];
   tags?: string[];
   is_favorite?: boolean;
+  // Surgical note specific data (only for surgical notes)
+  surgical_data?: SurgicalDataFirestore;
 }
 
 export interface MedicationFirestore {
@@ -162,6 +188,7 @@ export interface PatientFormData {
 }
 
 export interface MedicalNoteFormData {
+  type: MedicalNoteType;
   motivoConsulta: string;
   antecedentes: string;
   exploracionFisicaOrl: string;
@@ -171,4 +198,6 @@ export interface MedicalNoteFormData {
   resumen?: string;
   notaAdicional?: string;
   status: NoteStatus;
+  // Surgical note specific fields
+  surgicalData?: SurgicalData;
 }
