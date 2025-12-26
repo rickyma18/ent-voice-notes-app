@@ -6,10 +6,19 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { AuthGuard } from '@/components/AuthGuard';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
+import { ClinicalHistoryViewer } from '@/components/ClinicalHistoryViewer';
+import { SurgicalNoteViewer } from '@/components/SurgicalNoteViewer';
+import { TemplateInsertModal } from '@/components/TemplateInsertModal';
 import { MedicalNote, MedicalNoteFormData, NoteStatus } from '@/types';
 import { getPatientById } from '@/lib/patients';
 import { getNoteById, updateNote, deleteNote } from '@/lib/medical-notes';
 import { Patient } from '@/types';
+import {
+  getNoteTypeLabel,
+  getNoteTypeBadgeClasses,
+  generateAntecedentesTemplate,
+  generateExploracionOrlTemplate,
+} from '@/lib/formatters/clinical-history';
 
 export default function NoteDetailPage({
   params,
@@ -40,6 +49,7 @@ function NoteDetailContent({
   const [isEditing, setIsEditing] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
   const [formData, setFormData] = useState<MedicalNoteFormData>({
+    type: 'clinical_history',
     motivoConsulta: '',
     antecedentes: '',
     exploracionFisicaOrl: '',
@@ -49,6 +59,17 @@ function NoteDetailContent({
     resumen: '',
     notaAdicional: '',
     status: 'draft',
+  });
+
+  // Template insert modal state
+  const [templateModal, setTemplateModal] = useState<{
+    isOpen: boolean;
+    field: 'antecedentes' | 'exploracionFisicaOrl';
+    fieldName: string;
+  }>({
+    isOpen: false,
+    field: 'antecedentes',
+    fieldName: '',
   });
 
   useEffect(() => {
@@ -73,6 +94,7 @@ function NoteDetailContent({
       setPatient(patientData);
       setNote(noteData);
       setFormData({
+        type: noteData.type,
         motivoConsulta: noteData.motivoConsulta,
         antecedentes: noteData.antecedentes,
         exploracionFisicaOrl: noteData.exploracionFisicaOrl,
@@ -82,8 +104,9 @@ function NoteDetailContent({
         resumen: noteData.resumen || '',
         notaAdicional: noteData.notaAdicional || '',
         status: noteData.status,
+        surgicalData: noteData.surgicalData,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading data:', err);
       setError('Error al cargar datos');
     } finally {
@@ -101,7 +124,7 @@ function NoteDetailContent({
       await updateNote(noteId, formData);
       await loadData();
       setIsEditing(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error updating note:', err);
       setError('Error al actualizar nota');
     } finally {
@@ -110,15 +133,54 @@ function NoteDetailContent({
   };
 
   const handleDelete = async () => {
-    if (!confirm('¿Estas seguro de eliminar esta nota?')) return;
+    if (!confirm('Estas seguro de eliminar esta nota?')) return;
 
     try {
       await deleteNote(noteId);
       router.push(`/patients/${patientId}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error deleting note:', err);
       setError('Error al eliminar nota');
     }
+  };
+
+  // Template insert handlers
+  const handleInsertTemplate = (field: 'antecedentes' | 'exploracionFisicaOrl') => {
+    const template =
+      field === 'antecedentes'
+        ? generateAntecedentesTemplate()
+        : generateExploracionOrlTemplate();
+
+    const fieldValue = formData[field];
+    const fieldName =
+      field === 'antecedentes' ? 'Antecedentes' : 'Exploracion Fisica ORL';
+
+    if (!fieldValue || fieldValue.trim() === '') {
+      // Field is empty, insert directly
+      setFormData({ ...formData, [field]: template });
+    } else {
+      // Field has content, show confirmation modal
+      setTemplateModal({
+        isOpen: true,
+        field,
+        fieldName,
+      });
+    }
+  };
+
+  const handleTemplateApplyEmpty = () => {
+    // User chose "apply only if empty" - do nothing since field is not empty
+    setTemplateModal({ ...templateModal, isOpen: false });
+  };
+
+  const handleTemplateReplace = () => {
+    const template =
+      templateModal.field === 'antecedentes'
+        ? generateAntecedentesTemplate()
+        : generateExploracionOrlTemplate();
+
+    setFormData({ ...formData, [templateModal.field]: template });
+    setTemplateModal({ ...templateModal, isOpen: false });
   };
 
   const getStatusDisplay = (status: string) => {
@@ -203,7 +265,19 @@ function NoteDetailContent({
                 ← Volver
               </Link>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Nota Medica</h1>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    Nota Medica
+                  </h1>
+                  {/* Note Type Badge */}
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getNoteTypeBadgeClasses(
+                      note.type
+                    )}`}
+                  >
+                    {getNoteTypeLabel(note.type)}
+                  </span>
+                </div>
                 <p className="text-sm text-gray-500">
                   Paciente: {patient.fullName}
                 </p>
@@ -235,13 +309,15 @@ function NoteDetailContent({
         <div className="bg-white p-6 rounded-lg shadow mb-6">
           <div className="flex justify-between items-start">
             <div>
-              <span
-                className={`inline-block px-3 py-1 text-sm font-semibold rounded ${getStatusColor(
-                  note.status
-                )}`}
-              >
-                {getStatusDisplay(note.status)}
-              </span>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`inline-block px-3 py-1 text-sm font-semibold rounded ${getStatusColor(
+                    note.status
+                  )}`}
+                >
+                  {getStatusDisplay(note.status)}
+                </span>
+              </div>
               <div className="mt-2 text-sm text-gray-500">
                 <p>Creada: {formatDate(note.createdAt)}</p>
                 <p>Actualizada: {formatDate(note.updatedAt)}</p>
@@ -287,34 +363,100 @@ function NoteDetailContent({
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
+              {/* Antecedentes with template button */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Antecedentes *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Antecedentes *
+                  </label>
+                  {note.type === 'clinical_history' && (
+                    <button
+                      type="button"
+                      onClick={() => handleInsertTemplate('antecedentes')}
+                      className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                    >
+                      <svg
+                        className="w-3.5 h-3.5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                        />
+                      </svg>
+                      Insertar plantilla
+                    </button>
+                  )}
+                </div>
                 <textarea
                   value={formData.antecedentes}
                   onChange={(e) =>
                     setFormData({ ...formData, antecedentes: e.target.value })
                   }
                   required
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  rows={5}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                  placeholder={
+                    note.type === 'clinical_history'
+                      ? 'HEREDOFAMILIARES:\n\nNO PATOLOGICOS:\n\nPATOLOGICOS:\n\nPADECIMIENTO ACTUAL:'
+                      : ''
+                  }
                 />
               </div>
+
+              {/* Exploracion Fisica ORL with template button */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Exploracion Fisica ORL *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Exploracion Fisica ORL *
+                  </label>
+                  {note.type === 'clinical_history' && (
+                    <button
+                      type="button"
+                      onClick={() => handleInsertTemplate('exploracionFisicaOrl')}
+                      className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                    >
+                      <svg
+                        className="w-3.5 h-3.5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                        />
+                      </svg>
+                      Insertar plantilla
+                    </button>
+                  )}
+                </div>
                 <textarea
                   value={formData.exploracionFisicaOrl}
                   onChange={(e) =>
-                    setFormData({ ...formData, exploracionFisicaOrl: e.target.value })
+                    setFormData({
+                      ...formData,
+                      exploracionFisicaOrl: e.target.value,
+                    })
                   }
                   required
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  rows={5}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                  placeholder={
+                    note.type === 'clinical_history'
+                      ? 'OTOSCOPIA:\n\nRINOSCOPIA:\n\nOROFARINGE:\n\nCUELLO:\n\nLARINGOSCOPIA:'
+                      : ''
+                  }
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Diagnostico *
@@ -329,6 +471,7 @@ function NoteDetailContent({
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Plan de Tratamiento *
@@ -343,6 +486,124 @@ function NoteDetailContent({
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
+              {/* Surgical Data Section (if surgical note) */}
+              {note.type === 'surgical_note' && (
+                <div className="border border-purple-200 rounded-lg p-4 bg-purple-50/30">
+                  <h3 className="text-sm font-semibold text-purple-900 mb-3 flex items-center gap-2">
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
+                      />
+                    </svg>
+                    Datos Quirurgicos
+                  </h3>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Tecnica Quirurgica
+                      </label>
+                      <textarea
+                        value={formData.surgicalData?.tecnicaQuirurgica || ''}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            surgicalData: {
+                              tecnicaQuirurgica: e.target.value,
+                              hallazgos: formData.surgicalData?.hallazgos || '',
+                              observaciones:
+                                formData.surgicalData?.observaciones || '',
+                              complicaciones:
+                                formData.surgicalData?.complicaciones || '',
+                            },
+                          })
+                        }
+                        rows={2}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Hallazgos
+                      </label>
+                      <textarea
+                        value={formData.surgicalData?.hallazgos || ''}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            surgicalData: {
+                              tecnicaQuirurgica:
+                                formData.surgicalData?.tecnicaQuirurgica || '',
+                              hallazgos: e.target.value,
+                              observaciones:
+                                formData.surgicalData?.observaciones || '',
+                              complicaciones:
+                                formData.surgicalData?.complicaciones || '',
+                            },
+                          })
+                        }
+                        rows={2}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Observaciones
+                      </label>
+                      <textarea
+                        value={formData.surgicalData?.observaciones || ''}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            surgicalData: {
+                              tecnicaQuirurgica:
+                                formData.surgicalData?.tecnicaQuirurgica || '',
+                              hallazgos: formData.surgicalData?.hallazgos || '',
+                              observaciones: e.target.value,
+                              complicaciones:
+                                formData.surgicalData?.complicaciones || '',
+                            },
+                          })
+                        }
+                        rows={2}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Complicaciones
+                      </label>
+                      <textarea
+                        value={formData.surgicalData?.complicaciones || ''}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            surgicalData: {
+                              tecnicaQuirurgica:
+                                formData.surgicalData?.tecnicaQuirurgica || '',
+                              hallazgos: formData.surgicalData?.hallazgos || '',
+                              observaciones:
+                                formData.surgicalData?.observaciones || '',
+                              complicaciones: e.target.value,
+                            },
+                          })
+                        }
+                        rows={2}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Texto de la Nota
@@ -356,6 +617,7 @@ function NoteDetailContent({
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Nota Adicional
@@ -369,6 +631,7 @@ function NoteDetailContent({
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Estado
@@ -390,6 +653,7 @@ function NoteDetailContent({
                   <option value="archived">Archivada</option>
                 </select>
               </div>
+
               <div className="flex gap-2">
                 <button
                   type="submit"
@@ -410,76 +674,115 @@ function NoteDetailContent({
             </form>
           </div>
         ) : (
-          <div className="space-y-4">
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-sm font-medium text-gray-500 mb-2">
-                Motivo de Consulta
-              </h3>
-              <p className="text-gray-900 whitespace-pre-wrap">
-                {note.motivoConsulta}
-              </p>
-            </div>
-
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-sm font-medium text-gray-500 mb-2">
-                Antecedentes
-              </h3>
-              <p className="text-gray-900 whitespace-pre-wrap">
-                {note.antecedentes}
-              </p>
-            </div>
-
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-sm font-medium text-gray-500 mb-2">
-                Exploracion Fisica ORL
-              </h3>
-              <p className="text-gray-900 whitespace-pre-wrap">
-                {note.exploracionFisicaOrl}
-              </p>
-            </div>
-
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-sm font-medium text-gray-500 mb-2">
-                Diagnostico
-              </h3>
-              <p className="text-gray-900 whitespace-pre-wrap">
-                {note.diagnostico}
-              </p>
-            </div>
-
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-sm font-medium text-gray-500 mb-2">
-                Plan de Tratamiento
-              </h3>
-              <p className="text-gray-900 whitespace-pre-wrap">
-                {note.planTratamiento}
-              </p>
-            </div>
-
-            {note.rawTranscript && (
-              <div className="bg-white p-6 rounded-lg shadow">
-                <h3 className="text-sm font-medium text-gray-500 mb-2">
-                  Texto / Transcripcion
-                </h3>
-                <p className="text-gray-900 whitespace-pre-wrap">
-                  {note.rawTranscript}
-                </p>
-              </div>
+          <div className="space-y-6">
+            {/* Formatted Clinical Viewer (collapsible accordion) */}
+            {note.type === 'clinical_history' ? (
+              <ClinicalHistoryViewer note={note} patient={patient} />
+            ) : (
+              <SurgicalNoteViewer note={note} patient={patient} />
             )}
 
-            {note.notaAdicional && (
-              <div className="bg-white p-6 rounded-lg shadow">
-                <h3 className="text-sm font-medium text-gray-500 mb-2">
-                  Nota Adicional
-                </h3>
-                <p className="text-gray-900 whitespace-pre-wrap">
-                  {note.notaAdicional}
-                </p>
+            {/* Raw Data Section (original cards, collapsed by default for reference) */}
+            <details className="bg-white rounded-lg shadow overflow-hidden">
+              <summary className="px-6 py-4 cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors flex items-center justify-between">
+                <span className="font-medium text-gray-700">
+                  Datos originales (sin formato)
+                </span>
+                <svg
+                  className="w-5 h-5 text-gray-500"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </summary>
+              <div className="p-6 space-y-4 border-t border-gray-200">
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">
+                    Motivo de Consulta
+                  </h3>
+                  <p className="text-gray-900 whitespace-pre-wrap">
+                    {note.motivoConsulta}
+                  </p>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">
+                    Antecedentes
+                  </h3>
+                  <p className="text-gray-900 whitespace-pre-wrap">
+                    {note.antecedentes}
+                  </p>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">
+                    Exploracion Fisica ORL
+                  </h3>
+                  <p className="text-gray-900 whitespace-pre-wrap">
+                    {note.exploracionFisicaOrl}
+                  </p>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">
+                    Diagnostico
+                  </h3>
+                  <p className="text-gray-900 whitespace-pre-wrap">
+                    {note.diagnostico}
+                  </p>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">
+                    Plan de Tratamiento
+                  </h3>
+                  <p className="text-gray-900 whitespace-pre-wrap">
+                    {note.planTratamiento}
+                  </p>
+                </div>
+
+                {note.rawTranscript && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 mb-2">
+                      Texto / Transcripcion
+                    </h3>
+                    <p className="text-gray-900 whitespace-pre-wrap">
+                      {note.rawTranscript}
+                    </p>
+                  </div>
+                )}
+
+                {note.notaAdicional && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 mb-2">
+                      Nota Adicional
+                    </h3>
+                    <p className="text-gray-900 whitespace-pre-wrap">
+                      {note.notaAdicional}
+                    </p>
+                  </div>
+                )}
               </div>
-            )}
+            </details>
           </div>
         )}
       </main>
+
+      {/* Template Insert Modal */}
+      <TemplateInsertModal
+        isOpen={templateModal.isOpen}
+        onClose={() => setTemplateModal({ ...templateModal, isOpen: false })}
+        onApplyEmpty={handleTemplateApplyEmpty}
+        onReplace={handleTemplateReplace}
+        fieldName={templateModal.fieldName}
+      />
     </div>
   );
 }

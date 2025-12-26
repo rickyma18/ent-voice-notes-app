@@ -105,6 +105,7 @@ export async function createNote(
     doctorId,
     createdAt: new Date(),
     updatedAt: new Date(),
+    type: data.type,
     motivoConsulta: data.motivoConsulta,
     antecedentes: data.antecedentes,
     exploracionFisicaOrl: data.exploracionFisicaOrl,
@@ -119,6 +120,7 @@ export async function createNote(
     attachments: [],
     tags: [],
     isFavorite: false,
+    surgicalData: data.surgicalData,
   };
 }
 
