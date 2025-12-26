@@ -11,6 +11,7 @@ import '../../domain/entities/medical_note_type.dart';
 import '../../domain/entities/note_status.dart';
 import '../../medical_notes_providers.dart';
 import '../controllers/medical_notes_controller.dart';
+import '../widgets/clinical_history_wizard/ai_suggestions_sheet.dart';
 import '../widgets/clinical_history_wizard/clinical_history_wizard.dart';
 
 /// Multi-step wizard page for creating/editing clinical history notes.
@@ -67,9 +68,13 @@ class _ClinicalHistoryWizardPageState
 
   // State flags
   bool _isSaving = false;
+  bool _isGeneratingSuggestions = false;
 
   // Raw transcript from DictationAssistPage (for future AI processing)
   String? _rawTranscript;
+
+  // Undo snapshot for AI suggestions
+  Map<String, String>? _undoSnapshot;
 
   // Text controllers for each section
   late final TextEditingController _motivoController;
@@ -266,6 +271,403 @@ class _ClinicalHistoryWizardPageState
         });
       }
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // AI Suggestions
+  // ---------------------------------------------------------------------------
+
+  bool get _canGenerateSuggestions =>
+      _rawTranscript?.trim().isNotEmpty == true && !_isGeneratingSuggestions;
+
+  Future<void> _generateAISuggestions() async {
+    if (!_canGenerateSuggestions) return;
+
+    setState(() {
+      _isGeneratingSuggestions = true;
+    });
+
+    try {
+      final aiService = ref.read(noteAIServiceProvider);
+      final suggestions = await aiService.suggestStructuredFields(_rawTranscript!);
+
+      if (!mounted) return;
+
+      setState(() {
+        _isGeneratingSuggestions = false;
+      });
+
+      // Build sections for the sheet
+      final sections = _buildSuggestionsForSheet(suggestions);
+
+      if (sections.isEmpty || sections.every((s) => !s.hasContent)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('La IA no genero sugerencias para este texto'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Show suggestions sheet
+      if (mounted) {
+        _showSuggestionsSheet(sections, suggestions);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isGeneratingSuggestions = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al generar sugerencias: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Builds suggestion sections for the sheet using current controller values.
+  List<AISuggestionSection> _buildSuggestionsForSheet(
+    Map<String, String> suggestions,
+  ) {
+    // Parse antecedentes if it has structure
+    final antecedentes = suggestions['antecedentes'] ?? '';
+    final parsedAntecedentes = _parseAntecedentesFromSuggestion(antecedentes);
+
+    // Parse exploracion if it has structure
+    final exploracion = suggestions['exploracionFisicaOrl'] ?? '';
+    final parsedOrl = _parseExploracionFromSuggestion(exploracion);
+
+    return [
+      AISuggestionSection(
+        id: 'motivoConsulta',
+        label: 'Motivo de consulta',
+        suggestion: suggestions['motivoConsulta'] ?? '',
+        currentValue: _motivoController.text,
+      ),
+      AISuggestionSection(
+        id: 'heredofamiliares',
+        label: 'Antecedentes heredofamiliares',
+        suggestion: parsedAntecedentes['heredofamiliares'] ?? '',
+        currentValue: _antecedentesHeredofamiliaresController.text,
+      ),
+      AISuggestionSection(
+        id: 'noPatologicos',
+        label: 'Antecedentes NO patologicos',
+        suggestion: parsedAntecedentes['noPatologicos'] ?? '',
+        currentValue: _antecedentesNoPatologicosController.text,
+      ),
+      AISuggestionSection(
+        id: 'patologicos',
+        label: 'Antecedentes patologicos',
+        suggestion: parsedAntecedentes['patologicos'] ?? '',
+        currentValue: _antecedentesPatologicosController.text,
+      ),
+      AISuggestionSection(
+        id: 'padecimientoActual',
+        label: 'Padecimiento actual',
+        suggestion: parsedAntecedentes['padecimientoActual'] ?? '',
+        currentValue: _padecimientoActualController.text,
+      ),
+      // ORL sections
+      AISuggestionSection(
+        id: 'otoscopia',
+        label: 'Otoscopia',
+        suggestion: parsedOrl['otoscopia'] ?? '',
+        currentValue: _orlControllers['otoscopia']?.text ?? '',
+      ),
+      AISuggestionSection(
+        id: 'rinoscopia',
+        label: 'Rinoscopia',
+        suggestion: parsedOrl['rinoscopia'] ?? '',
+        currentValue: _orlControllers['rinoscopia']?.text ?? '',
+      ),
+      AISuggestionSection(
+        id: 'orofaringe',
+        label: 'Orofaringe',
+        suggestion: parsedOrl['orofaringe'] ?? '',
+        currentValue: _orlControllers['orofaringe']?.text ?? '',
+      ),
+      AISuggestionSection(
+        id: 'cuello',
+        label: 'Cuello',
+        suggestion: parsedOrl['cuello'] ?? '',
+        currentValue: _orlControllers['cuello']?.text ?? '',
+      ),
+      AISuggestionSection(
+        id: 'laringoscopia',
+        label: 'Laringoscopia',
+        suggestion: parsedOrl['laringoscopia'] ?? '',
+        currentValue: _orlControllers['laringoscopia']?.text ?? '',
+      ),
+      AISuggestionSection(
+        id: 'diagnostico',
+        label: 'Diagnostico',
+        suggestion: suggestions['diagnostico'] ?? '',
+        currentValue: _diagnosticoController.text,
+      ),
+      AISuggestionSection(
+        id: 'planTratamiento',
+        label: 'Plan de tratamiento',
+        suggestion: suggestions['planTratamiento'] ?? '',
+        currentValue: _planController.text,
+      ),
+    ];
+  }
+
+  /// Parse antecedentes from suggestion - reuses existing non-destructive logic.
+  Map<String, String> _parseAntecedentesFromSuggestion(String antecedentes) {
+    if (antecedentes.isEmpty) return {};
+
+    final result = <String, String>{};
+
+    // Check if text has structured format
+    final hasStructuredFormat = RegExp(
+      r'(HEREDOFAMILIARES?|NO PATOL[OÓ]GICOS?|PATOL[OÓ]GICOS?|PADECIMIENTO ACTUAL):',
+      caseSensitive: false,
+    ).hasMatch(antecedentes);
+
+    // If no structured format, put everything in heredofamiliares (non-destructive)
+    if (!hasStructuredFormat) {
+      result['heredofamiliares'] = antecedentes.trim();
+      return result;
+    }
+
+    // Parse structured format
+    final heredofamiliaresMatch = RegExp(
+      r'HEREDOFAMILIARES?:\s*([^\n]*(?:\n(?![A-Z\s]+:)[^\n]*)*)',
+      caseSensitive: false,
+    ).firstMatch(antecedentes);
+    if (heredofamiliaresMatch != null) {
+      result['heredofamiliares'] = heredofamiliaresMatch.group(1)?.trim() ?? '';
+    }
+
+    final noPatologicosMatch = RegExp(
+      r'NO PATOL[OÓ]GICOS?:\s*([^\n]*(?:\n(?![A-Z\s]+:)[^\n]*)*)',
+      caseSensitive: false,
+    ).firstMatch(antecedentes);
+    if (noPatologicosMatch != null) {
+      result['noPatologicos'] = noPatologicosMatch.group(1)?.trim() ?? '';
+    }
+
+    final patologicosMatch = RegExp(
+      r'(?<!NO )PATOL[OÓ]GICOS?:\s*([^\n]*(?:\n(?![A-Z\s]+:)[^\n]*)*)',
+      caseSensitive: false,
+    ).firstMatch(antecedentes);
+    if (patologicosMatch != null) {
+      result['patologicos'] = patologicosMatch.group(1)?.trim() ?? '';
+    }
+
+    final padecimientoMatch = RegExp(
+      r'PADECIMIENTO ACTUAL:\s*([^\n]*(?:\n(?![A-Z\s]+:)[^\n]*)*)',
+      caseSensitive: false,
+    ).firstMatch(antecedentes);
+    if (padecimientoMatch != null) {
+      result['padecimientoActual'] = padecimientoMatch.group(1)?.trim() ?? '';
+    }
+
+    return result;
+  }
+
+  /// Parse exploracion from suggestion - reuses existing non-destructive logic.
+  Map<String, String> _parseExploracionFromSuggestion(String exploracion) {
+    if (exploracion.isEmpty) return {};
+
+    final result = <String, String>{};
+
+    // Check if text has structured format
+    final hasStructuredFormat = RegExp(
+      r'(OTOSCOPIA|RINOSCOPIA|OROFARINGE|CUELLO|LARINGOSCOPIA):',
+      caseSensitive: false,
+    ).hasMatch(exploracion);
+
+    // If no structured format, put everything in otoscopia (non-destructive)
+    if (!hasStructuredFormat) {
+      result['otoscopia'] = exploracion.trim();
+      return result;
+    }
+
+    // Parse structured format
+    for (final section in OrlSection.defaultSections) {
+      final regex = RegExp(
+        '${section.title.toUpperCase()}:\\s*([\\s\\S]*?)(?=(?:OTOSCOPIA|RINOSCOPIA|OROFARINGE|CUELLO|LARINGOSCOPIA):|\\Z)',
+        caseSensitive: false,
+      );
+      final match = regex.firstMatch(exploracion);
+      if (match != null && match.group(1) != null) {
+        result[section.id] = match.group(1)!.trim();
+      }
+    }
+
+    return result;
+  }
+
+  void _showSuggestionsSheet(
+    List<AISuggestionSection> sections,
+    Map<String, String> rawSuggestions,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => AISuggestionsSheet(
+        sections: sections,
+        onApplyOnlyEmpty: () {
+          Navigator.pop(ctx);
+          _applySuggestions(sections, ApplyMode.onlyEmpty);
+        },
+        onReplaceAll: () {
+          Navigator.pop(ctx);
+          _applySuggestions(sections, ApplyMode.replace);
+        },
+        onApplySection: (sectionId, mode) {
+          Navigator.pop(ctx);
+          final section = sections.firstWhere((s) => s.id == sectionId);
+          _applySingleSection(section, mode);
+        },
+        onCancel: () => Navigator.pop(ctx),
+      ),
+    );
+  }
+
+  /// Creates a snapshot of all controller values for undo.
+  Map<String, String> _createSnapshot() {
+    return {
+      'motivoConsulta': _motivoController.text,
+      'heredofamiliares': _antecedentesHeredofamiliaresController.text,
+      'noPatologicos': _antecedentesNoPatologicosController.text,
+      'patologicos': _antecedentesPatologicosController.text,
+      'padecimientoActual': _padecimientoActualController.text,
+      'otoscopia': _orlControllers['otoscopia']?.text ?? '',
+      'rinoscopia': _orlControllers['rinoscopia']?.text ?? '',
+      'orofaringe': _orlControllers['orofaringe']?.text ?? '',
+      'cuello': _orlControllers['cuello']?.text ?? '',
+      'laringoscopia': _orlControllers['laringoscopia']?.text ?? '',
+      'diagnostico': _diagnosticoController.text,
+      'planTratamiento': _planController.text,
+    };
+  }
+
+  /// Restores controller values from a snapshot.
+  void _restoreFromSnapshot(Map<String, String> snapshot) {
+    setState(() {
+      _motivoController.text = snapshot['motivoConsulta'] ?? '';
+      _antecedentesHeredofamiliaresController.text =
+          snapshot['heredofamiliares'] ?? '';
+      _antecedentesNoPatologicosController.text =
+          snapshot['noPatologicos'] ?? '';
+      _antecedentesPatologicosController.text = snapshot['patologicos'] ?? '';
+      _padecimientoActualController.text = snapshot['padecimientoActual'] ?? '';
+      _orlControllers['otoscopia']?.text = snapshot['otoscopia'] ?? '';
+      _orlControllers['rinoscopia']?.text = snapshot['rinoscopia'] ?? '';
+      _orlControllers['orofaringe']?.text = snapshot['orofaringe'] ?? '';
+      _orlControllers['cuello']?.text = snapshot['cuello'] ?? '';
+      _orlControllers['laringoscopia']?.text = snapshot['laringoscopia'] ?? '';
+      _diagnosticoController.text = snapshot['diagnostico'] ?? '';
+      _planController.text = snapshot['planTratamiento'] ?? '';
+    });
+  }
+
+  /// Applies suggestions to controllers based on mode.
+  void _applySuggestions(List<AISuggestionSection> sections, ApplyMode mode) {
+    // Create snapshot before applying
+    _undoSnapshot = _createSnapshot();
+
+    int appliedCount = 0;
+
+    for (final section in sections) {
+      if (!section.hasContent) continue;
+
+      final shouldApply = mode == ApplyMode.replace ||
+          (mode == ApplyMode.onlyEmpty && section.isCurrentEmpty);
+
+      if (shouldApply) {
+        _setControllerValue(section.id, section.suggestion);
+        appliedCount++;
+      }
+    }
+
+    setState(() {});
+
+    _showUndoSnackBar(appliedCount);
+  }
+
+  /// Applies a single section suggestion.
+  void _applySingleSection(AISuggestionSection section, ApplyMode mode) {
+    if (!section.hasContent) return;
+
+    final shouldApply = mode == ApplyMode.replace ||
+        (mode == ApplyMode.onlyEmpty && section.isCurrentEmpty);
+
+    if (!shouldApply) return;
+
+    // Create snapshot before applying
+    _undoSnapshot = _createSnapshot();
+
+    _setControllerValue(section.id, section.suggestion);
+
+    setState(() {});
+
+    _showUndoSnackBar(1);
+  }
+
+  /// Sets a controller value by section ID.
+  void _setControllerValue(String sectionId, String value) {
+    switch (sectionId) {
+      case 'motivoConsulta':
+        _motivoController.text = value;
+      case 'heredofamiliares':
+        _antecedentesHeredofamiliaresController.text = value;
+      case 'noPatologicos':
+        _antecedentesNoPatologicosController.text = value;
+      case 'patologicos':
+        _antecedentesPatologicosController.text = value;
+      case 'padecimientoActual':
+        _padecimientoActualController.text = value;
+      case 'otoscopia':
+        _orlControllers['otoscopia']?.text = value;
+      case 'rinoscopia':
+        _orlControllers['rinoscopia']?.text = value;
+      case 'orofaringe':
+        _orlControllers['orofaringe']?.text = value;
+      case 'cuello':
+        _orlControllers['cuello']?.text = value;
+      case 'laringoscopia':
+        _orlControllers['laringoscopia']?.text = value;
+      case 'diagnostico':
+        _diagnosticoController.text = value;
+      case 'planTratamiento':
+        _planController.text = value;
+    }
+  }
+
+  /// Shows a SnackBar with undo option after applying suggestions.
+  void _showUndoSnackBar(int appliedCount) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Se aplicaron $appliedCount sugerencias'),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+          label: 'Deshacer',
+          textColor: Colors.white,
+          onPressed: () {
+            if (_undoSnapshot != null) {
+              _restoreFromSnapshot(_undoSnapshot!);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Cambios revertidos'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            }
+          },
+        ),
+      ),
+    );
   }
 
   @override
@@ -488,6 +890,22 @@ class _ClinicalHistoryWizardPageState
       appBar: AppBar(
         title: Text(widget.isEditMode ? 'Editar historia clinica' : 'Nueva historia clinica'),
         actions: [
+          // AI Suggestions action (only visible when raw transcript exists)
+          if (_canGenerateSuggestions)
+            _isGeneratingSuggestions
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : IconButton(
+                    onPressed: _generateAISuggestions,
+                    icon: const Icon(Icons.auto_awesome),
+                    tooltip: 'Sugerir con IA',
+                  ),
           // Save as draft action
           if (!_isSaving)
             TextButton.icon(
