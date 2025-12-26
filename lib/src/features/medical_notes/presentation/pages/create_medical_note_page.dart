@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/entities/medical_note_entity.dart';
+import '../../domain/entities/medical_note_type.dart';
 import '../../domain/entities/note_status.dart';
+import '../../domain/entities/surgical_note_data_entity.dart';
 import '../controllers/medical_notes_controller.dart';
 import '../../medical_notes_providers.dart';
 
@@ -46,6 +48,15 @@ class _CreateMedicalNotePageState
   final _notaAdicionalController = TextEditingController();
   final _rawTranscriptController = TextEditingController();
 
+  // Surgical note specific controllers
+  final _tecnicaQuirurgicaController = TextEditingController();
+  final _hallazgosController = TextEditingController();
+  final _observacionesController = TextEditingController();
+  final _complicacionesController = TextEditingController();
+
+  // Note type selection
+  MedicalNoteType _selectedNoteType = MedicalNoteType.clinicalHistory;
+
   bool _isSaving = false;
   bool _isGeneratingIA = false;
   bool _isRecording = false;
@@ -60,6 +71,7 @@ class _CreateMedicalNotePageState
     // Pre-fill form fields if editing an existing note
     if (widget.existingNote != null) {
       final note = widget.existingNote!;
+      _selectedNoteType = note.type;
       _motivoController.text = note.motivoConsulta;
       _antecedentesController.text = note.antecedentes;
       _exploracionController.text = note.exploracionFisicaOrl;
@@ -68,6 +80,14 @@ class _CreateMedicalNotePageState
       _rawTranscriptController.text = note.rawTranscript;
       _resumenController.text = note.resumen ?? '';
       _notaAdicionalController.text = note.notaAdicional ?? '';
+
+      // Pre-fill surgical data if present
+      if (note.surgicalData != null) {
+        _tecnicaQuirurgicaController.text = note.surgicalData!.tecnicaQuirurgica;
+        _hallazgosController.text = note.surgicalData!.hallazgos;
+        _observacionesController.text = note.surgicalData!.observaciones;
+        _complicacionesController.text = note.surgicalData!.complicaciones;
+      }
     }
   }
 
@@ -81,7 +101,25 @@ class _CreateMedicalNotePageState
     _resumenController.dispose();
     _notaAdicionalController.dispose();
     _rawTranscriptController.dispose();
+    // Surgical note controllers
+    _tecnicaQuirurgicaController.dispose();
+    _hallazgosController.dispose();
+    _observacionesController.dispose();
+    _complicacionesController.dispose();
     super.dispose();
+  }
+
+  /// Build SurgicalNoteDataEntity from form fields (only for surgical notes)
+  SurgicalNoteDataEntity? _buildSurgicalData() {
+    if (_selectedNoteType != MedicalNoteType.surgicalNote) {
+      return null;
+    }
+    return SurgicalNoteDataEntity(
+      tecnicaQuirurgica: _tecnicaQuirurgicaController.text.trim(),
+      hallazgos: _hallazgosController.text.trim(),
+      observaciones: _observacionesController.text.trim(),
+      complicaciones: _complicacionesController.text.trim(),
+    );
   }
 
   Future<void> _onSavePressed() async {
@@ -102,6 +140,7 @@ class _CreateMedicalNotePageState
         // 🔹 Modo EDICIÓN: actualizamos la nota existente preservando metadata
         note = existingNote.copyWith(
           updatedAt: now,
+          type: _selectedNoteType,
           motivoConsulta: _motivoController.text.trim(),
           antecedentes: _antecedentesController.text.trim(),
           exploracionFisicaOrl: _exploracionController.text.trim(),
@@ -114,6 +153,7 @@ class _CreateMedicalNotePageState
           notaAdicional: _notaAdicionalController.text.trim().isEmpty
               ? null
               : _notaAdicionalController.text.trim(),
+          surgicalData: _buildSurgicalData(),
         );
 
         await ref
@@ -127,6 +167,7 @@ class _CreateMedicalNotePageState
           doctorId: widget.doctorId,
           createdAt: now,
           updatedAt: now,
+          type: _selectedNoteType,
           motivoConsulta: _motivoController.text.trim(),
           antecedentes: _antecedentesController.text.trim(),
           exploracionFisicaOrl: _exploracionController.text.trim(),
@@ -146,6 +187,7 @@ class _CreateMedicalNotePageState
           attachments: const [],
           tags: const [],
           isFavorite: false,
+          surgicalData: _buildSurgicalData(),
         );
 
         await ref
@@ -649,6 +691,58 @@ class _CreateMedicalNotePageState
             padding: const EdgeInsets.all(16),
             children: [
               // ========================================
+              // NOTE TYPE SELECTOR
+              // ========================================
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.description,
+                              color: theme.colorScheme.primary, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Tipo de nota',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: SegmentedButton<MedicalNoteType>(
+                          segments: const [
+                            ButtonSegment<MedicalNoteType>(
+                              value: MedicalNoteType.clinicalHistory,
+                              label: Text('Historia Clínica'),
+                              icon: Icon(Icons.assignment),
+                            ),
+                            ButtonSegment<MedicalNoteType>(
+                              value: MedicalNoteType.surgicalNote,
+                              label: Text('Nota Quirúrgica'),
+                              icon: Icon(Icons.local_hospital),
+                            ),
+                          ],
+                          selected: {_selectedNoteType},
+                          onSelectionChanged: (Set<MedicalNoteType> selection) {
+                            setState(() {
+                              _selectedNoteType = selection.first;
+                            });
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // ========================================
               // SECCIÓN 1: MOTIVO DE CONSULTA
               // ========================================
               _SectionCard(
@@ -782,10 +876,95 @@ class _CreateMedicalNotePageState
                   },
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
 
               // ========================================
-              // SECCIÓN 6: IA Y TRANSCRIPCIÓN
+              // SECCIÓN 6: DATOS QUIRÚRGICOS (solo para notas quirúrgicas)
+              // ========================================
+              if (_selectedNoteType == MedicalNoteType.surgicalNote) ...[
+                Card(
+                  color: theme.colorScheme.secondaryContainer.withOpacity(0.3),
+                  elevation: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.local_hospital,
+                                color: theme.colorScheme.secondary, size: 20),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Datos Quirúrgicos',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.secondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _tecnicaQuirurgicaController,
+                          decoration: const InputDecoration(
+                            labelText: 'Técnica Quirúrgica *',
+                            hintText: 'Descripción de la técnica utilizada',
+                            border: OutlineInputBorder(),
+                          ),
+                          textInputAction: TextInputAction.next,
+                          maxLines: 3,
+                          validator: (value) {
+                            if (_selectedNoteType ==
+                                    MedicalNoteType.surgicalNote &&
+                                (value == null || value.trim().isEmpty)) {
+                              return 'Ingresa la técnica quirúrgica';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _hallazgosController,
+                          decoration: const InputDecoration(
+                            labelText: 'Hallazgos',
+                            hintText: 'Hallazgos intraoperatorios',
+                            border: OutlineInputBorder(),
+                          ),
+                          textInputAction: TextInputAction.next,
+                          maxLines: 3,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _observacionesController,
+                          decoration: const InputDecoration(
+                            labelText: 'Observaciones',
+                            hintText: 'Observaciones adicionales',
+                            border: OutlineInputBorder(),
+                          ),
+                          textInputAction: TextInputAction.next,
+                          maxLines: 2,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _complicacionesController,
+                          decoration: const InputDecoration(
+                            labelText: 'Complicaciones',
+                            hintText: 'Complicaciones durante el procedimiento',
+                            border: OutlineInputBorder(),
+                          ),
+                          textInputAction: TextInputAction.next,
+                          maxLines: 2,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // ========================================
+              // SECCIÓN 7: IA Y TRANSCRIPCIÓN
               // ========================================
               Card(
                 child: Padding(
