@@ -108,6 +108,31 @@ class _NoteTypeSelectorContent extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
+
+            // Dictation Assist - Tertiary option
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                context.pushNamed(
+                  RouteNames.dictationAssist,
+                  extra: patient,
+                );
+              },
+              icon: const Icon(Icons.mic),
+              label: const Text('Dictar primero (asistente)'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Graba y transcribe antes de elegir tipo de nota',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
           ],
         ),
       ),

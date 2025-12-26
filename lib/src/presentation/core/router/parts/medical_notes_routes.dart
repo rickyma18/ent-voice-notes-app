@@ -21,7 +21,17 @@ List<RouteBase> _medicalNotesRoutes(ref) {
           name: RouteNames.medicalNotesCreate,
           pageBuilder: (context, state) {
             // US-D1: Patient context is required
-            final patient = state.extra as PatientEntity?;
+            // Also accepts optional initialRawTranscript from DictationAssistPage
+            final extra = state.extra;
+            PatientEntity? patient;
+            String? initialRawTranscript;
+
+            if (extra is PatientEntity) {
+              patient = extra;
+            } else if (extra is Map<String, dynamic>) {
+              patient = extra['patient'] as PatientEntity?;
+              initialRawTranscript = extra['initialRawTranscript'] as String?;
+            }
 
             if (patient == null) {
               return MaterialPage(
@@ -52,6 +62,7 @@ List<RouteBase> _medicalNotesRoutes(ref) {
               child: CreateMedicalNotePage(
                 patientId: patient.id,
                 doctorId: doctorId,
+                initialRawTranscript: initialRawTranscript,
               ),
             );
           },
@@ -86,15 +97,18 @@ List<RouteBase> _medicalNotesRoutes(ref) {
           name: RouteNames.clinicalHistoryWizard,
           pageBuilder: (context, state) {
             // Accept patient and optional existing note for editing
+            // Also accepts optional initialRawTranscript from DictationAssistPage
             final extra = state.extra;
             PatientEntity? patient;
             MedicalNoteEntity? existingNote;
+            String? initialRawTranscript;
 
             if (extra is PatientEntity) {
               patient = extra;
             } else if (extra is Map<String, dynamic>) {
               patient = extra['patient'] as PatientEntity?;
               existingNote = extra['note'] as MedicalNoteEntity?;
+              initialRawTranscript = extra['initialRawTranscript'] as String?;
             }
 
             if (patient == null) {
@@ -127,7 +141,32 @@ List<RouteBase> _medicalNotesRoutes(ref) {
                 patientId: patient.id,
                 doctorId: doctorId,
                 existingNote: existingNote,
+                initialRawTranscript: initialRawTranscript,
               ),
+            );
+          },
+        ),
+        // Dictation Assist route
+        GoRoute(
+          path: Routes.dictationAssist,
+          name: RouteNames.dictationAssist,
+          pageBuilder: (context, state) {
+            // Patient context is required
+            final patient = state.extra as PatientEntity?;
+
+            if (patient == null) {
+              return MaterialPage(
+                child: Scaffold(
+                  appBar: AppBar(title: const Text('Error')),
+                  body: const Center(
+                    child: Text('Error: No se proporcionó un paciente.'),
+                  ),
+                ),
+              );
+            }
+
+            return MaterialPage(
+              child: DictationAssistPage(patient: patient),
             );
           },
         ),

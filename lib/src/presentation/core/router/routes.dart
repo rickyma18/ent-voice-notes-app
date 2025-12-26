@@ -23,6 +23,7 @@ class Routes {
   static const String createMedicalNote = 'create';
   static const String detailMedicalNote = 'detail';
   static const String clinicalHistoryWizard = 'clinical-history-wizard';
+  static const String dictationAssist = 'dictation-assist';
 
   // Patients routes (paths can be reused across features)
   static const String patientsList = '/patients';

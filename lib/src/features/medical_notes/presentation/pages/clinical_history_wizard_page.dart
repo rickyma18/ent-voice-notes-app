@@ -29,11 +29,16 @@ class ClinicalHistoryWizardPage extends ConsumerStatefulWidget {
     required this.patientId,
     required this.doctorId,
     this.existingNote,
+    this.initialRawTranscript,
   });
 
   final String patientId;
   final String doctorId;
   final MedicalNoteEntity? existingNote;
+
+  /// Optional raw transcript from DictationAssistPage.
+  /// If provided and fields are empty, this can be used for AI processing.
+  final String? initialRawTranscript;
 
   bool get isEditMode => existingNote != null;
 
@@ -62,6 +67,9 @@ class _ClinicalHistoryWizardPageState
 
   // State flags
   bool _isSaving = false;
+
+  // Raw transcript from DictationAssistPage (for future AI processing)
+  String? _rawTranscript;
 
   // Text controllers for each section
   late final TextEditingController _motivoController;
@@ -118,6 +126,10 @@ class _ClinicalHistoryWizardPageState
     if (widget.existingNote != null) {
       _prefillFromExistingNote(widget.existingNote!);
     }
+
+    // Store initial raw transcript from DictationAssistPage
+    // This can be used for future AI processing
+    _rawTranscript = widget.initialRawTranscript;
 
     // Load patient info
     _loadPatient();
@@ -409,7 +421,7 @@ class _ClinicalHistoryWizardPageState
           exploracionFisicaOrl: exploracionOrl,
           diagnostico: _diagnosticoController.text.trim(),
           planTratamiento: _planController.text.trim(),
-          rawTranscript: '',
+          rawTranscript: _rawTranscript ?? '',
           status: asDraft ? NoteStatus.draft : NoteStatus.draft,
           medicamentosRecetados: const [],
           estudiosIndicados: const [],

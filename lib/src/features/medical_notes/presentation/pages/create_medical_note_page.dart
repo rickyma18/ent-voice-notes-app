@@ -17,6 +17,7 @@ class CreateMedicalNotePage extends ConsumerStatefulWidget {
     required this.patientId,
     required this.doctorId,
     this.existingNote,
+    this.initialRawTranscript,
   });
 
   /// Paciente al que pertenece la nota.
@@ -27,6 +28,10 @@ class CreateMedicalNotePage extends ConsumerStatefulWidget {
 
   /// Nota existente para editar. Si es null, se crea una nueva nota.
   final MedicalNoteEntity? existingNote;
+
+  /// Optional raw transcript from DictationAssistPage.
+  /// If provided and rawTranscript field is empty, this will be used.
+  final String? initialRawTranscript;
 
   /// Helper para saber si estamos en modo edición
   bool get isEditMode => existingNote != null;
@@ -89,6 +94,14 @@ class _CreateMedicalNotePageState
         _observacionesController.text = note.surgicalData!.observaciones;
         _complicacionesController.text = note.surgicalData!.complicaciones;
       }
+    }
+
+    // Apply initialRawTranscript from DictationAssistPage if provided
+    // and the field is currently empty (don't overwrite user data)
+    if (widget.initialRawTranscript != null &&
+        widget.initialRawTranscript!.isNotEmpty &&
+        _rawTranscriptController.text.isEmpty) {
+      _rawTranscriptController.text = widget.initialRawTranscript!;
     }
   }
 
