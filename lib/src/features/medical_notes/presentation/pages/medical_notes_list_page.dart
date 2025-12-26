@@ -10,6 +10,7 @@ import '../../../patients/domain/entities/patient_entity.dart';
 import '../../../patients/patients_providers.dart';
 import '../controllers/medical_notes_controller.dart';
 import '../../domain/entities/medical_note_entity.dart';
+import '../widgets/note_type_selector_bottom_sheet.dart';
 
 class MedicalNotesListPage extends ConsumerStatefulWidget {
   const MedicalNotesListPage({super.key, this.patient, this.patientId});
@@ -166,88 +167,6 @@ class _MedicalNotesListPageState extends ConsumerState<MedicalNotesListPage> {
     final year = date.year;
 
     return '$day $month $year';
-  }
-
-  /// Show a bottom sheet to select the type of note to create
-  void _showNoteTypeSelector(BuildContext context, PatientEntity patient) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Crear nueva nota',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Paciente: ${patient.fullName}',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                    ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              // Clinical History (Wizard) - Primary option
-              FilledButton.icon(
-                onPressed: () {
-                  Navigator.pop(context);
-                  context.pushNamed(
-                    RouteNames.clinicalHistoryWizard,
-                    extra: patient,
-                  );
-                },
-                icon: const Icon(Icons.assignment),
-                label: const Text('Historia Clinica'),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Formulario guiado paso a paso',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                    ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              // Surgical Note - Secondary option
-              OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.pop(context);
-                  context.pushNamed(
-                    RouteNames.medicalNotesCreate,
-                    extra: patient,
-                  );
-                },
-                icon: const Icon(Icons.local_hospital),
-                label: const Text('Nota Quirurgica'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Formulario clasico para notas quirurgicas',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                    ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   /// US-D2: Handle navigation to patient detail page
@@ -470,7 +389,7 @@ class _MedicalNotesListPageState extends ConsumerState<MedicalNotesListPage> {
         onPressed: () {
           if (widget.patient != null) {
             // Patient context: show note type selection
-            _showNoteTypeSelector(context, widget.patient!);
+            showNoteTypeSelectorBottomSheet(context, widget.patient!);
           } else {
             // US-D2: Global mode: navigate to select patient first
             context.pushNamed(RouteNames.selectPatient);

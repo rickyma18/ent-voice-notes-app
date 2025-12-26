@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../presentation/core/router/route_names.dart';
 import '../../../medical_notes/domain/entities/medical_note_entity.dart';
 import '../../../medical_notes/presentation/controllers/medical_notes_controller.dart';
+import '../../../medical_notes/presentation/widgets/note_type_selector_bottom_sheet.dart';
 import '../../domain/entities/patient_entity.dart';
 import '../controllers/patients_controller.dart';
 
@@ -134,11 +135,8 @@ class SelectPatientPage extends ConsumerWidget {
                   );
                 },
                 onCreateNote: () {
-                  // Navigate directly to create note with patient context
-                  context.pushNamed(
-                    RouteNames.medicalNotesCreate,
-                    extra: patient,
-                  );
+                  // Show note type selector for unified entry point
+                  showNoteTypeSelectorBottomSheet(context, patient);
                 },
               );
             },

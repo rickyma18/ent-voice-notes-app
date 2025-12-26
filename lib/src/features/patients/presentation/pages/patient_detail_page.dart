@@ -9,6 +9,7 @@ import '../../../../core/base/result.dart';
 import '../../../../presentation/core/router/route_names.dart';
 import '../../../medical_notes/domain/entities/medical_note_entity.dart';
 import '../../../medical_notes/presentation/controllers/medical_notes_controller.dart';
+import '../../../medical_notes/presentation/widgets/note_type_selector_bottom_sheet.dart';
 import '../../domain/entities/patient_entity.dart';
 import '../controllers/patients_controller.dart';
 
@@ -402,10 +403,7 @@ class _PatientDetailPageState extends ConsumerState<PatientDetailPage> {
               width: double.infinity,
               child: OutlinedButton.icon(
                 onPressed: () {
-                  context.pushNamed(
-                    RouteNames.medicalNotesCreate,
-                    extra: widget.patient,
-                  );
+                  showNoteTypeSelectorBottomSheet(context, widget.patient);
                 },
                 icon: const Icon(Icons.note_add),
                 label: const Text('Crear nueva nota'),
