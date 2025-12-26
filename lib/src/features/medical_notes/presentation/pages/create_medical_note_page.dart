@@ -8,6 +8,7 @@ import '../../domain/entities/medical_note_type.dart';
 import '../../domain/entities/note_status.dart';
 import '../../domain/entities/surgical_note_data_entity.dart';
 import '../controllers/medical_notes_controller.dart';
+import '../widgets/dictation_guide_accordion.dart';
 import '../../medical_notes_providers.dart';
 
 class CreateMedicalNotePage extends ConsumerStatefulWidget {
@@ -962,6 +963,12 @@ class _CreateMedicalNotePageState
                 ),
                 const SizedBox(height: 16),
               ],
+
+              // ========================================
+              // DICTATION GUIDE ACCORDION
+              // ========================================
+              const DictationGuideAccordion(),
+              const SizedBox(height: 16),
 
               // ========================================
               // SECCIÓN 7: IA Y TRANSCRIPCIÓN
