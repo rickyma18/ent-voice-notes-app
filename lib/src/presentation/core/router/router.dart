@@ -37,7 +37,6 @@ import '../../../features/patients/presentation/pages/select_patient_page.dart';
 import '../../../features/patients/domain/entities/patient_entity.dart';
 
 import '../application_state/current_doctor_provider/current_doctor_provider.dart';
-import '../application_state/auth_state_provider/auth_state_provider.dart';
 import '../../../core/di/dependency_injection.dart';
 
 part 'parts/authentication_routes.dart';

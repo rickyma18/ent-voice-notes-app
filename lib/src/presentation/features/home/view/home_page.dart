@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/extensions/app_localization.dart';
 import '../../../core/application_state/logout_provider/logout_provider.dart';
 import '../../../core/router/route_names.dart';
-import '../../../core/widgets/loading_indicator.dart';
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
