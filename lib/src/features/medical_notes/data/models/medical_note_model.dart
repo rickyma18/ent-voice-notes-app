@@ -1,12 +1,15 @@
 import '../../../../core/utility/firestore_timestamp_parser.dart';
 import '../../domain/entities/attachment_entity.dart';
 import '../../domain/entities/medical_note_entity.dart';
+import '../../domain/entities/medical_note_type.dart';
 import '../../domain/entities/medication_entity.dart';
 import '../../domain/entities/note_status.dart';
 import '../../domain/entities/study_entity.dart';
+import '../../domain/entities/surgical_note_data_entity.dart';
 import 'attachment_model.dart';
 import 'medication_model.dart';
 import 'study_model.dart';
+import 'surgical_note_data_model.dart';
 
 class MedicalNoteModel extends MedicalNoteEntity {
   const MedicalNoteModel({
@@ -15,6 +18,7 @@ class MedicalNoteModel extends MedicalNoteEntity {
     required super.doctorId,
     required super.createdAt,
     required super.updatedAt,
+    super.type,
     required super.motivoConsulta,
     required super.antecedentes,
     required super.exploracionFisicaOrl,
@@ -30,9 +34,21 @@ class MedicalNoteModel extends MedicalNoteEntity {
     super.attachments,
     super.tags,
     super.isFavorite,
+    super.surgicalData,
   });
 
   factory MedicalNoteModel.fromJson(Map<String, dynamic> json) {
+    // Parse note type (default to clinicalHistory for backward compatibility)
+    final noteType = MedicalNoteType.fromString(json['type'] as String?);
+
+    // Parse surgical data only if present
+    SurgicalNoteDataModel? surgicalData;
+    if (json['surgical_data'] != null && json['surgical_data'] is Map) {
+      surgicalData = SurgicalNoteDataModel.fromJson(
+        json['surgical_data'] as Map<String, dynamic>,
+      );
+    }
+
     return MedicalNoteModel(
       id: json['id'] as String,
       patientId: json['patient_id'] as String,
@@ -44,7 +60,8 @@ class MedicalNoteModel extends MedicalNoteEntity {
       updatedAt:
           FirestoreTimestampParser.tryParse(json['updated_at']) ??
           DateTime.now(),
-
+      // Note type (backward compatible - defaults to clinicalHistory)
+      type: noteType,
       motivoConsulta: json['motivo_consulta'] as String,
       antecedentes: json['antecedentes'] as String,
       exploracionFisicaOrl: json['exploracion_fisica_orl'] as String,
@@ -76,16 +93,19 @@ class MedicalNoteModel extends MedicalNoteEntity {
           (json['tags'] as List<dynamic>?)?.map((e) => e as String).toList() ??
           const [],
       isFavorite: json['is_favorite'] as bool? ?? false,
+      // Surgical note specific data
+      surgicalData: surgicalData,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {
+    final data = <String, dynamic>{
       'id': id,
       'patient_id': patientId,
       'doctor_id': doctorId,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
+      'type': type.toFirestoreString(),
       'motivo_consulta': motivoConsulta,
       'antecedentes': antecedentes,
       'exploracion_fisica_orl': exploracionFisicaOrl,
@@ -108,6 +128,14 @@ class MedicalNoteModel extends MedicalNoteEntity {
       'tags': tags,
       'is_favorite': isFavorite,
     };
+
+    // Only include surgical_data for surgical notes
+    if (type == MedicalNoteType.surgicalNote && surgicalData != null) {
+      data['surgical_data'] =
+          SurgicalNoteDataModel.fromEntity(surgicalData!).toJson();
+    }
+
+    return data;
   }
 
   factory MedicalNoteModel.fromEntity(MedicalNoteEntity entity) {
@@ -117,6 +145,7 @@ class MedicalNoteModel extends MedicalNoteEntity {
       doctorId: entity.doctorId,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
+      type: entity.type,
       motivoConsulta: entity.motivoConsulta,
       antecedentes: entity.antecedentes,
       exploracionFisicaOrl: entity.exploracionFisicaOrl,
@@ -132,6 +161,7 @@ class MedicalNoteModel extends MedicalNoteEntity {
       attachments: entity.attachments,
       tags: entity.tags,
       isFavorite: entity.isFavorite,
+      surgicalData: entity.surgicalData,
     );
   }
 
@@ -142,6 +172,7 @@ class MedicalNoteModel extends MedicalNoteEntity {
       doctorId: doctorId,
       createdAt: createdAt,
       updatedAt: updatedAt,
+      type: type,
       motivoConsulta: motivoConsulta,
       antecedentes: antecedentes,
       exploracionFisicaOrl: exploracionFisicaOrl,
@@ -190,6 +221,14 @@ class MedicalNoteModel extends MedicalNoteEntity {
           .toList(),
       tags: tags,
       isFavorite: isFavorite,
+      surgicalData: surgicalData != null
+          ? SurgicalNoteDataEntity(
+              tecnicaQuirurgica: surgicalData!.tecnicaQuirurgica,
+              hallazgos: surgicalData!.hallazgos,
+              observaciones: surgicalData!.observaciones,
+              complicaciones: surgicalData!.complicaciones,
+            )
+          : null,
     );
   }
 

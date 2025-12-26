@@ -3,9 +3,11 @@
 import 'package:equatable/equatable.dart';
 
 import 'attachment_entity.dart';
+import 'medical_note_type.dart';
 import 'medication_entity.dart';
 import 'note_status.dart';
 import 'study_entity.dart';
+import 'surgical_note_data_entity.dart';
 
 /// Entidad de dominio para Notas Clínicas
 /// 
@@ -18,6 +20,8 @@ class MedicalNoteEntity extends Equatable {
     required this.doctorId,
     required this.createdAt,
     required this.updatedAt,
+    // Note type (clinical_history or surgical_note)
+    this.type = MedicalNoteType.clinicalHistory,
     // Datos clínicos estructurados
     required this.motivoConsulta,
     required this.antecedentes,
@@ -36,6 +40,8 @@ class MedicalNoteEntity extends Equatable {
     this.attachments = const [],
     this.tags = const [],
     this.isFavorite = false,
+    // Surgical note specific data (only for surgical notes)
+    this.surgicalData,
   });
 
   // Identificadores
@@ -46,6 +52,11 @@ class MedicalNoteEntity extends Equatable {
   // Timestamps
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  // Note type
+  /// Type of medical note (clinical_history or surgical_note).
+  /// Defaults to clinicalHistory for backward compatibility.
+  final MedicalNoteType type;
 
   // Datos clínicos estructurados (SOAP adaptado para ORL)
   /// Motivo de consulta principal del paciente
@@ -95,10 +106,16 @@ class MedicalNoteEntity extends Equatable {
   /// Marcador de favorito para acceso rápido
   final bool isFavorite;
 
+  // Surgical note specific data
+  /// Additional data for surgical notes (tecnica, hallazgos, etc.).
+  /// Only populated when type == surgicalNote.
+  final SurgicalNoteDataEntity? surgicalData;
+
   // Factory para crear nota vacía (borrador)
   factory MedicalNoteEntity.empty({
     required String patientId,
     required String doctorId,
+    MedicalNoteType type = MedicalNoteType.clinicalHistory,
   }) {
     final now = DateTime.now();
     return MedicalNoteEntity(
@@ -107,12 +124,16 @@ class MedicalNoteEntity extends Equatable {
       doctorId: doctorId,
       createdAt: now,
       updatedAt: now,
+      type: type,
       motivoConsulta: '',
       antecedentes: '',
       exploracionFisicaOrl: '',
       diagnostico: '',
       planTratamiento: '',
       rawTranscript: '',
+      surgicalData: type == MedicalNoteType.surgicalNote
+          ? SurgicalNoteDataEntity.empty()
+          : null,
     );
   }
 
@@ -123,6 +144,7 @@ class MedicalNoteEntity extends Equatable {
     String? doctorId,
     DateTime? createdAt,
     DateTime? updatedAt,
+    MedicalNoteType? type,
     String? motivoConsulta,
     String? antecedentes,
     String? exploracionFisicaOrl,
@@ -138,6 +160,7 @@ class MedicalNoteEntity extends Equatable {
     List<AttachmentEntity>? attachments,
     List<String>? tags,
     bool? isFavorite,
+    SurgicalNoteDataEntity? surgicalData,
   }) {
     return MedicalNoteEntity(
       id: id ?? this.id,
@@ -145,6 +168,7 @@ class MedicalNoteEntity extends Equatable {
       doctorId: doctorId ?? this.doctorId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      type: type ?? this.type,
       motivoConsulta: motivoConsulta ?? this.motivoConsulta,
       antecedentes: antecedentes ?? this.antecedentes,
       exploracionFisicaOrl: exploracionFisicaOrl ?? this.exploracionFisicaOrl,
@@ -160,16 +184,30 @@ class MedicalNoteEntity extends Equatable {
       attachments: attachments ?? this.attachments,
       tags: tags ?? this.tags,
       isFavorite: isFavorite ?? this.isFavorite,
+      surgicalData: surgicalData ?? this.surgicalData,
     );
   }
 
   // Validación de completitud
   bool get isComplete {
-    return motivoConsulta.isNotEmpty &&
+    final baseComplete = motivoConsulta.isNotEmpty &&
         exploracionFisicaOrl.isNotEmpty &&
         diagnostico.isNotEmpty &&
         planTratamiento.isNotEmpty;
+
+    // For surgical notes, also check surgical data fields
+    if (type == MedicalNoteType.surgicalNote && surgicalData != null) {
+      return baseComplete && surgicalData!.tecnicaQuirurgica.isNotEmpty;
+    }
+
+    return baseComplete;
   }
+
+  /// Check if this is a surgical note
+  bool get isSurgicalNote => type == MedicalNoteType.surgicalNote;
+
+  /// Check if this is a clinical history note
+  bool get isClinicalHistory => type == MedicalNoteType.clinicalHistory;
 
   // Verifica si la nota necesita atención (borrador antiguo)
   bool get needsAttention {
@@ -200,6 +238,7 @@ class MedicalNoteEntity extends Equatable {
         doctorId,
         createdAt,
         updatedAt,
+        type,
         motivoConsulta,
         antecedentes,
         exploracionFisicaOrl,
@@ -215,9 +254,10 @@ class MedicalNoteEntity extends Equatable {
         attachments,
         tags,
         isFavorite,
+        surgicalData,
       ];
 
   @override
   String toString() => 'MedicalNoteEntity(id: $id, patientId: $patientId, '
-      'status: $status, createdAt: $createdAt)';
+      'type: $type, status: $status, createdAt: $createdAt)';
 }
