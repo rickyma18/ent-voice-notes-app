@@ -28,6 +28,7 @@ import 'route_error_page.dart';
 import '../../../features/medical_notes/presentation/pages/medical_notes_list_page.dart';
 import '../../../features/medical_notes/presentation/pages/create_medical_note_page.dart';
 import '../../../features/medical_notes/presentation/pages/medical_note_detail_page.dart';
+import '../../../features/medical_notes/presentation/pages/clinical_history_wizard_page.dart';
 import '../../../features/medical_notes/domain/entities/medical_note_entity.dart';
 
 import '../../../features/patients/presentation/pages/patients_list_page.dart';

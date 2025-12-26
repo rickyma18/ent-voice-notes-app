@@ -17,7 +17,9 @@
       "Bash(flutter test:*)",
       "Bash(where:*)",
       "Bash(node:*)",
-      "Bash(npm:*)"
+      "Bash(npm:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
