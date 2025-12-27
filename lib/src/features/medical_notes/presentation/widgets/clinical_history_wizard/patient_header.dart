@@ -68,7 +68,7 @@ class PatientHeader extends StatelessWidget {
                     children: [
                       _InfoChip(
                         icon: Icons.cake_outlined,
-                        label: '${patient.age} anos',
+                        label: '${patient.age} años',
                       ),
                       const SizedBox(width: 8),
                       _InfoChip(

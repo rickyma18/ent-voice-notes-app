@@ -26,7 +26,7 @@ export function SurgicalNoteViewer({
   const [isExpanded, setIsExpanded] = useState(true);
 
   // Patient age is already stored as a number
-  const patientAge = patient.age ? `${patient.age} anos` : '';
+  const patientAge = patient.age ? `${patient.age} años` : '';
 
   // Map sex codes to display labels
   const patientSex =
