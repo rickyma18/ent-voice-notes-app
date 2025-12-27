@@ -1,7 +1,12 @@
 // lib/src/features/medical_notes/presentation/pages/clinical_history_wizard_page.dart
 
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../../core/base/result.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
@@ -93,6 +98,12 @@ class _ClinicalHistoryWizardPageState
   // Attachments list (managed locally, saved with note)
   List<AttachmentEntity> _attachments = [];
 
+  // Temp note ID for new notes (used for attachment uploads before save)
+  late final String _tempNoteId;
+
+  // Upload state
+  bool _isUploading = false;
+
   // Step definitions
   static const List<String> _stepTitles = [
     'Motivo de consulta',
@@ -111,6 +122,10 @@ class _ClinicalHistoryWizardPageState
   void initState() {
     super.initState();
     _noteDate = widget.existingNote?.createdAt ?? DateTime.now();
+
+    // Initialize temp note ID for attachment uploads
+    // Use existing note ID if editing, otherwise generate a new UUID
+    _tempNoteId = widget.existingNote?.id ?? const Uuid().v4();
 
     // Initialize page controller
     _pageController = PageController(initialPage: _currentStep);
@@ -1218,11 +1233,36 @@ class _ClinicalHistoryWizardPageState
   // Step 7: Laboratorio y estudios (attachments)
   Widget _buildStep7Attachments() {
     return _buildStepContainer(
-      child: AttachmentsStep(
-        attachments: _attachments,
-        onAddLink: _addLinkAttachment,
-        onRemove: _removeAttachment,
-        isUploadEnabled: false, // Phase 2 will enable this
+      child: Stack(
+        children: [
+          AttachmentsStep(
+            attachments: _attachments,
+            onAddLink: _addLinkAttachment,
+            onRemove: _removeAttachment,
+            onAddPhoto: _pickAndUploadImage,
+            onAddPdf: _pickAndUploadPdf,
+            isUploadEnabled: true,
+          ),
+          if (_isUploading)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.3),
+                child: const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text(
+                        'Subiendo archivo...',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1247,6 +1287,88 @@ class _ClinicalHistoryWizardPageState
     setState(() {
       _attachments.removeWhere((a) => a.id == attachment.id);
     });
+  }
+
+  Future<void> _pickAndUploadImage() async {
+    try {
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 85,
+      );
+
+      if (pickedFile == null) return;
+
+      setState(() => _isUploading = true);
+
+      final file = File(pickedFile.path);
+      final attachment = await ref
+          .read(uploadImageAttachmentUseCaseProvider)
+          .call(
+            file: file,
+            doctorId: widget.doctorId,
+            patientId: widget.patientId,
+            noteId: _tempNoteId,
+          );
+
+      setState(() {
+        _attachments.add(attachment);
+        _isUploading = false;
+      });
+    } catch (e) {
+      setState(() => _isUploading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al subir imagen: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickAndUploadPdf() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final platformFile = result.files.first;
+      if (platformFile.path == null) return;
+
+      setState(() => _isUploading = true);
+
+      final file = File(platformFile.path!);
+      final attachment = await ref
+          .read(uploadPdfAttachmentUseCaseProvider)
+          .call(
+            file: file,
+            doctorId: widget.doctorId,
+            patientId: widget.patientId,
+            noteId: _tempNoteId,
+          );
+
+      setState(() {
+        _attachments.add(attachment);
+        _isUploading = false;
+      });
+    } catch (e) {
+      setState(() => _isUploading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al subir PDF: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
 

@@ -292,6 +292,11 @@ class _AttachmentTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    final hasSize = attachment.size_in_bytes > 0;
+    final subtitle = hasSize
+        ? '${attachment.size_in_bytesLegible} • ${attachment.tipo.displayName}'
+        : attachment.url;
+
     return Card(
       margin: EdgeInsets.zero,
       child: ListTile(
@@ -309,11 +314,11 @@ class _AttachmentTile extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
-          attachment.url,
+          subtitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.primary,
+            color: hasSize ? null : theme.colorScheme.primary,
           ),
         ),
         trailing: IconButton(
