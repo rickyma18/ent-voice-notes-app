@@ -149,3 +149,6 @@ app.*.symbols
 # Windows device/artefacts
 nul
 NUL
+
+.claude/settings.local.json
+
