@@ -60,6 +60,10 @@ dependencies:
   cloud_firestore: ^6.1.0
   firebase_core: ^4.3.0
   firebase_auth: ^6.1.2
+  firebase_storage: ^13.0.5
+  # File picking and images
+  file_picker: ^8.1.7
+  image_picker: ^1.1.2
   # Audio recording and file paths
   record: ^6.1.2
   path_provider: ^2.1.5
