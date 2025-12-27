@@ -646,18 +646,21 @@ class _ClinicalHistoryWizardPageState
 
   /// Shows a SnackBar with undo option after applying suggestions.
   void _showUndoSnackBar(int appliedCount) {
-    ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
       SnackBar(
         content: Text('Se aplicaron $appliedCount sugerencias'),
         backgroundColor: Colors.green,
-        duration: const Duration(seconds: 5),
+        duration: const Duration(seconds: 4),
         action: SnackBarAction(
           label: 'Deshacer',
           textColor: Colors.white,
           onPressed: () {
             if (_undoSnapshot != null) {
               _restoreFromSnapshot(_undoSnapshot!);
-              ScaffoldMessenger.of(context).showSnackBar(
+              messenger.hideCurrentSnackBar();
+              messenger.showSnackBar(
                 const SnackBar(
                   content: Text('Cambios revertidos'),
                   duration: Duration(seconds: 2),
