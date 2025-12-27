@@ -258,6 +258,11 @@ class _OrlAccordionState extends State<OrlAccordion> {
                           controller: controller!,
                           actions: QuickActionButtons.examActions,
                         ),
+                        // Laringoscopia-specific quick fill
+                        if (section.id == 'laringoscopia') ...[
+                          const SizedBox(height: 8),
+                          _LaringoscopiaQuickFill(controller: controller),
+                        ],
                       ],
                     ),
                   ),
@@ -267,6 +272,84 @@ class _OrlAccordionState extends State<OrlAccordion> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Quick fill chip for laringoscopia "No se realizó." text.
+class _LaringoscopiaQuickFill extends StatelessWidget {
+  const _LaringoscopiaQuickFill({required this.controller});
+
+  final TextEditingController controller;
+
+  static const String _quickFillText = 'No se realizó.';
+
+  void _handleTap(BuildContext context) {
+    if (controller.text.trim().isEmpty) {
+      _applyQuickFill();
+    } else {
+      _showConfirmDialog(context);
+    }
+  }
+
+  void _applyQuickFill() {
+    controller.text = _quickFillText;
+    controller.selection = TextSelection.fromPosition(
+      TextPosition(offset: controller.text.length),
+    );
+  }
+
+  void _showConfirmDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reemplazar contenido'),
+        content: const Text(
+          'El campo ya tiene contenido. ¿Desea reemplazarlo con "$_quickFillText"?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _applyQuickFill();
+            },
+            child: const Text('Reemplazar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ActionChip(
+        avatar: Icon(
+          Icons.edit_off,
+          size: 16,
+          color: theme.colorScheme.secondary,
+        ),
+        label: Text(
+          _quickFillText,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.secondary,
+          ),
+        ),
+        onPressed: () => _handleTap(context),
+        backgroundColor: theme.colorScheme.secondaryContainer.withValues(alpha: 0.5),
+        side: BorderSide(
+          color: theme.colorScheme.secondary.withValues(alpha: 0.3),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
     );
   }
 }
