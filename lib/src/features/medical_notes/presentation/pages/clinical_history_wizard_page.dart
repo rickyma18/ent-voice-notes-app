@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/base/result.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 import '../../../patients/patients_providers.dart';
+import '../../domain/entities/attachment_entity.dart';
 import '../../domain/entities/medical_note_entity.dart';
 import '../../domain/entities/medical_note_type.dart';
 import '../../domain/entities/note_status.dart';
@@ -24,6 +25,7 @@ import '../widgets/clinical_history_wizard/clinical_history_wizard.dart';
 /// 5. Padecimiento actual
 /// 6. Exploracion fisica ORL
 /// 7. Diagnostico y plan
+/// 8. Laboratorio y estudios
 class ClinicalHistoryWizardPage extends ConsumerStatefulWidget {
   const ClinicalHistoryWizardPage({
     super.key,
@@ -88,6 +90,9 @@ class _ClinicalHistoryWizardPageState
   // ORL Accordion controllers
   late final Map<String, TextEditingController> _orlControllers;
 
+  // Attachments list (managed locally, saved with note)
+  List<AttachmentEntity> _attachments = [];
+
   // Step definitions
   static const List<String> _stepTitles = [
     'Motivo de consulta',
@@ -97,6 +102,7 @@ class _ClinicalHistoryWizardPageState
     'Padecimiento actual',
     'Exploracion fisica ORL',
     'Diagnostico y plan',
+    'Laboratorio y estudios',
   ];
 
   int get _totalSteps => _stepTitles.length;
@@ -150,6 +156,9 @@ class _ClinicalHistoryWizardPageState
 
     // Parse exploracion into ORL sections
     _parseExploracion(note.exploracionFisicaOrl);
+
+    // Initialize attachments from existing note
+    _attachments = List.from(note.attachments);
   }
 
   /// NON-DESTRUCTIVE parsing of antecedentes.
@@ -808,6 +817,7 @@ class _ClinicalHistoryWizardPageState
           diagnostico: _diagnosticoController.text.trim(),
           planTratamiento: _planController.text.trim(),
           status: asDraft ? NoteStatus.draft : existingNote.status,
+          attachments: _attachments,
         );
 
         await ref
@@ -831,7 +841,7 @@ class _ClinicalHistoryWizardPageState
           medicamentosRecetados: const [],
           estudiosIndicados: const [],
           proximaCita: null,
-          attachments: const [],
+          attachments: _attachments,
           tags: const [],
           isFavorite: false,
         );
@@ -972,6 +982,7 @@ class _ClinicalHistoryWizardPageState
                           _buildStep4PadecimientoActual(),
                           _buildStep5ExploracionOrl(),
                           _buildStep6DiagnosticoPlan(),
+                          _buildStep7Attachments(),
                         ],
                       ),
                     ),
@@ -1202,6 +1213,40 @@ class _ClinicalHistoryWizardPageState
         ],
       ),
     );
+  }
+
+  // Step 7: Laboratorio y estudios (attachments)
+  Widget _buildStep7Attachments() {
+    return _buildStepContainer(
+      child: AttachmentsStep(
+        attachments: _attachments,
+        onAddLink: _addLinkAttachment,
+        onRemove: _removeAttachment,
+        isUploadEnabled: false, // Phase 2 will enable this
+      ),
+    );
+  }
+
+  void _addLinkAttachment(String url, String nombre) {
+    setState(() {
+      _attachments.add(
+        AttachmentEntity(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          nombre: nombre,
+          url: url,
+          tipo: AttachmentType.other,
+          size_in_bytes: 0,
+          fechaSubida: DateTime.now(),
+          thumbnail: null,
+        ),
+      );
+    });
+  }
+
+  void _removeAttachment(AttachmentEntity attachment) {
+    setState(() {
+      _attachments.removeWhere((a) => a.id == attachment.id);
+    });
   }
 }
 

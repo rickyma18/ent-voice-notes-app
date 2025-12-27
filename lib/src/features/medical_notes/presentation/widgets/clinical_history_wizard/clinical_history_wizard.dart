@@ -5,6 +5,7 @@
 /// Import this file to access all wizard-related widgets.
 library clinical_history_wizard;
 
+export 'attachments_step.dart';
 export 'guided_text_area.dart';
 export 'orl_accordion.dart';
 export 'patient_header.dart';
