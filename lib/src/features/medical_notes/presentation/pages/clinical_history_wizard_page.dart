@@ -19,6 +19,7 @@ import '../../medical_notes_providers.dart';
 import '../controllers/medical_notes_controller.dart';
 import '../widgets/clinical_history_wizard/ai_suggestions_sheet.dart';
 import '../widgets/clinical_history_wizard/clinical_history_wizard.dart';
+import '../widgets/clinical_history_wizard/dictation_quick_sheet.dart';
 
 /// Multi-step wizard page for creating/editing clinical history notes.
 ///
@@ -713,6 +714,97 @@ class _ClinicalHistoryWizardPageState
     super.dispose();
   }
 
+  // ---------------------------------------------------------------------------
+  // Field Dictation
+  // ---------------------------------------------------------------------------
+
+  /// Handles dictation for a specific text field controller.
+  ///
+  /// Opens a quick dictation bottom sheet and applies the transcript
+  /// to the target controller based on user choice.
+  Future<void> _handleFieldDictation(TextEditingController controller) async {
+    final transcript = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => const DictationQuickSheet(),
+    );
+
+    if (!mounted || transcript == null || transcript.trim().isEmpty) return;
+
+    _applyTranscriptToController(controller, transcript.trim());
+  }
+
+  /// Handles dictation for an ORL accordion section.
+  void _handleOrlDictation(String sectionId) {
+    final controller = _orlControllers[sectionId];
+    if (controller != null) {
+      _handleFieldDictation(controller);
+    }
+  }
+
+  /// Applies a transcript to a controller, showing a dialog if the field has content.
+  Future<void> _applyTranscriptToController(
+    TextEditingController controller,
+    String transcript,
+  ) async {
+    if (controller.text.trim().isEmpty) {
+      // Field is empty - insert directly
+      controller.text = transcript;
+      controller.selection = TextSelection.fromPosition(
+        TextPosition(offset: controller.text.length),
+      );
+    } else {
+      // Field has content - show dialog
+      final action = await _showDictationChoiceDialog();
+      if (!mounted || action == null) return;
+
+      switch (action) {
+        case _DictationAction.replace:
+          controller.text = transcript;
+          controller.selection = TextSelection.fromPosition(
+            TextPosition(offset: controller.text.length),
+          );
+        case _DictationAction.append:
+          final newText = '${controller.text.trimRight()}\n$transcript';
+          controller.text = newText;
+          controller.selection = TextSelection.fromPosition(
+            TextPosition(offset: controller.text.length),
+          );
+        case _DictationAction.cancel:
+          // Do nothing
+          break;
+      }
+    }
+  }
+
+  /// Shows a dialog to choose how to apply the dictated text.
+  Future<_DictationAction?> _showDictationChoiceDialog() {
+    return showDialog<_DictationAction>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Campo con contenido'),
+        content: const Text(
+          'El campo ya tiene texto. ¿Que desea hacer con la transcripcion?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _DictationAction.cancel),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _DictationAction.append),
+            child: const Text('Agregar al final'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, _DictationAction.replace),
+            child: const Text('Reemplazar'),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Combines all antecedentes sections into a single formatted string.
   String _buildAntecedentes() {
     final buffer = StringBuffer();
@@ -1043,6 +1135,7 @@ class _ClinicalHistoryWizardPageState
             hintText: 'Ej: Dolor de oido derecho persistente desde hace 3 dias...',
             maxLines: 8,
             minLines: 4,
+            onDictate: () => _handleFieldDictation(_motivoController),
             quickActions: const [
               QuickAction(label: 'Revision', text: 'Revision de rutina', icon: Icons.check),
               QuickAction(label: 'Seguimiento', text: 'Seguimiento de tratamiento', icon: Icons.sync),
@@ -1072,6 +1165,7 @@ class _ClinicalHistoryWizardPageState
             guidanceHints: ClinicalHints.familyHistory,
             maxLines: 10,
             minLines: 6,
+            onDictate: () => _handleFieldDictation(_antecedentesHeredofamiliaresController),
             quickActions: QuickActionButtons.historyActions,
           ),
         ],
@@ -1092,6 +1186,7 @@ class _ClinicalHistoryWizardPageState
             guidanceHints: ClinicalHints.nonPathologicalHistory,
             maxLines: 10,
             minLines: 6,
+            onDictate: () => _handleFieldDictation(_antecedentesNoPatologicosController),
             quickActions: QuickActionButtons.historyActions,
           ),
         ],
@@ -1112,6 +1207,7 @@ class _ClinicalHistoryWizardPageState
             guidanceHints: ClinicalHints.pathologicalHistory,
             maxLines: 12,
             minLines: 8,
+            onDictate: () => _handleFieldDictation(_antecedentesPatologicosController),
             quickActions: QuickActionButtons.historyActions,
           ),
         ],
@@ -1132,6 +1228,7 @@ class _ClinicalHistoryWizardPageState
             hintText: 'Descripcion detallada del padecimiento actual, evolucion, sintomas...',
             maxLines: 12,
             minLines: 8,
+            onDictate: () => _handleFieldDictation(_padecimientoActualController),
             quickActions: const [
               QuickAction(label: 'Agudo', text: 'Inicio agudo', icon: Icons.flash_on),
               QuickAction(label: 'Cronico', text: 'Evolucion cronica', icon: Icons.timeline),
@@ -1166,6 +1263,7 @@ class _ClinicalHistoryWizardPageState
           const SizedBox(height: 16),
           OrlAccordion(
             controllers: _orlControllers,
+            onDictate: _handleOrlDictation,
           ),
         ],
       ),
@@ -1191,6 +1289,7 @@ class _ClinicalHistoryWizardPageState
               maxLines: 4,
               minLines: 2,
               showQuickActions: false,
+              onDictate: () => _handleFieldDictation(_diagnosticoController),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
                   return 'Ingresa el diagnostico clinico';
@@ -1212,6 +1311,7 @@ class _ClinicalHistoryWizardPageState
               hintText: 'Ej: Amoxicilina 500mg c/8h por 7 dias, gotas oticas...',
               maxLines: 6,
               minLines: 4,
+              onDictate: () => _handleFieldDictation(_planController),
               quickActions: const [
                 QuickAction(label: 'Observacion', text: 'Observacion y seguimiento', icon: Icons.visibility),
                 QuickAction(label: 'Medicamento', text: 'Se indica tratamiento medico:', icon: Icons.medication),
@@ -1426,4 +1526,11 @@ class _WizardSectionCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Action choices for dictation when field has existing content.
+enum _DictationAction {
+  replace,
+  append,
+  cancel,
 }

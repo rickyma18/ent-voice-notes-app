@@ -25,13 +25,20 @@ enum DictationStatus {
 /// - Records audio
 /// - Transcribes to raw text
 /// - Allows the doctor to continue to either Clinical History Wizard or Surgical Note
+///
+/// When [returnMode] is true, the page returns the transcript via Navigator.pop
+/// instead of navigating to another page. This is used for field-scoped dictation.
 class DictationAssistPage extends ConsumerStatefulWidget {
   const DictationAssistPage({
     super.key,
     required this.patient,
+    this.returnMode = false,
   });
 
   final PatientEntity patient;
+
+  /// When true, returns the transcript via pop instead of navigating elsewhere.
+  final bool returnMode;
 
   @override
   ConsumerState<DictationAssistPage> createState() =>
@@ -400,37 +407,68 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
           ),
         ],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Continuar con:',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-            textAlign: TextAlign.center,
+      child: widget.returnMode
+          ? _buildReturnModeActions(theme)
+          : _buildNavigationModeActions(theme),
+    );
+  }
+
+  Widget _buildReturnModeActions(ThemeData theme) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FilledButton.icon(
+          onPressed: () => Navigator.pop(context, _rawTranscript),
+          icon: const Icon(Icons.check),
+          label: const Text('Usar este texto'),
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 14),
           ),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: _continueToWizard,
-            icon: const Icon(Icons.assignment),
-            label: const Text('Historia Clinica'),
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton(
+          onPressed: () => Navigator.pop(context, null),
+          child: const Text('Cancelar'),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 14),
           ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _continueToSurgicalNote,
-            icon: const Icon(Icons.local_hospital),
-            label: const Text('Nota Quirurgica'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNavigationModeActions(ThemeData theme) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Continuar con:',
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w600,
           ),
-        ],
-      ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          onPressed: _continueToWizard,
+          icon: const Icon(Icons.assignment),
+          label: const Text('Historia Clinica'),
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _continueToSurgicalNote,
+          icon: const Icon(Icons.local_hospital),
+          label: const Text('Nota Quirurgica'),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+        ),
+      ],
     );
   }
 }
