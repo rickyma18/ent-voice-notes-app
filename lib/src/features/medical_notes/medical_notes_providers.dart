@@ -10,10 +10,15 @@ import 'application/audio_recording_service_impl.dart';
 import 'application/speech_to_text_service.dart';
 import 'application/speech_to_text_service_impl.dart';
 
+import 'application/usecases/upload_image_attachment_usecase.dart';
+import 'application/usecases/upload_pdf_attachment_usecase.dart';
+import 'data/datasources/attachments_storage_datasource.dart';
 import 'data/datasources/medical_notes_local_datasource.dart';
 import 'data/datasources/medical_notes_remote_datasource.dart';
 // import 'data/datasources/medical_notes_fake_datasource.dart'; // Fake kept for testing
+import 'data/repositories/attachments_repository_impl.dart';
 import 'data/repositories/medical_notes_repository_impl.dart';
+import 'domain/repositories/attachments_repository.dart';
 import 'domain/repositories/medical_notes_repository.dart';
 import 'domain/usecases/get_medical_notes_by_doctor_use_case.dart';
 import 'domain/usecases/create_medical_note_use_case.dart';
@@ -204,5 +209,47 @@ DeleteMedicalNoteUseCase deleteMedicalNoteUseCase(
 ) {
   return DeleteMedicalNoteUseCase(
     ref.watch(medicalNotesRepositoryProvider),
+  );
+}
+
+// =============================================================================
+// Attachments providers (Firebase Storage)
+// =============================================================================
+
+/// Attachments storage datasource provider.
+@riverpod
+AttachmentsStorageDatasource attachmentsStorageDatasource(
+  AttachmentsStorageDatasourceRef ref,
+) {
+  return AttachmentsStorageDatasource();
+}
+
+/// Attachments repository provider.
+@riverpod
+AttachmentsRepository attachmentsRepository(
+  AttachmentsRepositoryRef ref,
+) {
+  return AttachmentsRepositoryImpl(
+    datasource: ref.watch(attachmentsStorageDatasourceProvider),
+  );
+}
+
+/// Upload image attachment use case provider.
+@riverpod
+UploadImageAttachmentUseCase uploadImageAttachmentUseCase(
+  UploadImageAttachmentUseCaseRef ref,
+) {
+  return UploadImageAttachmentUseCase(
+    repository: ref.watch(attachmentsRepositoryProvider),
+  );
+}
+
+/// Upload PDF attachment use case provider.
+@riverpod
+UploadPdfAttachmentUseCase uploadPdfAttachmentUseCase(
+  UploadPdfAttachmentUseCaseRef ref,
+) {
+  return UploadPdfAttachmentUseCase(
+    repository: ref.watch(attachmentsRepositoryProvider),
   );
 }
