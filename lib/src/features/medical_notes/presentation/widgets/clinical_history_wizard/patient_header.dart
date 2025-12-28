@@ -25,6 +25,9 @@ class PatientHeader extends StatelessWidget {
   final ValueChanged<DateTime>? onDateChanged;
   final bool isEditing;
 
+  /// Breakpoint for switching between wide (Row) and narrow (Column) layout.
+  static const double _narrowBreakpoint = 420.0;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -35,10 +38,11 @@ class PatientHeader extends StatelessWidget {
       elevation: 0,
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            // Patient avatar
-            CircleAvatar(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isNarrow = constraints.maxWidth < _narrowBreakpoint;
+
+            final avatar = CircleAvatar(
               radius: 24,
               backgroundColor: theme.colorScheme.primary,
               child: Text(
@@ -48,49 +52,47 @@ class PatientHeader extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-            ),
-            const SizedBox(width: 16),
+            );
 
-            // Patient info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    patient.fullName,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+            final patientInfo = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  patient.fullName,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _InfoChip(
+                      icon: Icons.cake_outlined,
+                      label: '${patient.age} años',
                     ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      _InfoChip(
-                        icon: Icons.cake_outlined,
-                        label: '${patient.age} años',
-                      ),
-                      const SizedBox(width: 8),
-                      _InfoChip(
-                        icon: patient.sex.toUpperCase() == 'M'
-                            ? Icons.male
-                            : Icons.female,
-                        label: patient.sexDisplay,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+                    const SizedBox(width: 8),
+                    _InfoChip(
+                      icon: patient.sex.toUpperCase() == 'M'
+                          ? Icons.male
+                          : Icons.female,
+                      label: patient.sexDisplay,
+                    ),
+                  ],
+                ),
+              ],
+            );
 
-            // Date display/picker
-            InkWell(
+            final dateContainer = InkWell(
               onTap: onDateChanged != null
                   ? () => _showDatePicker(context)
                   : null,
               borderRadius: BorderRadius.circular(8),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.surface,
                   borderRadius: BorderRadius.circular(8),
@@ -124,8 +126,41 @@ class PatientHeader extends StatelessWidget {
                   ],
                 ),
               ),
-            ),
-          ],
+            );
+
+            if (isNarrow) {
+              // Narrow layout: Column with two rows
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // First row: avatar + patient info
+                  Row(
+                    children: [
+                      avatar,
+                      const SizedBox(width: 16),
+                      Expanded(child: patientInfo),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Second row: date container aligned right
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: dateContainer,
+                  ),
+                ],
+              );
+            }
+
+            // Wide layout: single Row
+            return Row(
+              children: [
+                avatar,
+                const SizedBox(width: 16),
+                Expanded(child: patientInfo),
+                dateContainer,
+              ],
+            );
+          },
         ),
       ),
     );

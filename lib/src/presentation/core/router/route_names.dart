@@ -23,6 +23,7 @@ class RouteNames {
   static const String medicalNotesCreate = 'medicalNotesCreate';
   static const String medicalNotesDetail = 'medicalNotesDetail';
   static const String clinicalHistoryWizard = 'clinicalHistoryWizard';
+  static const String surgicalNoteWizard = 'surgicalNoteWizard';
   static const String dictationAssist = 'dictationAssist';
 
   // Patients routes (feature-scoped unique names)

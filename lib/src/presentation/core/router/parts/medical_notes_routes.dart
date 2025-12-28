@@ -146,6 +146,60 @@ List<RouteBase> _medicalNotesRoutes(ref) {
             );
           },
         ),
+        // Surgical Note Wizard route
+        GoRoute(
+          path: Routes.surgicalNoteWizard,
+          name: RouteNames.surgicalNoteWizard,
+          pageBuilder: (context, state) {
+            // Accept patient and optional existing note for editing
+            final extra = state.extra;
+            PatientEntity? patient;
+            MedicalNoteEntity? existingNote;
+            String? initialRawTranscript;
+
+            if (extra is PatientEntity) {
+              patient = extra;
+            } else if (extra is Map<String, dynamic>) {
+              patient = extra['patient'] as PatientEntity?;
+              existingNote = extra['note'] as MedicalNoteEntity?;
+              initialRawTranscript = extra['initialRawTranscript'] as String?;
+            }
+
+            if (patient == null) {
+              return MaterialPage(
+                child: Scaffold(
+                  appBar: AppBar(title: const Text('Error')),
+                  body: const Center(
+                    child: Text('Error: No se proporcionó un paciente.'),
+                  ),
+                ),
+              );
+            }
+
+            // Get the current doctor ID from the provider
+            final doctorId = ref.read(currentDoctorIdProvider);
+
+            if (doctorId == null) {
+              return MaterialPage(
+                child: Scaffold(
+                  appBar: AppBar(title: const Text('Error')),
+                  body: const Center(
+                    child: Text('Error: No doctor ID found. Please log in again.'),
+                  ),
+                ),
+              );
+            }
+
+            return MaterialPage(
+              child: SurgicalNoteWizardPage(
+                patientId: patient.id,
+                doctorId: doctorId,
+                existingNote: existingNote,
+                initialRawTranscript: initialRawTranscript,
+              ),
+            );
+          },
+        ),
         // Dictation Assist route
         GoRoute(
           path: Routes.dictationAssist,

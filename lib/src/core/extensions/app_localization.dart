@@ -6,8 +6,7 @@ extension AppLocalizationExtension on AppLocalizations {
   String getLanguageName(String languageCode) {
     return switch (languageCode) {
       'en' => english,
-      'bn' => bangla,
-      'ar' => arabic,
+      'es' => spanish,
       _ => languageCode,
     };
   }

@@ -6,9 +6,10 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { AuthGuard } from '@/components/AuthGuard';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
-import { Patient, MedicalNote, MedicalNoteFormData, MedicalNoteType } from '@/types';
+import { Patient, MedicalNote, MedicalNoteFormData, MedicalNoteType, Attachment } from '@/types';
 import { getPatientById } from '@/lib/patients';
 import { getNotesByPatient, createNote, deleteNote } from '@/lib/medical-notes';
+import { AttachmentsPicker } from '@/components/attachments/AttachmentsPicker';
 
 export default function PatientDetailPage({
   params,
@@ -44,6 +45,7 @@ function PatientDetailContent({ patientId }: { patientId: string }) {
     notaAdicional: '',
     status: 'draft',
   });
+  const [formAttachments, setFormAttachments] = useState<Attachment[]>([]);
 
   useEffect(() => {
     loadData();
@@ -84,7 +86,12 @@ function PatientDetailContent({ patientId }: { patientId: string }) {
     setError('');
 
     try {
-      await createNote(noteFormData, patientId, user.uid);
+      // Include attachments in the form data
+      const dataWithAttachments: MedicalNoteFormData = {
+        ...noteFormData,
+        attachments: formAttachments,
+      };
+      await createNote(dataWithAttachments, patientId, user.uid);
       await loadData();
       resetNoteForm();
     } catch (err: any) {
@@ -121,6 +128,7 @@ function PatientDetailContent({ patientId }: { patientId: string }) {
       notaAdicional: '',
       status: 'draft',
     });
+    setFormAttachments([]);
   };
 
   const getStatusDisplay = (status: string) => {
@@ -501,6 +509,21 @@ function PatientDetailContent({ patientId }: { patientId: string }) {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
+                {/* Attachments Section */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Archivos Adjuntos
+                  </label>
+                  <AttachmentsPicker
+                    value={formAttachments}
+                    onChange={setFormAttachments}
+                    patientId={patientId}
+                    userId={user?.uid || ''}
+                    disabled={formLoading}
+                  />
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -571,6 +594,14 @@ function PatientDetailContent({ patientId }: { patientId: string }) {
                         {note.type === 'surgical_note' && (
                           <span className="inline-block px-2 py-1 text-xs font-semibold rounded bg-purple-100 text-purple-800">
                             Quirurgica
+                          </span>
+                        )}
+                        {note.attachments && note.attachments.length > 0 && (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded bg-gray-100 text-gray-700">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                            </svg>
+                            {note.attachments.length}
                           </span>
                         )}
                       </div>

@@ -200,4 +200,6 @@ export interface MedicalNoteFormData {
   status: NoteStatus;
   // Surgical note specific fields
   surgicalData?: SurgicalData;
+  // Attachments (optional, for create/edit flows)
+  attachments?: Attachment[];
 }

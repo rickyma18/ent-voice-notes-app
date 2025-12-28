@@ -22,8 +22,9 @@ class _HomePageState extends ConsumerState<HomePage> {
         case AsyncData(:final value) when value == true:
           context.pushReplacementNamed(RouteNames.login);
         case AsyncError(:final error):
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(error.toString())));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(error.toString())));
       }
     });
   }
@@ -95,7 +96,7 @@ class _HomePageState extends ConsumerState<HomePage> {
               const SizedBox(height: 48),
 
               Text(
-                'Quick Actions',
+                'Acciones rápidas',
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
@@ -139,7 +140,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: () {
-                    context.pushNamed(RouteNames.medicalNotesCreate);
+                    context.pushNamed(RouteNames.selectPatient);
                   },
                   icon: const Icon(Icons.add_circle_outline),
                   label: Text(context.locale.createNewNote),

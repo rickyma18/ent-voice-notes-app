@@ -43,19 +43,26 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
 
   @override
   Future<bool> startRecording() async {
-    // State guard: prevent double-start
-    if (_isRecording) {
-      Log.warning('🎤 startRecording called but already recording');
-      return false;
+    // Check if recorder is already recording (either by our flag or actual state)
+    final isActuallyRecording = await _recorder.isRecording();
+    if (_isRecording || isActuallyRecording) {
+      Log.warning('🎤 startRecording called but already recording (local: $_isRecording, actual: $isActuallyRecording)');
+      throw AudioRecordingException(
+        'Ya hay una grabación en curso',
+        reason: RecordingFailureReason.alreadyRecording,
+      );
     }
 
     try {
       // 1. Request microphone permission
-      final permissionStatus = await _requestMicrophonePermission();
-      if (!permissionStatus) {
-        Log.error('🎤 Microphone permission denied');
+      final permissionResult = await _requestMicrophonePermission();
+      if (permissionResult != null) {
+        Log.error('🎤 Microphone permission issue: ${permissionResult.name}');
         throw AudioRecordingException(
-          'Permiso de micrófono denegado. Por favor habilita el acceso al micrófono en la configuración.',
+          permissionResult == RecordingFailureReason.permissionPermanentlyDenied
+              ? 'Permiso de micrófono denegado permanentemente. Por favor habilita el acceso en Configuración.'
+              : 'Permiso de micrófono denegado. Por favor permite el acceso al micrófono.',
+          reason: permissionResult,
         );
       }
 
@@ -63,11 +70,12 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
       _currentRecordingPath = await _createAudioFilePath();
       Log.info('🎤 Recording path: $_currentRecordingPath');
 
-      // 3. Check if recorder has permission (additional check)
+      // 3. Check if recorder has permission (additional check from record package)
       if (!await _recorder.hasPermission()) {
         Log.error('🎤 Recorder reports no permission');
         throw AudioRecordingException(
           'No se pudo verificar el permiso del micrófono.',
+          reason: RecordingFailureReason.permissionDenied,
         );
       }
 
@@ -95,6 +103,7 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
 
       throw AudioRecordingException(
         'Error al iniciar la grabación: ${e.toString()}',
+        reason: RecordingFailureReason.unexpected,
       );
     }
   }
@@ -122,6 +131,7 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
         _currentRecordingPath = null;
         throw AudioRecordingException(
           'No se pudo obtener el archivo de audio.',
+          reason: RecordingFailureReason.pathError,
         );
       }
 
@@ -132,6 +142,7 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
         _currentRecordingPath = null;
         throw AudioRecordingException(
           'El archivo de audio no existe.',
+          reason: RecordingFailureReason.pathError,
         );
       }
 
@@ -142,6 +153,7 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
         _currentRecordingPath = null;
         throw AudioRecordingException(
           'El archivo de audio está vacío.',
+          reason: RecordingFailureReason.unexpected,
         );
       }
 
@@ -159,6 +171,7 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
 
       throw AudioRecordingException(
         'Error al detener la grabación: ${e.toString()}',
+        reason: RecordingFailureReason.unexpected,
       );
     }
   }
@@ -192,32 +205,30 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
 
   /// Requests microphone permission.
   ///
-  /// Returns true if permission is granted, false otherwise.
-  Future<bool> _requestMicrophonePermission() async {
+  /// Returns `null` if permission is granted, or the specific failure reason.
+  Future<RecordingFailureReason?> _requestMicrophonePermission() async {
     try {
       final status = await Permission.microphone.request();
 
       if (status.isGranted) {
         Log.info('🎤 Microphone permission granted');
-        return true;
-      }
-
-      if (status.isDenied) {
-        Log.warning('🎤 Microphone permission denied');
-        return false;
+        return null; // Success
       }
 
       if (status.isPermanentlyDenied) {
         Log.warning('🎤 Microphone permission permanently denied');
-        // On permanently denied, we could open app settings
-        // but for now we just return false
-        return false;
+        return RecordingFailureReason.permissionPermanentlyDenied;
       }
 
-      return false;
+      if (status.isDenied) {
+        Log.warning('🎤 Microphone permission denied');
+        return RecordingFailureReason.permissionDenied;
+      }
+
+      return RecordingFailureReason.permissionDenied;
     } catch (e) {
       Log.error('🎤 Error requesting microphone permission: $e');
-      return false;
+      return RecordingFailureReason.permissionDenied;
     }
   }
 
@@ -247,7 +258,35 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
       Log.error('🎤 Error creating audio file path: $e');
       throw AudioRecordingException(
         'Error al crear la ruta del archivo de audio.',
+        reason: RecordingFailureReason.pathError,
       );
+    }
+  }
+
+  @override
+  Future<void> ensureStopped() async {
+    try {
+      final isActuallyRecording = await _recorder.isRecording();
+      if (_isRecording || isActuallyRecording) {
+        Log.info('🎤 ensureStopped: Cleaning up orphaned recording state');
+        await _recorder.stop();
+        _isRecording = false;
+
+        // Delete any orphaned temp file
+        if (_currentRecordingPath != null) {
+          final file = File(_currentRecordingPath!);
+          if (await file.exists()) {
+            await file.delete();
+            Log.info('🎤 ensureStopped: Deleted orphaned temp file');
+          }
+          _currentRecordingPath = null;
+        }
+      }
+    } catch (e) {
+      Log.warning('🎤 ensureStopped: Error during cleanup (ignored): $e');
+      // Reset state regardless of error
+      _isRecording = false;
+      _currentRecordingPath = null;
     }
   }
 
@@ -258,17 +297,4 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
     }
     await _recorder.dispose();
   }
-}
-
-/// Custom exception for audio recording errors.
-///
-/// These exceptions contain user-friendly error messages in Spanish
-/// that can be displayed directly in the UI.
-class AudioRecordingException implements Exception {
-  final String message;
-
-  AudioRecordingException(this.message);
-
-  @override
-  String toString() => message;
 }

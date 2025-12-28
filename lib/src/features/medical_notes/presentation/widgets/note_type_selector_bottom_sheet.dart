@@ -84,12 +84,12 @@ class _NoteTypeSelectorContent extends StatelessWidget {
             ),
             const SizedBox(height: 16),
 
-            // Surgical Note - Secondary option
+            // Surgical Note - Secondary option (now uses wizard)
             OutlinedButton.icon(
               onPressed: () {
                 Navigator.pop(context);
                 context.pushNamed(
-                  RouteNames.medicalNotesCreate,
+                  RouteNames.surgicalNoteWizard,
                   extra: patient,
                 );
               },
@@ -101,7 +101,7 @@ class _NoteTypeSelectorContent extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Para procedimientos y cirugias',
+              'Formulario guiado para procedimientos y cirugias',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
               ),

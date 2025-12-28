@@ -1,0 +1,86 @@
+{
+  "english": "Inglés",
+  "spanish": "Español",
+  "home": "Inicio",
+  "profile": "Perfil",
+  "login": "Iniciar sesión",
+  "createNewPassword": "Crear nueva contraseña",
+  "createNewPasswordHint": "Tu nueva contraseña debe ser diferente a las contraseñas utilizadas anteriormente.",
+  "resetPassword": "Restablecer contraseña",
+  "newPassword": "Nueva contraseña",
+  "passwordChangeSuccess": "Contraseña cambiada correctamente",
+  "emailRequired": "El correo electrónico es obligatorio",
+  "passwordRequired": "La contraseña es obligatoria",
+  "isRequired": "Este campo es obligatorio",
+  "validEmail": "Por favor ingresa una dirección de correo válida",
+  "enterAssociatedEmail": "Ingresa el correo asociado a tu cuenta y te enviaremos un correo con instrucciones para restablecer tu contraseña.",
+  "minLengthValidation": "Este campo debe tener al menos {min} caracteres",
+  "@minLengthValidation": {
+    "description": "Error message for minimum length validation",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "maxLengthValidation": "Este campo debe tener como máximo {max} caracteres",
+  "@maxLengthValidation": {
+    "description": "Error message for maximum length validation",
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "example": "20"
+      }
+    }
+  },
+  "yourPasswordChanged": "Tu contraseña ha sido cambiada correctamente.",
+  "confirmPassword": "Confirmar contraseña",
+  "logout": "Cerrar sesión",
+  "getStarted": "Comenzar",
+  "rememberMe": "Recordarme",
+  "forgotPassword": "¿Olvidaste tu contraseña?",
+  "backToLogin": "Volver a iniciar sesión",
+  "continueAction": "Continuar",
+  "signUp": "Registrarse",
+  "signIn": "Iniciar sesión",
+  "email": "Correo electrónico",
+  "emailAddress": "Dirección de correo electrónico",
+  "password": "Contraseña",
+  "firstName": "Nombre",
+  "lastName": "Apellido",
+  "dontHaveAccount": "¿No tienes una cuenta? ",
+  "alreadyHaveAccount": "¿Ya tienes una cuenta? ",
+  "checkYourMail": "Revisa tu correo",
+  "enterVerificationCode": "Por favor ingresa el código de 4 dígitos enviado a tu correo hello**@gmail.com.",
+  "didntGetCode": "¿No recibiste el código? ",
+  "clickToResend": "Haz clic para reenviar",
+  "didNotReceiveEmail": "¿No recibiste el correo? Revisa tu carpeta de spam o ",
+  "tryAnotherEmail": "intenta con otra dirección de correo",
+  "learnFlutterTitle": "Aprende Flutter con tutoriales completos.",
+  "learnFlutterSubtitle": "Guías paso a paso para crear aplicaciones Flutter.",
+  "learnFlutterDescription": "Recibe notificaciones sobre nuevos tutoriales y actualizaciones.",
+  "joinCommunityTitle": "Únete a la comunidad Flutter.",
+  "joinCommunitySubtitle": "Conecta con otros desarrolladores Flutter.",
+  "joinCommunityDescription": "Participa en eventos y discusiones de la comunidad.",
+  "buildDeployTitle": "Crea y despliega aplicaciones Flutter fácilmente.",
+  "buildDeploySubtitle": "Accede a herramientas y recursos para el desarrollo de apps.",
+  "buildDeployDescription": "Despliega tus aplicaciones en múltiples plataformas con facilidad.",
+  "passwordMinLengthValidation": "La contraseña debe tener al menos {minLength} caracteres",
+  "@passwordMinLengthValidation": {
+    "description": "Error message for password minimum length validation",
+    "placeholders": {
+      "minLength": {
+        "type": "String"
+      }
+    }
+  },
+  "passwordNumberValidation": "La contraseña debe contener al menos un número",
+  "passwordLowerCaseValidation": "La contraseña debe contener al menos una letra minúscula",
+  "passwordUpperCaseValidation": "La contraseña debe contener al menos una letra mayúscula",
+  "passwordSpecialCharValidation": "La contraseña debe contener al menos un carácter especial",
+  "medicalNotesTitle": "Notas médicas",
+  "medicalNotesSubtitle": "Notas clínicas por voz para ORL",
+  "viewMedicalNotes": "Ver notas médicas",
+  "createNewNote": "Crear nueva nota"
+}

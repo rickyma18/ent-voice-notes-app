@@ -9,7 +9,7 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { ClinicalHistoryViewer } from '@/components/ClinicalHistoryViewer';
 import { SurgicalNoteViewer } from '@/components/SurgicalNoteViewer';
 import { TemplateInsertModal } from '@/components/TemplateInsertModal';
-import { MedicalNote, MedicalNoteFormData, NoteStatus } from '@/types';
+import { MedicalNote, MedicalNoteFormData, NoteStatus, Attachment, AttachmentType } from '@/types';
 import { getPatientById } from '@/lib/patients';
 import { getNoteById, updateNote, deleteNote } from '@/lib/medical-notes';
 import { Patient } from '@/types';
@@ -682,6 +682,56 @@ function NoteDetailContent({
               <SurgicalNoteViewer note={note} patient={patient} />
             )}
 
+            {/* Medications Section */}
+            {note.medicamentosRecetados && note.medicamentosRecetados.length > 0 && (
+              <MedicationsSection medications={note.medicamentosRecetados} />
+            )}
+
+            {/* Studies Section */}
+            {note.estudiosIndicados && note.estudiosIndicados.length > 0 && (
+              <StudiesSection studies={note.estudiosIndicados} />
+            )}
+
+            {/* Attachments Section */}
+            {note.attachments && note.attachments.length > 0 && (
+              <AttachmentsSection attachments={note.attachments} />
+            )}
+
+            {/* Tags Section */}
+            {note.tags && note.tags.length > 0 && (
+              <div className="bg-white p-6 rounded-lg shadow">
+                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                  </svg>
+                  Etiquetas
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {note.tags.map((tag, index) => (
+                    <span
+                      key={index}
+                      className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Next Appointment */}
+            {note.proximaCita && (
+              <div className="bg-white p-6 rounded-lg shadow">
+                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  Proxima Cita
+                </h3>
+                <p className="text-gray-700">{formatDate(note.proximaCita)}</p>
+              </div>
+            )}
+
             {/* Raw Data Section (original cards, collapsed by default for reference) */}
             <details className="bg-white rounded-lg shadow overflow-hidden">
               <summary className="px-6 py-4 cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors flex items-center justify-between">
@@ -783,6 +833,280 @@ function NoteDetailContent({
         onReplace={handleTemplateReplace}
         fieldName={templateModal.fieldName}
       />
+    </div>
+  );
+}
+
+// ============================================================================
+// SUBCOMPONENTS
+// ============================================================================
+
+function MedicationsSection({
+  medications,
+}: {
+  medications: MedicalNote['medicamentosRecetados'];
+}) {
+  return (
+    <div className="bg-white p-6 rounded-lg shadow">
+      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+        <svg
+          className="w-5 h-5 text-green-600"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
+          />
+        </svg>
+        Medicamentos Recetados
+      </h3>
+      <div className="space-y-3">
+        {medications.map((med, index) => (
+          <div
+            key={index}
+            className="p-3 bg-green-50 rounded-md border border-green-200"
+          >
+            <p className="font-medium text-gray-800">
+              {med.nombre} - {med.dosis}
+            </p>
+            <p className="text-sm text-gray-600">
+              {med.frecuencia} por {med.duracion}
+            </p>
+            {med.indicaciones && (
+              <p className="text-sm text-gray-500 mt-1">{med.indicaciones}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StudiesSection({
+  studies,
+}: {
+  studies: MedicalNote['estudiosIndicados'];
+}) {
+  const getUrgencyBadge = (urgency: string) => {
+    switch (urgency) {
+      case 'urgent':
+        return 'bg-red-100 text-red-800';
+      case 'priority':
+        return 'bg-yellow-100 text-yellow-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getUrgencyLabel = (urgency: string) => {
+    switch (urgency) {
+      case 'urgent':
+        return 'Urgente';
+      case 'priority':
+        return 'Prioritario';
+      default:
+        return 'Rutina';
+    }
+  };
+
+  return (
+    <div className="bg-white p-6 rounded-lg shadow">
+      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+        <svg
+          className="w-5 h-5 text-blue-600"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
+          />
+        </svg>
+        Estudios Indicados
+      </h3>
+      <div className="space-y-3">
+        {studies.map((study, index) => (
+          <div
+            key={index}
+            className="p-3 bg-blue-50 rounded-md border border-blue-200"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <p className="font-medium text-gray-800">{study.tipo}</p>
+              <span
+                className={`px-2 py-0.5 text-xs font-medium rounded ${getUrgencyBadge(
+                  study.urgencia
+                )}`}
+              >
+                {getUrgencyLabel(study.urgencia)}
+              </span>
+            </div>
+            <p className="text-sm text-gray-600">{study.descripcion}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AttachmentsSection({ attachments }: { attachments: Attachment[] }) {
+  const images = attachments.filter((a) => a.tipo === 'image');
+  const nonImages = attachments.filter((a) => a.tipo !== 'image');
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const getTypeIcon = (tipo: AttachmentType) => {
+    switch (tipo) {
+      case 'pdf':
+        return (
+          <svg className="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
+          </svg>
+        );
+      case 'audio':
+        return (
+          <svg className="w-5 h-5 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.984 5.984 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.983 3.983 0 00-1.172-2.828 1 1 0 010-1.415z" clipRule="evenodd" />
+          </svg>
+        );
+      case 'video':
+        return (
+          <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
+          </svg>
+        );
+      default:
+        return (
+          <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M8 4a3 3 0 00-3 3v4a5 5 0 0010 0V7a1 1 0 112 0v4a7 7 0 11-14 0V7a5 5 0 0110 0v4a3 3 0 11-6 0V7a1 1 0 012 0v4a1 1 0 102 0V7a3 3 0 00-3-3z" clipRule="evenodd" />
+          </svg>
+        );
+    }
+  };
+
+  const getActionLabel = (tipo: AttachmentType) => {
+    if (tipo === 'audio' || tipo === 'video') return 'Reproducir';
+    return 'Abrir';
+  };
+
+  const getTypeBgColor = (tipo: AttachmentType) => {
+    switch (tipo) {
+      case 'pdf':
+        return 'bg-red-100';
+      case 'audio':
+        return 'bg-purple-100';
+      case 'video':
+        return 'bg-blue-100';
+      default:
+        return 'bg-gray-100';
+    }
+  };
+
+  return (
+    <div className="bg-white p-6 rounded-lg shadow">
+      <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+        <svg
+          className="w-5 h-5 text-gray-600"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
+          />
+        </svg>
+        Archivos Adjuntos
+        <span className="text-sm font-normal text-gray-500">
+          ({attachments.length})
+        </span>
+      </h3>
+
+      {/* Image Grid */}
+      {images.length > 0 && (
+        <div className="mb-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {images.map((attachment) => (
+              <a
+                key={attachment.id}
+                href={attachment.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block aspect-square rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 hover:shadow-md transition-all group relative"
+              >
+                <img
+                  src={attachment.thumbnail || attachment.url}
+                  alt={attachment.nombre}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src =
+                      'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23ccc"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>';
+                  }}
+                />
+                {/* Filename overlay */}
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-2">
+                  <p className="text-white text-xs truncate">
+                    {attachment.nombre}
+                  </p>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Non-image files list */}
+      {nonImages.length > 0 && (
+        <div className="space-y-2">
+          {nonImages.map((attachment) => (
+            <div
+              key={attachment.id}
+              className="flex items-center gap-3 p-3 bg-gray-50 rounded-md border border-gray-200 hover:bg-gray-100 transition-colors"
+            >
+              {/* Icon */}
+              <div
+                className={`w-10 h-10 rounded-lg flex items-center justify-center ${getTypeBgColor(
+                  attachment.tipo
+                )}`}
+              >
+                {getTypeIcon(attachment.tipo)}
+              </div>
+
+              {/* File info */}
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-gray-800 truncate">
+                  {attachment.nombre}
+                </p>
+                <p className="text-sm text-gray-500">
+                  {formatSize(attachment.sizeInBytes)}
+                </p>
+              </div>
+
+              {/* Actions */}
+              <a
+                href={attachment.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors"
+              >
+                {getActionLabel(attachment.tipo)}
+              </a>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

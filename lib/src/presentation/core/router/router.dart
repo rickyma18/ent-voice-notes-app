@@ -29,6 +29,7 @@ import '../../../features/medical_notes/presentation/pages/medical_notes_list_pa
 import '../../../features/medical_notes/presentation/pages/create_medical_note_page.dart';
 import '../../../features/medical_notes/presentation/pages/medical_note_detail_page.dart';
 import '../../../features/medical_notes/presentation/pages/clinical_history_wizard_page.dart';
+import '../../../features/medical_notes/presentation/pages/surgical_note_wizard_page.dart';
 import '../../../features/medical_notes/presentation/pages/dictation_assist_page.dart';
 import '../../../features/medical_notes/domain/entities/medical_note_entity.dart';
 

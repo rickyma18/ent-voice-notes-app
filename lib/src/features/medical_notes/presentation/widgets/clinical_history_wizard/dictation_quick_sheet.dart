@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../application/audio_recording_service.dart';
 import '../../../medical_notes_providers.dart';
 
 /// Status for the quick dictation sheet.
@@ -94,19 +95,22 @@ class _DictationQuickSheetState extends ConsumerState<DictationQuickSheet> {
       });
 
       try {
-        final started = await audioService.startRecording();
-
-        if (!started && mounted) {
+        // Ensure any orphaned recording state is cleaned up first
+        await audioService.ensureStopped();
+        await audioService.startRecording();
+        // Recording started successfully
+      } on AudioRecordingException catch (e) {
+        if (mounted) {
           setState(() {
             _status = _DictationStatus.idle;
-            _errorMessage = 'No se pudo iniciar la grabacion';
+            _errorMessage = e.message;
           });
         }
       } catch (e) {
         if (mounted) {
           setState(() {
             _status = _DictationStatus.idle;
-            _errorMessage = 'Error al iniciar: $e';
+            _errorMessage = 'Error inesperado: $e';
           });
         }
       }

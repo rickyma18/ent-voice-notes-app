@@ -78,6 +78,9 @@ export async function createNote(
   patientId: string,
   doctorId: string
 ): Promise<MedicalNote> {
+  // Use attachments from form data if provided, otherwise empty array
+  const attachments = data.attachments || [];
+
   const firestoreData = {
     ...medicalNoteToFirestore({
       ...data,
@@ -85,7 +88,7 @@ export async function createNote(
       doctorId,
       medicamentosRecetados: [],
       estudiosIndicados: [],
-      attachments: [],
+      attachments,
       tags: [],
       isFavorite: false,
     }),
@@ -117,7 +120,7 @@ export async function createNote(
     status: data.status,
     medicamentosRecetados: [],
     estudiosIndicados: [],
-    attachments: [],
+    attachments,
     tags: [],
     isFavorite: false,
     surgicalData: data.surgicalData,

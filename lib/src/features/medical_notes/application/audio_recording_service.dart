@@ -1,15 +1,37 @@
 // lib/src/features/medical_notes/application/audio_recording_service.dart
 
+/// Reasons why audio recording might fail.
+enum RecordingFailureReason {
+  /// Microphone permission was denied by the user.
+  permissionDenied,
+
+  /// Microphone permission is permanently denied (must go to settings).
+  permissionPermanentlyDenied,
+
+  /// The recorder is already recording.
+  alreadyRecording,
+
+  /// The recorder is busy or in an invalid state.
+  recorderBusy,
+
+  /// Could not create the output file path.
+  pathError,
+
+  /// An unexpected error occurred.
+  unexpected,
+}
+
 /// Servicio de grabación de audio.
 ///
 /// Esta abstracción permite grabar audio para transcripción médica.
 /// En producción, esto usaría un paquete como `record` o `audio_recorder`.
-///
-/// Por ahora, usamos un stub para no agregar dependencias externas.
 abstract class AudioRecordingService {
   /// Inicia la grabación de audio.
   ///
-  /// Devuelve `true` si la grabación comenzó exitosamente.
+  /// Throws [AudioRecordingException] with a specific [RecordingFailureReason]
+  /// if the recording cannot be started.
+  ///
+  /// Returns `true` if the recording started successfully.
   Future<bool> startRecording();
 
   /// Detiene la grabación de audio.
@@ -23,6 +45,12 @@ abstract class AudioRecordingService {
 
   /// Cancela la grabación actual sin guardar el archivo.
   Future<void> cancelRecording();
+
+  /// Ensures the recorder is stopped and reset to idle state.
+  ///
+  /// Call this before starting a new recording to clean up any orphaned state.
+  /// Safe to call even if not recording.
+  Future<void> ensureStopped();
 }
 
 /// Implementación stub (simulada) del servicio de grabación.
@@ -41,7 +69,12 @@ class AudioRecordingServiceStub implements AudioRecordingService {
 
   @override
   Future<bool> startRecording() async {
-    if (_isRecording) return false;
+    if (_isRecording) {
+      throw AudioRecordingException(
+        'Ya hay una grabación en curso',
+        reason: RecordingFailureReason.alreadyRecording,
+      );
+    }
 
     // Simula iniciar grabación
     await Future.delayed(const Duration(milliseconds: 300));
@@ -82,4 +115,28 @@ class AudioRecordingServiceStub implements AudioRecordingService {
 
     print('🎤 [STUB] Grabación cancelada');
   }
+
+  @override
+  Future<void> ensureStopped() async {
+    if (_isRecording) {
+      await cancelRecording();
+    }
+  }
+}
+
+/// Custom exception for audio recording errors.
+///
+/// These exceptions contain user-friendly error messages in Spanish
+/// that can be displayed directly in the UI.
+class AudioRecordingException implements Exception {
+  final String message;
+  final RecordingFailureReason reason;
+
+  AudioRecordingException(
+    this.message, {
+    this.reason = RecordingFailureReason.unexpected,
+  });
+
+  @override
+  String toString() => message;
 }

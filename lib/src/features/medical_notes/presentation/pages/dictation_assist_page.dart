@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../presentation/core/router/route_names.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
+import '../../application/audio_recording_service.dart';
 import '../../medical_notes_providers.dart';
 import '../widgets/clinical_history_wizard/patient_header.dart';
 import '../widgets/dictation_guide_accordion.dart';
@@ -133,26 +134,36 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
       });
 
       try {
-        final started = await audioService.startRecording();
-
-        if (!started) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Error: No se pudo iniciar la grabacion'),
-                backgroundColor: Colors.red,
-              ),
-            );
-            setState(() {
-              _status = DictationStatus.idle;
-            });
-          }
+        // Ensure any orphaned recording state is cleaned up first
+        await audioService.ensureStopped();
+        await audioService.startRecording();
+        // Recording started successfully - state already set to recording
+      } on AudioRecordingException catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e.message),
+              backgroundColor: Colors.red,
+              action: e.reason == RecordingFailureReason.permissionPermanentlyDenied
+                  ? SnackBarAction(
+                      label: 'Configuración',
+                      textColor: Colors.white,
+                      onPressed: () {
+                        // Could open app settings here
+                      },
+                    )
+                  : null,
+            ),
+          );
+          setState(() {
+            _status = DictationStatus.idle;
+          });
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error al iniciar grabacion: $e'),
+              content: Text('Error inesperado: $e'),
               backgroundColor: Colors.red,
             ),
           );

@@ -12,10 +12,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get english => 'English';
 
   @override
-  String get bangla => 'বাংলা';
-
-  @override
-  String get arabic => 'العربية';
+  String get spanish => 'Spanish';
 
   @override
   String get home => 'Home';
