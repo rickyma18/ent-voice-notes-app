@@ -36,27 +36,121 @@ enum ApplyMode {
 /// - Apply only to empty fields (default, safe)
 /// - Replace all with confirmation
 /// - Per-section apply with mode selection
-class AISuggestionsSheet extends StatelessWidget {
+/// - Edit individual suggestions before applying
+class AISuggestionsSheet extends StatefulWidget {
   const AISuggestionsSheet({
     super.key,
     required this.sections,
-    required this.onApplyOnlyEmpty,
-    required this.onReplaceAll,
+    required this.onApply,
     required this.onApplySection,
     required this.onCancel,
   });
 
   final List<AISuggestionSection> sections;
-  final VoidCallback onApplyOnlyEmpty;
-  final VoidCallback onReplaceAll;
-  final void Function(String sectionId, ApplyMode mode) onApplySection;
+  /// Called when user applies suggestions (either empty-only or replace-all).
+  /// Receives the edited sections list and the apply mode.
+  final void Function(List<AISuggestionSection> editedSections, ApplyMode mode)
+      onApply;
+  /// Called when user applies a single section.
+  final void Function(AISuggestionSection editedSection, ApplyMode mode)
+      onApplySection;
   final VoidCallback onCancel;
+
+  @override
+  State<AISuggestionsSheet> createState() => _AISuggestionsSheetState();
+}
+
+class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
+  /// Mutable map of edited suggestions keyed by section ID.
+  /// Only contains entries for suggestions that have been edited.
+  late Map<String, String> _editedSuggestions;
+
+  @override
+  void initState() {
+    super.initState();
+    _editedSuggestions = {};
+  }
+
+  /// Gets the current suggestion text for a section (edited or original).
+  String _getSuggestionText(AISuggestionSection section) {
+    return _editedSuggestions[section.id] ?? section.suggestion;
+  }
+
+  /// Creates a modified section with the edited suggestion text.
+  AISuggestionSection _getEffectiveSection(AISuggestionSection original) {
+    final editedText = _editedSuggestions[original.id];
+    if (editedText == null) return original;
+    return AISuggestionSection(
+      id: original.id,
+      label: original.label,
+      suggestion: editedText,
+      currentValue: original.currentValue,
+    );
+  }
+
+  /// Gets all sections with any edits applied.
+  List<AISuggestionSection> get _effectiveSections {
+    return widget.sections.map(_getEffectiveSection).toList();
+  }
+
+  /// Handles editing a suggestion.
+  void _onEditSuggestion(AISuggestionSection section) {
+    final currentText = _getSuggestionText(section);
+    _showEditDialog(section, currentText);
+  }
+
+  /// Shows the edit dialog for a suggestion.
+  void _showEditDialog(AISuggestionSection section, String currentText) {
+    showDialog<String>(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => _EditSuggestionDialog(
+        label: section.label,
+        initialText: currentText,
+      ),
+    ).then((newText) {
+      if (!mounted) return;
+      if (newText != null && newText.isNotEmpty) {
+        setState(() {
+          _editedSuggestions[section.id] = newText;
+        });
+      }
+    });
+  }
+
+  /// Handles apply (empty-only mode).
+  void _handleApplyOnlyEmpty() {
+    final editedSections = _buildEditedSections();
+    widget.onApply(editedSections, ApplyMode.onlyEmpty);
+  }
+
+  /// Handles apply (replace-all mode).
+  void _handleReplaceAll() {
+    final editedSections = _buildEditedSections();
+    widget.onApply(editedSections, ApplyMode.replace);
+  }
+
+  /// Handles apply for a single section.
+  void _handleApplySection(String sectionId, ApplyMode mode) {
+    final editedSection = _getEffectiveSection(
+      widget.sections.firstWhere((s) => s.id == sectionId),
+    );
+    widget.onApplySection(editedSection, mode);
+  }
+
+  /// Builds a NEW list with edited suggestions applied (no mutation).
+  List<AISuggestionSection> _buildEditedSections() {
+    return widget.sections.map(_getEffectiveSection).toList(growable: false);
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final emptyCount = sections.where((s) => s.isCurrentEmpty && s.hasContent).length;
-    final overwriteCount = sections.where((s) => s.wouldOverwrite).length;
+    final effectiveSections = _effectiveSections;
+    final emptyCount =
+        effectiveSections.where((s) => s.isCurrentEmpty && s.hasContent).length;
+    final overwriteCount =
+        effectiveSections.where((s) => s.wouldOverwrite).length;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.85,
@@ -113,7 +207,7 @@ class AISuggestionsSheet extends StatelessWidget {
                       ),
                     ),
                     IconButton(
-                      onPressed: onCancel,
+                      onPressed: widget.onCancel,
                       icon: const Icon(Icons.close),
                     ),
                   ],
@@ -127,13 +221,16 @@ class AISuggestionsSheet extends StatelessWidget {
                 child: ListView.builder(
                   controller: scrollController,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  itemCount: sections.length,
+                  itemCount: effectiveSections.length,
                   itemBuilder: (context, index) {
-                    final section = sections[index];
+                    final section = effectiveSections[index];
                     if (!section.hasContent) return const SizedBox.shrink();
+                    final isEdited = _editedSuggestions.containsKey(section.id);
                     return _SuggestionCard(
                       section: section,
-                      onApply: (mode) => onApplySection(section.id, mode),
+                      isEdited: isEdited,
+                      onApply: (mode) => _handleApplySection(section.id, mode),
+                      onEdit: () => _onEditSuggestion(section),
                     );
                   },
                 ),
@@ -159,7 +256,7 @@ class AISuggestionsSheet extends StatelessWidget {
                     // Primary action: Apply only to empty
                     if (emptyCount > 0)
                       FilledButton.icon(
-                        onPressed: onApplyOnlyEmpty,
+                        onPressed: _handleApplyOnlyEmpty,
                         icon: const Icon(Icons.add_circle_outline),
                         label: Text('Aplicar solo a campos vacios ($emptyCount)'),
                         style: FilledButton.styleFrom(
@@ -186,7 +283,7 @@ class AISuggestionsSheet extends StatelessWidget {
 
                     // Cancel
                     TextButton(
-                      onPressed: onCancel,
+                      onPressed: widget.onCancel,
                       child: const Text('Cancelar'),
                     ),
                   ],
@@ -200,8 +297,9 @@ class AISuggestionsSheet extends StatelessWidget {
   }
 
   void _confirmReplaceAll(BuildContext context) {
-    showDialog(
+    showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (ctx) => AlertDialog(
         title: const Text('Confirmar reemplazo'),
         content: const Text(
@@ -210,14 +308,11 @@ class AISuggestionsSheet extends StatelessWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancelar'),
           ),
           FilledButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              onReplaceAll();
-            },
+            onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(
               backgroundColor: Colors.orange,
             ),
@@ -225,7 +320,12 @@ class AISuggestionsSheet extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ).then((confirmed) {
+      if (!mounted) return;
+      if (confirmed == true) {
+        _handleReplaceAll();
+      }
+    });
   }
 }
 
@@ -234,10 +334,14 @@ class _SuggestionCard extends StatelessWidget {
   const _SuggestionCard({
     required this.section,
     required this.onApply,
+    required this.onEdit,
+    this.isEdited = false,
   });
 
   final AISuggestionSection section;
   final void Function(ApplyMode mode) onApply;
+  final VoidCallback onEdit;
+  final bool isEdited;
 
   @override
   Widget build(BuildContext context) {
@@ -261,6 +365,35 @@ class _SuggestionCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                // Edited indicator
+                if (isEdited)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.edit_note,
+                          size: 14,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Editado',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                // Status indicator
                 if (section.wouldOverwrite)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -372,6 +505,14 @@ class _SuggestionCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                // Edit button (always visible)
+                TextButton.icon(
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit, size: 18),
+                  label: const Text('Editar'),
+                ),
+                const SizedBox(width: 8),
+                // Apply/Replace button
                 if (section.isCurrentEmpty)
                   TextButton.icon(
                     onPressed: () => onApply(ApplyMode.onlyEmpty),
@@ -400,5 +541,71 @@ class _SuggestionCard extends StatelessWidget {
     final clean = text.trim();
     if (clean.length <= maxLength) return clean;
     return '${clean.substring(0, maxLength)}...';
+  }
+}
+
+/// Dialog for editing a suggestion text.
+/// Owns its TextEditingController with proper lifecycle management.
+class _EditSuggestionDialog extends StatefulWidget {
+  const _EditSuggestionDialog({
+    required this.label,
+    required this.initialText,
+  });
+
+  final String label;
+  final String initialText;
+
+  @override
+  State<_EditSuggestionDialog> createState() => _EditSuggestionDialogState();
+}
+
+class _EditSuggestionDialogState extends State<_EditSuggestionDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialText);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Editar: ${widget.label}'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: TextField(
+          controller: _controller,
+          maxLines: 6,
+          minLines: 3,
+          decoration: InputDecoration(
+            hintText: 'Ingrese el texto de la sugerencia',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          autofocus: true,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final newText = _controller.text.trim();
+            Navigator.pop(context, newText);
+          },
+          child: const Text('Guardar'),
+        ),
+      ],
+    );
   }
 }

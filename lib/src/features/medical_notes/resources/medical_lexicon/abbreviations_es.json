@@ -1,0 +1,549 @@
+{
+  "source": "Clinical practice standards (Spain/Latin America)",
+  "generated": "2024-01-15",
+  "note": "Includes common abbreviations, their expansions, and spoken forms that STT may produce",
+  "total_count": 156,
+  "abbreviations": {
+    "vital_signs": {
+      "TA": {
+        "expansion": "tensión arterial",
+        "spoken_forms": ["tensión arterial", "presión arterial", "te a", "t.a.", "t a"],
+        "unit": "mmHg"
+      },
+      "PA": {
+        "expansion": "presión arterial",
+        "spoken_forms": ["presión arterial", "presión", "pe a", "p.a."],
+        "unit": "mmHg"
+      },
+      "PAS": {
+        "expansion": "presión arterial sistólica",
+        "spoken_forms": ["sistólica", "presión sistólica"],
+        "unit": "mmHg"
+      },
+      "PAD": {
+        "expansion": "presión arterial diastólica",
+        "spoken_forms": ["diastólica", "presión diastólica"],
+        "unit": "mmHg"
+      },
+      "FC": {
+        "expansion": "frecuencia cardíaca",
+        "spoken_forms": ["frecuencia cardíaca", "frecuencia cardiaca", "efe ce", "f.c.", "pulso"],
+        "unit": "lpm"
+      },
+      "FR": {
+        "expansion": "frecuencia respiratoria",
+        "spoken_forms": ["frecuencia respiratoria", "efe erre", "f.r."],
+        "unit": "rpm"
+      },
+      "SpO2": {
+        "expansion": "saturación de oxígeno",
+        "spoken_forms": ["saturación de oxígeno", "saturación", "sat de o dos", "ese pe o dos", "sato dos", "sat o2"],
+        "unit": "%"
+      },
+      "SatO2": {
+        "expansion": "saturación de oxígeno",
+        "spoken_forms": ["saturación de oxígeno", "saturación", "sat o dos"],
+        "unit": "%"
+      },
+      "Temp": {
+        "expansion": "temperatura",
+        "spoken_forms": ["temperatura", "temp"],
+        "unit": "°C"
+      },
+      "T°": {
+        "expansion": "temperatura",
+        "spoken_forms": ["temperatura", "grados"],
+        "unit": "°C"
+      },
+      "IMC": {
+        "expansion": "índice de masa corporal",
+        "spoken_forms": ["índice de masa corporal", "i eme ce"],
+        "unit": "kg/m²"
+      }
+    },
+    "diagnoses": {
+      "HTA": {
+        "expansion": "hipertensión arterial",
+        "spoken_forms": ["hipertensión arterial", "hipertensión", "hache te a", "h.t.a."]
+      },
+      "DM": {
+        "expansion": "diabetes mellitus",
+        "spoken_forms": ["diabetes mellitus", "diabetes", "de eme"]
+      },
+      "DM1": {
+        "expansion": "diabetes mellitus tipo 1",
+        "spoken_forms": ["diabetes tipo uno", "diabetes uno"]
+      },
+      "DM2": {
+        "expansion": "diabetes mellitus tipo 2",
+        "spoken_forms": ["diabetes tipo dos", "diabetes dos"]
+      },
+      "EPOC": {
+        "expansion": "enfermedad pulmonar obstructiva crónica",
+        "spoken_forms": ["epoc", "e.p.o.c.", "enfermedad pulmonar obstructiva"]
+      },
+      "ERGE": {
+        "expansion": "enfermedad por reflujo gastroesofágico",
+        "spoken_forms": ["erge", "reflujo gastroesofágico", "reflujo"]
+      },
+      "ERC": {
+        "expansion": "enfermedad renal crónica",
+        "spoken_forms": ["enfermedad renal crónica", "insuficiencia renal crónica"]
+      },
+      "ECV": {
+        "expansion": "enfermedad cerebrovascular",
+        "spoken_forms": ["enfermedad cerebrovascular", "ictus", "e.c.v."]
+      },
+      "ACV": {
+        "expansion": "accidente cerebrovascular",
+        "spoken_forms": ["accidente cerebrovascular", "a.c.v.", "ictus"]
+      },
+      "AIT": {
+        "expansion": "accidente isquémico transitorio",
+        "spoken_forms": ["accidente isquémico transitorio", "a.i.t."]
+      },
+      "IAM": {
+        "expansion": "infarto agudo de miocardio",
+        "spoken_forms": ["infarto agudo de miocardio", "infarto", "i.a.m."]
+      },
+      "IC": {
+        "expansion": "insuficiencia cardíaca",
+        "spoken_forms": ["insuficiencia cardíaca", "insuficiencia cardiaca", "i.c."]
+      },
+      "ICC": {
+        "expansion": "insuficiencia cardíaca congestiva",
+        "spoken_forms": ["insuficiencia cardíaca congestiva", "i.c.c."]
+      },
+      "FA": {
+        "expansion": "fibrilación auricular",
+        "spoken_forms": ["fibrilación auricular", "efe a", "f.a."]
+      },
+      "FV": {
+        "expansion": "fibrilación ventricular",
+        "spoken_forms": ["fibrilación ventricular"]
+      },
+      "TEP": {
+        "expansion": "tromboembolia pulmonar",
+        "spoken_forms": ["tromboembolia pulmonar", "embolia pulmonar", "t.e.p."]
+      },
+      "TVP": {
+        "expansion": "trombosis venosa profunda",
+        "spoken_forms": ["trombosis venosa profunda", "t.v.p."]
+      },
+      "IVU": {
+        "expansion": "infección de vías urinarias",
+        "spoken_forms": ["infección de vías urinarias", "infección urinaria", "i.v.u."]
+      },
+      "ITU": {
+        "expansion": "infección del tracto urinario",
+        "spoken_forms": ["infección del tracto urinario"]
+      },
+      "NAC": {
+        "expansion": "neumonía adquirida en la comunidad",
+        "spoken_forms": ["neumonía adquirida en la comunidad", "neumonía"]
+      },
+      "HPB": {
+        "expansion": "hiperplasia prostática benigna",
+        "spoken_forms": ["hiperplasia prostática benigna", "próstata grande"]
+      },
+      "SCA": {
+        "expansion": "síndrome coronario agudo",
+        "spoken_forms": ["síndrome coronario agudo"]
+      },
+      "SIDA": {
+        "expansion": "síndrome de inmunodeficiencia adquirida",
+        "spoken_forms": ["sida"]
+      },
+      "VIH": {
+        "expansion": "virus de inmunodeficiencia humana",
+        "spoken_forms": ["vih", "v.i.h."]
+      },
+      "AR": {
+        "expansion": "artritis reumatoide",
+        "spoken_forms": ["artritis reumatoide", "artritis"]
+      },
+      "LES": {
+        "expansion": "lupus eritematoso sistémico",
+        "spoken_forms": ["lupus eritematoso sistémico", "lupus"]
+      },
+      "EM": {
+        "expansion": "esclerosis múltiple",
+        "spoken_forms": ["esclerosis múltiple"]
+      },
+      "ELA": {
+        "expansion": "esclerosis lateral amiotrófica",
+        "spoken_forms": ["esclerosis lateral amiotrófica", "e.l.a."]
+      },
+      "SAOS": {
+        "expansion": "síndrome de apnea obstructiva del sueño",
+        "spoken_forms": ["apnea del sueño", "apnea obstructiva"]
+      },
+      "SII": {
+        "expansion": "síndrome de intestino irritable",
+        "spoken_forms": ["síndrome de intestino irritable", "colon irritable"]
+      }
+    },
+    "clinical_actions": {
+      "Dx": {
+        "expansion": "diagnóstico",
+        "spoken_forms": ["diagnóstico", "de equis"]
+      },
+      "DDx": {
+        "expansion": "diagnóstico diferencial",
+        "spoken_forms": ["diagnóstico diferencial"]
+      },
+      "Tx": {
+        "expansion": "tratamiento",
+        "spoken_forms": ["tratamiento", "te equis"]
+      },
+      "Rx": {
+        "expansion": "receta",
+        "spoken_forms": ["receta", "prescripción", "erre equis"]
+      },
+      "Sx": {
+        "expansion": "síntomas",
+        "spoken_forms": ["síntomas", "ese equis"]
+      },
+      "Hx": {
+        "expansion": "historia",
+        "spoken_forms": ["historia", "antecedentes"]
+      },
+      "Px": {
+        "expansion": "pronóstico",
+        "spoken_forms": ["pronóstico"]
+      },
+      "Ex": {
+        "expansion": "examen",
+        "spoken_forms": ["examen", "exploración"]
+      },
+      "EF": {
+        "expansion": "exploración física",
+        "spoken_forms": ["exploración física", "examen físico"]
+      }
+    },
+    "labs_and_tests": {
+      "BH": {
+        "expansion": "biometría hemática",
+        "spoken_forms": ["biometría hemática", "be hache"]
+      },
+      "QS": {
+        "expansion": "química sanguínea",
+        "spoken_forms": ["química sanguínea", "cu ese"]
+      },
+      "EGO": {
+        "expansion": "examen general de orina",
+        "spoken_forms": ["examen general de orina", "análisis de orina"]
+      },
+      "PFH": {
+        "expansion": "pruebas de función hepática",
+        "spoken_forms": ["pruebas de función hepática", "función hepática"]
+      },
+      "PFR": {
+        "expansion": "pruebas de función renal",
+        "spoken_forms": ["pruebas de función renal", "función renal"]
+      },
+      "ECG": {
+        "expansion": "electrocardiograma",
+        "spoken_forms": ["electrocardiograma", "e.c.g."]
+      },
+      "EKG": {
+        "expansion": "electrocardiograma",
+        "spoken_forms": ["electrocardiograma", "e.k.g."]
+      },
+      "Rx": {
+        "expansion": "radiografía",
+        "spoken_forms": ["radiografía", "rayos equis", "placa"]
+      },
+      "RxTx": {
+        "expansion": "radiografía de tórax",
+        "spoken_forms": ["radiografía de tórax", "placa de tórax"]
+      },
+      "TAC": {
+        "expansion": "tomografía axial computarizada",
+        "spoken_forms": ["tac", "tomografía", "te a ce"]
+      },
+      "TC": {
+        "expansion": "tomografía computarizada",
+        "spoken_forms": ["tomografía", "te ce"]
+      },
+      "RM": {
+        "expansion": "resonancia magnética",
+        "spoken_forms": ["resonancia magnética", "resonancia"]
+      },
+      "RMN": {
+        "expansion": "resonancia magnética nuclear",
+        "spoken_forms": ["resonancia magnética nuclear"]
+      },
+      "US": {
+        "expansion": "ultrasonido",
+        "spoken_forms": ["ultrasonido", "ecografía"]
+      },
+      "USG": {
+        "expansion": "ultrasonografía",
+        "spoken_forms": ["ultrasonografía", "eco"]
+      },
+      "Eco": {
+        "expansion": "ecocardiograma",
+        "spoken_forms": ["ecocardiograma", "eco"]
+      },
+      "PCR": {
+        "expansion": "proteína C reactiva",
+        "spoken_forms": ["proteína ce reactiva", "pe ce erre"]
+      },
+      "VSG": {
+        "expansion": "velocidad de sedimentación globular",
+        "spoken_forms": ["velocidad de sedimentación"]
+      },
+      "INR": {
+        "expansion": "razón normalizada internacional",
+        "spoken_forms": ["i ene erre", "inr"]
+      },
+      "TP": {
+        "expansion": "tiempo de protrombina",
+        "spoken_forms": ["tiempo de protrombina"]
+      },
+      "TTP": {
+        "expansion": "tiempo de tromboplastina parcial",
+        "spoken_forms": ["tiempo de tromboplastina parcial"]
+      },
+      "Hb": {
+        "expansion": "hemoglobina",
+        "spoken_forms": ["hemoglobina"]
+      },
+      "Hto": {
+        "expansion": "hematocrito",
+        "spoken_forms": ["hematocrito"]
+      },
+      "HbA1c": {
+        "expansion": "hemoglobina glicosilada",
+        "spoken_forms": ["hemoglobina glicosilada", "hemoglobina glucosilada", "a uno ce"]
+      },
+      "PSA": {
+        "expansion": "antígeno prostático específico",
+        "spoken_forms": ["antígeno prostático", "pe ese a"]
+      },
+      "TSH": {
+        "expansion": "hormona estimulante de tiroides",
+        "spoken_forms": ["te ese hache", "tsh"]
+      },
+      "T3": {
+        "expansion": "triyodotironina",
+        "spoken_forms": ["te tres", "t3"]
+      },
+      "T4": {
+        "expansion": "tiroxina",
+        "spoken_forms": ["te cuatro", "t4"]
+      },
+      "BUN": {
+        "expansion": "nitrógeno ureico en sangre",
+        "spoken_forms": ["nitrógeno ureico", "bun"]
+      },
+      "Cr": {
+        "expansion": "creatinina",
+        "spoken_forms": ["creatinina"]
+      },
+      "TFG": {
+        "expansion": "tasa de filtración glomerular",
+        "spoken_forms": ["tasa de filtración glomerular", "filtración glomerular"]
+      },
+      "AST": {
+        "expansion": "aspartato aminotransferasa",
+        "spoken_forms": ["a ese te", "ast", "tgo"]
+      },
+      "ALT": {
+        "expansion": "alanina aminotransferasa",
+        "spoken_forms": ["a ele te", "alt", "tgp"]
+      },
+      "GGT": {
+        "expansion": "gamma glutamil transferasa",
+        "spoken_forms": ["gamma gt", "ggt"]
+      },
+      "FA": {
+        "expansion": "fosfatasa alcalina",
+        "spoken_forms": ["fosfatasa alcalina"]
+      },
+      "LDH": {
+        "expansion": "lactato deshidrogenasa",
+        "spoken_forms": ["ele de hache", "ldh"]
+      },
+      "BT": {
+        "expansion": "bilirrubina total",
+        "spoken_forms": ["bilirrubina total"]
+      },
+      "BD": {
+        "expansion": "bilirrubina directa",
+        "spoken_forms": ["bilirrubina directa"]
+      },
+      "BI": {
+        "expansion": "bilirrubina indirecta",
+        "spoken_forms": ["bilirrubina indirecta"]
+      }
+    },
+    "routes_and_dosing": {
+      "VO": {
+        "expansion": "vía oral",
+        "spoken_forms": ["vía oral", "por vía oral", "ve o"]
+      },
+      "PO": {
+        "expansion": "por vía oral",
+        "spoken_forms": ["por vía oral", "pe o"]
+      },
+      "IV": {
+        "expansion": "intravenoso",
+        "spoken_forms": ["intravenoso", "intravenosa", "i ve"]
+      },
+      "IM": {
+        "expansion": "intramuscular",
+        "spoken_forms": ["intramuscular", "i eme"]
+      },
+      "SC": {
+        "expansion": "subcutáneo",
+        "spoken_forms": ["subcutáneo", "subcutánea", "ese ce"]
+      },
+      "SL": {
+        "expansion": "sublingual",
+        "spoken_forms": ["sublingual"]
+      },
+      "PR": {
+        "expansion": "per rectum",
+        "spoken_forms": ["por recto", "rectal"]
+      },
+      "PRN": {
+        "expansion": "según sea necesario",
+        "spoken_forms": ["según sea necesario", "si es necesario", "pe erre ene"]
+      },
+      "SOS": {
+        "expansion": "si es necesario",
+        "spoken_forms": ["si es necesario", "ese o ese"]
+      },
+      "QD": {
+        "expansion": "una vez al día",
+        "spoken_forms": ["una vez al día", "cada día"]
+      },
+      "BID": {
+        "expansion": "dos veces al día",
+        "spoken_forms": ["dos veces al día", "cada doce horas"]
+      },
+      "TID": {
+        "expansion": "tres veces al día",
+        "spoken_forms": ["tres veces al día", "cada ocho horas"]
+      },
+      "QID": {
+        "expansion": "cuatro veces al día",
+        "spoken_forms": ["cuatro veces al día", "cada seis horas"]
+      },
+      "mg": {
+        "expansion": "miligramos",
+        "spoken_forms": ["miligramos", "mili"]
+      },
+      "g": {
+        "expansion": "gramos",
+        "spoken_forms": ["gramos"]
+      },
+      "mcg": {
+        "expansion": "microgramos",
+        "spoken_forms": ["microgramos", "micro"]
+      },
+      "mL": {
+        "expansion": "mililitros",
+        "spoken_forms": ["mililitros", "mili"]
+      },
+      "UI": {
+        "expansion": "unidades internacionales",
+        "spoken_forms": ["unidades internacionales", "unidades"]
+      }
+    },
+    "otorhinolaryngology": {
+      "ORL": {
+        "expansion": "otorrinolaringología",
+        "spoken_forms": ["otorrino", "otorrinolaringología", "o ere ele"]
+      },
+      "OMA": {
+        "expansion": "otitis media aguda",
+        "spoken_forms": ["otitis media aguda"]
+      },
+      "OMC": {
+        "expansion": "otitis media crónica",
+        "spoken_forms": ["otitis media crónica"]
+      },
+      "OE": {
+        "expansion": "otitis externa",
+        "spoken_forms": ["otitis externa"]
+      },
+      "CAE": {
+        "expansion": "conducto auditivo externo",
+        "spoken_forms": ["conducto auditivo externo"]
+      },
+      "MT": {
+        "expansion": "membrana timpánica",
+        "spoken_forms": ["membrana timpánica", "tímpano"]
+      },
+      "VPPB": {
+        "expansion": "vértigo posicional paroxístico benigno",
+        "spoken_forms": ["vértigo posicional", "vppb"]
+      },
+      "DENA": {
+        "expansion": "desviación del tabique nasal",
+        "spoken_forms": ["desviación del tabique", "tabique desviado"]
+      },
+      "RSA": {
+        "expansion": "rinosinusitis aguda",
+        "spoken_forms": ["rinosinusitis aguda"]
+      },
+      "RSC": {
+        "expansion": "rinosinusitis crónica",
+        "spoken_forms": ["rinosinusitis crónica"]
+      },
+      "PN": {
+        "expansion": "poliposis nasal",
+        "spoken_forms": ["poliposis nasal", "pólipos nasales"]
+      },
+      "LPR": {
+        "expansion": "reflujo laringofaríngeo",
+        "spoken_forms": ["reflujo laringofaríngeo"]
+      },
+      "EPA": {
+        "expansion": "epiglotitis",
+        "spoken_forms": ["epiglotitis"]
+      }
+    },
+    "miscellaneous": {
+      "Ax": {
+        "expansion": "antecedentes",
+        "spoken_forms": ["antecedentes"]
+      },
+      "APP": {
+        "expansion": "antecedentes personales patológicos",
+        "spoken_forms": ["antecedentes personales patológicos"]
+      },
+      "APNP": {
+        "expansion": "antecedentes personales no patológicos",
+        "spoken_forms": ["antecedentes personales no patológicos"]
+      },
+      "AHF": {
+        "expansion": "antecedentes heredofamiliares",
+        "spoken_forms": ["antecedentes heredofamiliares", "antecedentes familiares"]
+      },
+      "PA": {
+        "expansion": "padecimiento actual",
+        "spoken_forms": ["padecimiento actual", "motivo de consulta"]
+      },
+      "MC": {
+        "expansion": "motivo de consulta",
+        "spoken_forms": ["motivo de consulta"]
+      },
+      "NL": {
+        "expansion": "no refiere",
+        "spoken_forms": ["no refiere", "niega"]
+      },
+      "c/": {
+        "expansion": "con",
+        "spoken_forms": ["con"]
+      },
+      "s/": {
+        "expansion": "sin",
+        "spoken_forms": ["sin"]
+      }
+    }
+  }
+}

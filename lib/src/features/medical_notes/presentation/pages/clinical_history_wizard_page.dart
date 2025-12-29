@@ -11,6 +11,7 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/base/result.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 import '../../../patients/patients_providers.dart';
+import '../../application/vital_signs_parser.dart';
 import '../../domain/entities/attachment_entity.dart';
 import '../../domain/entities/medical_note_entity.dart';
 import '../../domain/entities/medical_note_type.dart';
@@ -189,6 +190,14 @@ class _ClinicalHistoryWizardPageState
     // This can be used for future AI processing
     _rawTranscript = widget.initialRawTranscript;
 
+    // Parse and apply vital signs from initial transcript (if any)
+    if (_rawTranscript != null && _rawTranscript!.trim().isNotEmpty) {
+      // Defer to after first frame to allow widget to build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _parseAndApplyVitalSignsFromTranscript(_rawTranscript!);
+      });
+    }
+
     // Load patient info
     _loadPatient();
   }
@@ -357,6 +366,96 @@ class _ClinicalHistoryWizardPageState
           _isLoadingPatient = false;
         });
       }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Vital Signs Parsing from Transcript
+  // ---------------------------------------------------------------------------
+
+  /// Parses vital signs from a transcript and applies them to empty fields.
+  ///
+  /// Only fills fields that are currently empty. Shows a SnackBar with the
+  /// number of fields filled.
+  void _parseAndApplyVitalSignsFromTranscript(String transcript) {
+    if (!mounted) return;
+
+    final parsed = VitalSignsParser.parse(transcript);
+    if (!parsed.hasAnyValue) return;
+
+    int filledCount = 0;
+
+    // Apply weight if empty
+    if (parsed.weightKg != null && _weightController.text.trim().isEmpty) {
+      _weightController.text = parsed.weightKg!.toString();
+      filledCount++;
+    }
+
+    // Apply height if empty
+    if (parsed.heightCm != null && _heightController.text.trim().isEmpty) {
+      _heightController.text = parsed.heightCm!.toString();
+      filledCount++;
+    }
+
+    // Apply blood pressure if empty
+    if (parsed.bpSystolic != null &&
+        _bpSystolicController.text.trim().isEmpty) {
+      _bpSystolicController.text = parsed.bpSystolic!.toString();
+      filledCount++;
+    }
+    if (parsed.bpDiastolic != null &&
+        _bpDiastolicController.text.trim().isEmpty) {
+      _bpDiastolicController.text = parsed.bpDiastolic!.toString();
+      filledCount++;
+    }
+
+    // Apply heart rate if empty
+    if (parsed.heartRate != null && _heartRateController.text.trim().isEmpty) {
+      _heartRateController.text = parsed.heartRate!.toString();
+      filledCount++;
+    }
+
+    // Apply respiratory rate if empty
+    if (parsed.respiratoryRate != null &&
+        _respiratoryRateController.text.trim().isEmpty) {
+      _respiratoryRateController.text = parsed.respiratoryRate!.toString();
+      filledCount++;
+    }
+
+    // Apply temperature if empty
+    if (parsed.temperatureC != null &&
+        _temperatureController.text.trim().isEmpty) {
+      _temperatureController.text = parsed.temperatureC!.toString();
+      filledCount++;
+    }
+
+    // Apply SpO2 if empty
+    if (parsed.spo2 != null && _spo2Controller.text.trim().isEmpty) {
+      _spo2Controller.text = parsed.spo2!.toString();
+      filledCount++;
+    }
+
+    // Apply prognosis if empty
+    if (parsed.prognosis != null && _prognosisController.text.trim().isEmpty) {
+      _prognosisController.text = parsed.prognosis!;
+      filledCount++;
+    }
+
+    // Show feedback if any fields were filled
+    if (filledCount > 0 && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            filledCount == 1
+                ? 'Se extrajo 1 signo vital del dictado'
+                : 'Se extrajeron $filledCount signos vitales del dictado',
+          ),
+          backgroundColor: Colors.blue,
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+          showCloseIcon: true,
+        ),
+      );
     }
   }
 
@@ -604,18 +703,21 @@ class _ClinicalHistoryWizardPageState
       backgroundColor: Colors.transparent,
       builder: (ctx) => AISuggestionsSheet(
         sections: sections,
-        onApplyOnlyEmpty: () {
+        onApply: (editedSections, mode) {
           Navigator.pop(ctx);
-          _applySuggestions(sections, ApplyMode.onlyEmpty);
+          // Schedule after sheet disposal to avoid build scope conflicts
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _applySuggestions(editedSections, mode);
+          });
         },
-        onReplaceAll: () {
+        onApplySection: (editedSection, mode) {
           Navigator.pop(ctx);
-          _applySuggestions(sections, ApplyMode.replace);
-        },
-        onApplySection: (sectionId, mode) {
-          Navigator.pop(ctx);
-          final section = sections.firstWhere((s) => s.id == sectionId);
-          _applySingleSection(section, mode);
+          // Schedule after sheet disposal to avoid build scope conflicts
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _applySingleSection(editedSection, mode);
+          });
         },
         onCancel: () => Navigator.pop(ctx),
       ),

@@ -1,0 +1,15 @@
+# Requirements for medical lexicon scripts
+# No external dependencies needed - uses Python stdlib only
+
+# The scripts use only:
+# - json (stdlib)
+# - csv (stdlib)
+# - urllib (stdlib)
+# - pathlib (stdlib)
+# - time (stdlib)
+# - re (stdlib)
+# - sys (stdlib)
+# - typing (stdlib)
+
+# For development/testing, you may optionally install:
+# requests>=2.28.0  # Alternative to urllib for API calls (not required)

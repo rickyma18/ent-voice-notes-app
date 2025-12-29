@@ -6,6 +6,8 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 
 import '../../../core/logger/log.dart';
+import 'medical_lexicon_loader.dart';
+import 'medical_transcript_post_processor.dart';
 import 'note_ai_service.dart';
 
 /// Production implementation of NoteAIService using OpenAI APIs.
@@ -26,9 +28,26 @@ import 'note_ai_service.dart';
 class NoteAIServiceImpl implements NoteAIService {
   NoteAIServiceImpl({
     required OpenAIClient openAIClient,
-  }) : _openAIClient = openAIClient;
+    MedicalLexiconLoader? lexiconLoader,
+    bool enablePhoneticMedicationMatching = false,
+  })  : _openAIClient = openAIClient,
+        _lexiconLoader = lexiconLoader ?? MedicalLexiconLoader(),
+        _enablePhoneticMedicationMatching = enablePhoneticMedicationMatching {
+    // A) Log Phase 1.5 status at construction time
+    Log.info(
+      '🔧 Phase 1.5 phonetic medication matching: '
+      '${enablePhoneticMedicationMatching ? "ENABLED" : "DISABLED"}',
+    );
+  }
 
   final OpenAIClient _openAIClient;
+  final MedicalLexiconLoader _lexiconLoader;
+
+  /// Phase 1.5: Enable phonetic medication matching.
+  /// When true, attempts to correct severely distorted medication names
+  /// using phonetic similarity (e.g., "homem prazón" → "omeprazol").
+  /// DISABLED by default for safety. Enable only after testing.
+  final bool _enablePhoneticMedicationMatching;
 
   /// Allowed field names that the AI can generate.
   /// Any fields not in this list will be filtered out.
@@ -72,13 +91,66 @@ class NoteAIServiceImpl implements NoteAIService {
 
       Log.info('🎙️ File validated: $fileSize bytes');
 
-      // Call Whisper API
-      final transcript = await _openAIClient.transcribeAudio(filePath);
+      // Load medical prompt for Whisper context bias (cached)
+      final medicalPrompt = await _lexiconLoader.getPrompt();
+      if (medicalPrompt.isNotEmpty) {
+        Log.info('🎙️ Using medical prompt (${medicalPrompt.length} chars)');
+      }
 
-      if (transcript.trim().isEmpty) {
+      // Call Whisper API with medical prompt
+      final rawTranscript = await _openAIClient.transcribeAudio(
+        filePath,
+        prompt: medicalPrompt.isNotEmpty ? medicalPrompt : null,
+      );
+
+      if (rawTranscript.trim().isEmpty) {
         throw NoteAIException(
           'La transcripción está vacía. Intenta grabar de nuevo.',
         );
+      }
+
+      Log.info('🎙️ Raw transcription: ${rawTranscript.length} chars');
+
+      // Apply medical STT corrections (cached fixes + optional Phase 1.5)
+      final fixes = await _lexiconLoader.getCommonFixes();
+
+      // Load medications for Phase 1.5 if enabled
+      Set<String>? medications;
+      if (_enablePhoneticMedicationMatching) {
+        medications = await _lexiconLoader.getMedications();
+        // B) Log medication loading details
+        Log.info('🔍 Phase 1.5 meds loaded: ${medications.length}');
+        Log.info(
+          '🔍 Contains "omeprazol": ${medications.contains("omeprazol")}',
+        );
+      } else {
+        Log.info('🔍 Phase 1.5 DISABLED - skipping medication load');
+      }
+
+      // C) Log BEFORE post-processing (first 120 chars, safe for debug)
+      final rawPreview = rawTranscript.length > 120
+          ? '${rawTranscript.substring(0, 120)}...'
+          : rawTranscript;
+      Log.info('🔍 RAW TRANSCRIPT: "$rawPreview"');
+
+      final transcript = postProcessMedicalTranscript(
+        rawTranscript,
+        fixes,
+        knownMedications: medications,
+        enablePhoneticMedicationMatching: _enablePhoneticMedicationMatching,
+      );
+
+      // C) Log AFTER post-processing (first 120 chars, safe for debug)
+      final finalPreview = transcript.length > 120
+          ? '${transcript.substring(0, 120)}...'
+          : transcript;
+      Log.info('🔍 FINAL TRANSCRIPT: "$finalPreview"');
+
+      // D) Log whether corrections were applied
+      if (transcript != rawTranscript) {
+        Log.info('✅ Phase 1.5 or fixes applied corrections');
+      } else {
+        Log.info('⚪ No corrections applied (raw == final)');
       }
 
       Log.info('🎙️ Transcription successful: ${transcript.length} chars');
@@ -284,11 +356,15 @@ class OpenAIClient {
   /// [filePath] must be a local file path to an audio file.
   /// Supported formats: m4a, mp3, wav, webm, etc.
   ///
+  /// [prompt] Optional initial prompt for Whisper context bias.
+  /// Used to improve recognition of medical terminology.
+  /// See: https://platform.openai.com/docs/guides/speech-to-text/prompting
+  ///
   /// Returns raw transcript text in Spanish.
-  Future<String> transcribeAudio(String filePath) async {
+  Future<String> transcribeAudio(String filePath, {String? prompt}) async {
     try {
       // Prepare multipart form data
-      final formData = FormData.fromMap({
+      final Map<String, dynamic> formMap = {
         'file': await MultipartFile.fromFile(
           filePath,
           filename: filePath.split('/').last,
@@ -296,7 +372,14 @@ class OpenAIClient {
         'model': _whisperModel,
         'language': 'es', // Spanish
         'response_format': 'text', // Plain text response
-      });
+      };
+
+      // Add medical prompt for context bias if provided
+      if (prompt != null && prompt.trim().isNotEmpty) {
+        formMap['prompt'] = prompt;
+      }
+
+      final formData = FormData.fromMap(formMap);
 
       // Make API request
       final response = await _dio.post(

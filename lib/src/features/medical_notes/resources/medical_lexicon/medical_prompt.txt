@@ -1,0 +1,13 @@
+Transcripción de nota médica clínica en español. El médico dicta signos vitales, diagnósticos y tratamientos.
+
+Signos vitales: tensión arterial TA, presión arterial PA, frecuencia cardíaca FC, frecuencia respiratoria FR, saturación de oxígeno SpO2 SatO2, temperatura.
+
+Ejemplo: "Tensión arterial 120 sobre 80 milímetros de mercurio, frecuencia cardíaca 72 latidos por minuto, frecuencia respiratoria 16 respiraciones por minuto, saturación de oxígeno 98 por ciento, temperatura 36.5 grados."
+
+Diagnósticos comunes: hipertensión arterial HTA, diabetes mellitus DM, enfermedad pulmonar obstructiva crónica EPOC, insuficiencia cardíaca, neumonía, infección de vías urinarias, gastritis, sinusitis, otitis media, faringitis, amigdalitis.
+
+Medicamentos: omeprazol, metformina, losartán, enalapril, atorvastatina, amlodipino, ibuprofeno, paracetamol, amoxicilina, azitromicina, prednisona, salbutamol, insulina, levotiroxina, sertralina, alprazolam.
+
+Pronóstico: bueno, reservado, malo. Antecedentes heredofamiliares, antecedentes personales patológicos, padecimiento actual, exploración física, diagnóstico Dx, tratamiento Tx.
+
+Unidades: mg miligramos, g gramos, mL mililitros, mmHg, lpm latidos por minuto, rpm respiraciones por minuto, kg kilogramos, cm centímetros, °C grados.

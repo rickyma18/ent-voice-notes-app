@@ -103,14 +103,12 @@ OpenAIClient openAIClient(Ref ref) {
 NoteAIService noteAIService(
   NoteAIServiceRef ref,
 ) {
-  // PRODUCTION MODE: Real AI implementation
   return NoteAIServiceImpl(
     openAIClient: ref.watch(openAIClientProvider),
+    enablePhoneticMedicationMatching: true, // ✅ AQUÍ
   );
-
-  // TEST MODE: Stub for UI testing (no real API calls)
-  // return const NoteAIServiceStub();
 }
+
 
 @riverpod
 AudioRecordingService audioRecordingService(
@@ -131,14 +129,17 @@ AudioRecordingService audioRecordingService(
 /// SpeechToText Service provider.
 ///
 /// PRODUCTION MODE: Uses real OpenAI Whisper API for transcription.
+/// Phase 1.5: Now applies medical transcript post-processing for consistency
+/// with NoteAIService pipeline.
 /// TEST MODE: Uncomment the stub below for UI testing without API calls.
 @riverpod
 SpeechToTextService speechToTextService(
   Ref ref,
 ) {
-  // PRODUCTION MODE: Real Whisper transcription
+  // PRODUCTION MODE: Real Whisper transcription with Phase 1.5 post-processing
   return SpeechToTextServiceImpl(
     openAIClient: ref.watch(openAIClientProvider),
+    enablePhoneticMedicationMatching: true, // Phase 1.5 enabled
   );
 
   // TEST MODE: Stub for UI testing (no real API calls)
