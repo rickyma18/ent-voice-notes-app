@@ -11,11 +11,13 @@ import '../../application/audio_recording_service.dart';
 import '../../medical_notes_providers.dart';
 import '../widgets/clinical_history_wizard/patient_header.dart';
 import '../widgets/dictation_guide_accordion.dart';
+import '../widgets/recording_controls.dart';
 
 /// Dictation status for the assist page
 enum DictationStatus {
   idle,
   recording,
+  paused,
   transcribing,
   ready,
 }
@@ -50,74 +52,82 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
   DictationStatus _status = DictationStatus.idle;
   String _rawTranscript = '';
 
-  String get _statusText {
+  RecordingState get _recordingState {
     switch (_status) {
       case DictationStatus.idle:
-        return 'Listo para grabar';
-      case DictationStatus.recording:
-        return 'Grabando...';
-      case DictationStatus.transcribing:
-        return 'Transcribiendo...';
       case DictationStatus.ready:
-        return 'Transcripcion lista';
+      case DictationStatus.transcribing:
+        return RecordingState.idle;
+      case DictationStatus.recording:
+        return RecordingState.recording;
+      case DictationStatus.paused:
+        return RecordingState.paused;
     }
   }
 
-  Color _statusColor(ThemeData theme) {
-    switch (_status) {
-      case DictationStatus.idle:
-        return theme.colorScheme.onSurface.withValues(alpha: 0.6);
-      case DictationStatus.recording:
-        return Colors.red;
-      case DictationStatus.transcribing:
-        return theme.colorScheme.primary;
-      case DictationStatus.ready:
-        return Colors.green;
+  Future<void> _onStart() async {
+    final audioService = ref.read(audioRecordingServiceProvider);
+
+    setState(() {
+      _status = DictationStatus.recording;
+    });
+
+    try {
+      await audioService.ensureStopped();
+      await audioService.startRecording();
+    } on AudioRecordingException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.red,
+            action:
+                e.reason == RecordingFailureReason.permissionPermanentlyDenied
+                    ? SnackBarAction(
+                        label: 'Configuración',
+                        textColor: Colors.white,
+                        onPressed: () {
+                          // Could open app settings here
+                        },
+                      )
+                    : null,
+          ),
+        );
+        setState(() {
+          _status = DictationStatus.idle;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error inesperado: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() {
+          _status = DictationStatus.idle;
+        });
+      }
     }
   }
 
-  Future<void> _onMicPressed() async {
+  Future<void> _onStop() async {
     final audioService = ref.read(audioRecordingServiceProvider);
     final sttService = ref.read(speechToTextServiceProvider);
 
-    if (_status == DictationStatus.recording) {
-      // Stop recording and transcribe
-      setState(() {
-        _status = DictationStatus.transcribing;
-      });
+    setState(() {
+      _status = DictationStatus.transcribing;
+    });
 
-      try {
-        final audioFilePath = await audioService.stopRecording();
+    try {
+      final audioFilePath = await audioService.stopRecording();
 
-        if (audioFilePath == null) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Error: No se pudo obtener el archivo de audio'),
-                backgroundColor: Colors.red,
-              ),
-            );
-            setState(() {
-              _status = DictationStatus.idle;
-            });
-          }
-          return;
-        }
-
-        // Transcribe audio using Speech-to-Text service
-        final transcript = await sttService.transcribeAudio(audioFilePath);
-
-        if (mounted) {
-          setState(() {
-            _rawTranscript = transcript;
-            _status = DictationStatus.ready;
-          });
-        }
-      } catch (e) {
+      if (audioFilePath == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error al transcribir: $e'),
+            const SnackBar(
+              content: Text('Error: No se pudo obtener el archivo de audio'),
               backgroundColor: Colors.red,
             ),
           );
@@ -125,55 +135,74 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
             _status = DictationStatus.idle;
           });
         }
+        return;
       }
-    } else if (_status == DictationStatus.idle ||
-        _status == DictationStatus.ready) {
-      // Start recording
-      setState(() {
-        _status = DictationStatus.recording;
-      });
 
-      try {
-        // Ensure any orphaned recording state is cleaned up first
-        await audioService.ensureStopped();
-        await audioService.startRecording();
-        // Recording started successfully - state already set to recording
-      } on AudioRecordingException catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(e.message),
-              backgroundColor: Colors.red,
-              action: e.reason == RecordingFailureReason.permissionPermanentlyDenied
-                  ? SnackBarAction(
-                      label: 'Configuración',
-                      textColor: Colors.white,
-                      onPressed: () {
-                        // Could open app settings here
-                      },
-                    )
-                  : null,
-            ),
-          );
-          setState(() {
-            _status = DictationStatus.idle;
-          });
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error inesperado: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-          setState(() {
-            _status = DictationStatus.idle;
-          });
-        }
+      final transcript = await sttService.transcribeAudio(audioFilePath);
+
+      if (mounted) {
+        setState(() {
+          _rawTranscript = transcript;
+          _status = DictationStatus.ready;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al transcribir: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() {
+          _status = DictationStatus.idle;
+        });
       }
     }
-    // If transcribing, ignore press
+  }
+
+  Future<void> _onPause() async {
+    final audioService = ref.read(audioRecordingServiceProvider);
+
+    try {
+      await audioService.pauseRecording();
+      if (mounted) {
+        setState(() {
+          _status = DictationStatus.paused;
+        });
+      }
+    } on AudioRecordingException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _onResume() async {
+    final audioService = ref.read(audioRecordingServiceProvider);
+
+    try {
+      await audioService.resumeRecording();
+      if (mounted) {
+        setState(() {
+          _status = DictationStatus.recording;
+        });
+      }
+    } on AudioRecordingException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _copyTranscript() {
@@ -263,76 +292,14 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
       elevation: 2,
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            // Status text
-            Text(
-              _statusText,
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: _statusColor(theme),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Large mic button
-            GestureDetector(
-              onTap:
-                  _status == DictationStatus.transcribing ? null : _onMicPressed,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _status == DictationStatus.recording
-                      ? Colors.red
-                      : _status == DictationStatus.transcribing
-                          ? theme.colorScheme.surfaceContainerHighest
-                          : theme.colorScheme.primaryContainer,
-                  boxShadow: _status == DictationStatus.recording
-                      ? [
-                          BoxShadow(
-                            color: Colors.red.withValues(alpha: 0.4),
-                            blurRadius: 20,
-                            spreadRadius: 4,
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Center(
-                  child: _status == DictationStatus.transcribing
-                      ? const SizedBox(
-                          width: 40,
-                          height: 40,
-                          child: CircularProgressIndicator(strokeWidth: 3),
-                        )
-                      : Icon(
-                          _status == DictationStatus.recording
-                              ? Icons.stop
-                              : Icons.mic,
-                          size: 56,
-                          color: _status == DictationStatus.recording
-                              ? Colors.white
-                              : theme.colorScheme.onPrimaryContainer,
-                        ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Instruction text
-            Text(
-              _status == DictationStatus.recording
-                  ? 'Toca para detener'
-                  : _status == DictationStatus.transcribing
-                      ? 'Procesando audio...'
-                      : 'Toca para grabar',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-              ),
-            ),
-          ],
+        child: RecordingControls(
+          state: _recordingState,
+          isProcessing: _status == DictationStatus.transcribing,
+          onStart: _onStart,
+          onStop: _onStop,
+          onPause: _onPause,
+          onResume: _onResume,
+          size: RecordingControlsSize.large,
         ),
       ),
     );

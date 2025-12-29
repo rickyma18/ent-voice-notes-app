@@ -456,7 +456,10 @@ class _SurgicalNoteWizardPageState
 
   @override
   Widget build(BuildContext context) {
+    final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: Text(
             widget.isEditMode ? 'Editar nota quirurgica' : 'Nueva nota quirurgica'),
@@ -470,41 +473,94 @@ class _SurgicalNoteWizardPageState
             ),
         ],
       ),
+      // Footer in bottomNavigationBar - takes its own layout space, never overlays
+      bottomNavigationBar: AnimatedPadding(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: WizardNavigationButtons(
+              currentStep: _currentStep,
+              totalSteps: _totalSteps,
+              onBack: _previousStep,
+              onNext: _nextStep,
+              onSave: () => _saveNote(),
+              isSaving: _isSaving,
+              canSaveAsDraft: true,
+              onSaveAsDraft: () => _saveNote(asDraft: true),
+              compact: keyboardOpen,
+            ),
+          ),
+        ),
+      ),
       body: SafeArea(
+        bottom: false,
         child: _isLoadingPatient
             ? const Center(child: CircularProgressIndicator())
             : Column(
                 children: [
-                  // Patient header
-                  if (_patient != null)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                      child: PatientHeader(
-                        patient: _patient!,
-                        date: _noteDate,
-                        isEditing: widget.isEditMode,
-                        onDateChanged: widget.isEditMode
-                            ? null
-                            : (date) {
-                                setState(() {
-                                  _noteDate = date;
-                                });
-                              },
-                      ),
-                    ),
-
-                  // Step indicator
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: WizardStepIndicator(
-                      currentStep: _currentStep,
-                      totalSteps: _totalSteps,
-                      stepTitles: _stepTitles,
-                      onStepTapped: _goToStep,
+                  // Patient header - collapses when keyboard is open
+                  ClipRect(
+                    child: AnimatedSize(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOut,
+                      child: keyboardOpen
+                          ? const SizedBox.shrink()
+                          : _patient != null
+                              ? Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    8,
+                                    16,
+                                    0,
+                                  ),
+                                  child: PatientHeader(
+                                    patient: _patient!,
+                                    date: _noteDate,
+                                    isEditing: widget.isEditMode,
+                                    onDateChanged: widget.isEditMode
+                                        ? null
+                                        : (date) {
+                                            setState(() {
+                                              _noteDate = date;
+                                            });
+                                          },
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
                     ),
                   ),
 
-                  // Step content
+                  // Step indicator - full version when keyboard closed,
+                  // compact version when keyboard open
+                  ClipRect(
+                    child: AnimatedSize(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOut,
+                      child: keyboardOpen
+                          ? CompactStepIndicator(
+                              currentStep: _currentStep,
+                              totalSteps: _totalSteps,
+                              stepTitle: _stepTitles[_currentStep],
+                            )
+                          : Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: WizardStepIndicator(
+                                currentStep: _currentStep,
+                                totalSteps: _totalSteps,
+                                stepTitles: _stepTitles,
+                                onStepTapped: _goToStep,
+                              ),
+                            ),
+                    ),
+                  ),
+
+                  // Step content (PageView inside Expanded)
                   Expanded(
                     child: Form(
                       key: _formKey,
@@ -528,37 +584,36 @@ class _SurgicalNoteWizardPageState
                       ),
                     ),
                   ),
-
-                  // Navigation buttons
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: WizardNavigationButtons(
-                      currentStep: _currentStep,
-                      totalSteps: _totalSteps,
-                      onBack: _previousStep,
-                      onNext: _nextStep,
-                      onSave: () => _saveNote(),
-                      isSaving: _isSaving,
-                      canSaveAsDraft: true,
-                      onSaveAsDraft: () => _saveNote(asDraft: true),
-                    ),
-                  ),
                 ],
               ),
       ),
     );
   }
 
-  Widget _buildStepContainer({required Widget child}) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: child,
+  /// Scrollable wrapper for wizard steps.
+  ///
+  /// Simple scroll wrapper with uniform padding.
+  /// No footer compensation needed - footer is in bottomNavigationBar.
+  Widget _buildScrollableStep({required Widget child}) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.all(16),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: constraints.maxHeight,
+            ),
+            child: child,
+          ),
+        );
+      },
     );
   }
 
   // Step 0: Procedimiento
   Widget _buildStep0Procedimiento() {
-    return _buildStepContainer(
+    return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -598,7 +653,7 @@ class _SurgicalNoteWizardPageState
 
   // Step 1: Diagnóstico preoperatorio
   Widget _buildStep1DiagnosticoPreop() {
-    return _buildStepContainer(
+    return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -618,7 +673,7 @@ class _SurgicalNoteWizardPageState
 
   // Step 2: Técnica quirúrgica (REQUIRED)
   Widget _buildStep2TecnicaQuirurgica() {
-    return _buildStepContainer(
+    return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -651,7 +706,7 @@ class _SurgicalNoteWizardPageState
 
   // Step 3: Hallazgos intraoperatorios
   Widget _buildStep3Hallazgos() {
-    return _buildStepContainer(
+    return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -681,7 +736,7 @@ class _SurgicalNoteWizardPageState
 
   // Step 4: Complicaciones
   Widget _buildStep4Complicaciones() {
-    return _buildStepContainer(
+    return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -712,7 +767,7 @@ class _SurgicalNoteWizardPageState
 
   // Step 5: Diagnóstico postoperatorio y plan (REQUIRED)
   Widget _buildStep5DiagnosticoPostop() {
-    return _buildStepContainer(
+    return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -773,7 +828,7 @@ class _SurgicalNoteWizardPageState
 
   // Step 6: Attachments
   Widget _buildStep6Attachments() {
-    return _buildStepContainer(
+    return _buildScrollableStep(
       child: Stack(
         children: [
           AttachmentsStep(

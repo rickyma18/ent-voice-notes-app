@@ -28,6 +28,17 @@ class MedicalNoteEntity extends Equatable {
     required this.exploracionFisicaOrl,
     required this.diagnostico,
     required this.planTratamiento,
+    // Signos vitales (vital signs)
+    this.weightKg,
+    this.heightCm,
+    this.bpSystolic,
+    this.bpDiastolic,
+    this.heartRate,
+    this.respiratoryRate,
+    this.temperatureC,
+    this.spo2,
+    // Pronóstico (prognosis)
+    this.prognosis,
     // Datos de transcripción y IA
     required this.rawTranscript,
     this.resumen,
@@ -73,6 +84,34 @@ class MedicalNoteEntity extends Equatable {
 
   /// Plan de tratamiento y recomendaciones
   final String planTratamiento;
+
+  // Signos vitales (vital signs)
+  /// Peso en kilogramos
+  final double? weightKg;
+
+  /// Talla en centímetros
+  final double? heightCm;
+
+  /// Presión arterial sistólica (mmHg)
+  final int? bpSystolic;
+
+  /// Presión arterial diastólica (mmHg)
+  final int? bpDiastolic;
+
+  /// Frecuencia cardíaca (latidos por minuto)
+  final int? heartRate;
+
+  /// Frecuencia respiratoria (respiraciones por minuto)
+  final int? respiratoryRate;
+
+  /// Temperatura corporal (°C)
+  final double? temperatureC;
+
+  /// Saturación de oxígeno (SpO2 %)
+  final int? spo2;
+
+  /// Pronóstico del paciente
+  final String? prognosis;
 
   // Datos de transcripción y procesamiento IA
   /// Transcripción bruta del audio dictado por la doctora (Whisper)
@@ -150,6 +189,15 @@ class MedicalNoteEntity extends Equatable {
     String? exploracionFisicaOrl,
     String? diagnostico,
     String? planTratamiento,
+    double? weightKg,
+    double? heightCm,
+    int? bpSystolic,
+    int? bpDiastolic,
+    int? heartRate,
+    int? respiratoryRate,
+    double? temperatureC,
+    int? spo2,
+    String? prognosis,
     String? rawTranscript,
     String? resumen,
     String? notaAdicional,
@@ -174,6 +222,15 @@ class MedicalNoteEntity extends Equatable {
       exploracionFisicaOrl: exploracionFisicaOrl ?? this.exploracionFisicaOrl,
       diagnostico: diagnostico ?? this.diagnostico,
       planTratamiento: planTratamiento ?? this.planTratamiento,
+      weightKg: weightKg ?? this.weightKg,
+      heightCm: heightCm ?? this.heightCm,
+      bpSystolic: bpSystolic ?? this.bpSystolic,
+      bpDiastolic: bpDiastolic ?? this.bpDiastolic,
+      heartRate: heartRate ?? this.heartRate,
+      respiratoryRate: respiratoryRate ?? this.respiratoryRate,
+      temperatureC: temperatureC ?? this.temperatureC,
+      spo2: spo2 ?? this.spo2,
+      prognosis: prognosis ?? this.prognosis,
       rawTranscript: rawTranscript ?? this.rawTranscript,
       resumen: resumen ?? this.resumen,
       notaAdicional: notaAdicional ?? this.notaAdicional,
@@ -244,6 +301,15 @@ class MedicalNoteEntity extends Equatable {
         exploracionFisicaOrl,
         diagnostico,
         planTratamiento,
+        weightKg,
+        heightCm,
+        bpSystolic,
+        bpDiastolic,
+        heartRate,
+        respiratoryRate,
+        temperatureC,
+        spo2,
+        prognosis,
         rawTranscript,
         resumen,
         notaAdicional,

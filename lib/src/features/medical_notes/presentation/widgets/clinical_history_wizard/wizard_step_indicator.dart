@@ -107,6 +107,9 @@ class WizardStepIndicator extends StatelessWidget {
 }
 
 /// Navigation buttons for the wizard (Back/Next/Save).
+///
+/// When [compact] is true (e.g., keyboard is open), the "Guardar como borrador"
+/// button is hidden to save vertical space.
 class WizardNavigationButtons extends StatelessWidget {
   const WizardNavigationButtons({
     super.key,
@@ -118,6 +121,7 @@ class WizardNavigationButtons extends StatelessWidget {
     this.isSaving = false,
     this.canSaveAsDraft = true,
     this.onSaveAsDraft,
+    this.compact = false,
   });
 
   final int currentStep;
@@ -129,12 +133,16 @@ class WizardNavigationButtons extends StatelessWidget {
   final bool canSaveAsDraft;
   final VoidCallback? onSaveAsDraft;
 
+  /// When true, hides "Guardar como borrador" to save vertical space.
+  final bool compact;
+
   bool get isFirstStep => currentStep == 0;
   bool get isLastStep => currentStep == totalSteps - 1;
 
   @override
   Widget build(BuildContext context) {
     return Column(
+      mainAxisSize: MainAxisSize.min, // Critical: don't expand vertically
       children: [
         // Main navigation row
         Row(
@@ -145,7 +153,7 @@ class WizardNavigationButtons extends StatelessWidget {
                 child: OutlinedButton.icon(
                   onPressed: isSaving ? null : onBack,
                   icon: const Icon(Icons.arrow_back),
-                  label: const Text('Anterior'),
+                  label: const Text('Atrás'),
                 ),
               )
             else
@@ -175,8 +183,8 @@ class WizardNavigationButtons extends StatelessWidget {
             ),
           ],
         ),
-        // Save as draft option
-        if (canSaveAsDraft && !isLastStep) ...[
+        // Save as draft option (hidden in compact mode to save space)
+        if (canSaveAsDraft && !isLastStep && !compact) ...[
           const SizedBox(height: 8),
           TextButton.icon(
             onPressed: isSaving ? null : onSaveAsDraft,
@@ -185,6 +193,67 @@ class WizardNavigationButtons extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Compact step indicator shown when keyboard is open.
+///
+/// Displays a single line: "Paso X/Y: Step Title"
+class CompactStepIndicator extends StatelessWidget {
+  const CompactStepIndicator({
+    super.key,
+    required this.currentStep,
+    required this.totalSteps,
+    required this.stepTitle,
+  });
+
+  final int currentStep;
+  final int totalSteps;
+  final String stepTitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
+        border: Border(
+          bottom: BorderSide(
+            color: theme.colorScheme.outline.withValues(alpha: 0.2),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '${currentStep + 1}/$totalSteps',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onPrimary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              stepTitle,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

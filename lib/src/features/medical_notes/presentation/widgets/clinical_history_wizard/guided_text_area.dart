@@ -82,17 +82,82 @@ class _GuidedTextAreaState extends State<GuidedTextArea> {
   bool _isFocused = false;
   bool _showHints = true;
 
+  // FocusNode for detecting focus and scrolling into view
+  late final FocusNode _focusNode;
+
+  // Key for scrolling the text field into view when focused
+  final GlobalKey _textFieldKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
     _showHints = widget.controller.text.isEmpty;
     widget.controller.addListener(_onTextChanged);
+
+    // Initialize FocusNode with listener
+    _focusNode = FocusNode();
+    _focusNode.addListener(_onFocusChange);
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_onTextChanged);
+    _focusNode.removeListener(_onFocusChange);
+    _focusNode.dispose();
     super.dispose();
+  }
+
+  void _onFocusChange() {
+    final focused = _focusNode.hasFocus;
+    setState(() {
+      _isFocused = focused;
+      _showHints = widget.controller.text.isEmpty && !focused;
+    });
+
+    // Scroll into view when gaining focus
+    if (focused) {
+      _scrollIntoView();
+    }
+  }
+
+  /// Scrolls the text field into view above the keyboard when focused.
+  ///
+  /// Uses a delayed callback to wait for keyboard animation to complete
+  /// and viewInsets to update before scrolling.
+  ///
+  /// The alignment of 0.1 positions the field in the upper portion of the
+  /// visible area, leaving space for the field content and caret to be visible.
+  void _scrollIntoView() {
+    // Capture context before async gap
+    final targetContext = _textFieldKey.currentContext;
+    if (targetContext == null) return;
+
+    // Wait for keyboard to start animating, then scroll
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+      if (bottomInset == 0) {
+        // Keyboard not open yet → retry next frame
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollIntoView());
+        return;
+      }
+
+      // Wait for keyboard animation to settle before scrolling
+      // This delay ensures the layout has stabilized after the keyboard appears
+      Future.delayed(const Duration(milliseconds: 250), () {
+        if (!mounted) return;
+        final currentContext = _textFieldKey.currentContext;
+        if (currentContext == null || !currentContext.mounted) return;
+
+        Scrollable.ensureVisible(
+          currentContext,
+          alignment: 0.1, // Upper portion of viewport for better caret visibility
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      });
+    });
   }
 
   void _onTextChanged() {
@@ -116,16 +181,21 @@ class _GuidedTextAreaState extends State<GuidedTextArea> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final hasHints = widget.guidanceHints != null && widget.guidanceHints!.isNotEmpty;
+    final hasHints =
+        widget.guidanceHints != null && widget.guidanceHints!.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Label and use template button
+        // Label and use template button
         if (widget.label != null || hasHints)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Row(
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 if (widget.label != null)
                   Text(
@@ -134,15 +204,22 @@ class _GuidedTextAreaState extends State<GuidedTextArea> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                const Spacer(),
+
                 if (hasHints && widget.controller.text.isEmpty)
-                  TextButton.icon(
-                    onPressed: _insertHintTemplate,
-                    icon: const Icon(Icons.playlist_add, size: 18),
-                    label: const Text('Usar plantilla'),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      minimumSize: const Size(0, 32),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: _insertHintTemplate,
+                      icon: const Icon(Icons.playlist_add, size: 18),
+                      label: const Text(
+                        'Usar plantilla',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: const Size(0, 32),
+                      ),
                     ),
                   ),
               ],
@@ -152,36 +229,30 @@ class _GuidedTextAreaState extends State<GuidedTextArea> {
         // Text area with hints overlay
         Stack(
           children: [
-            Focus(
-              onFocusChange: (focused) {
-                setState(() {
-                  _isFocused = focused;
-                  _showHints = widget.controller.text.isEmpty && !focused;
-                });
-              },
-              child: TextFormField(
-                controller: widget.controller,
-                maxLines: widget.maxLines,
-                minLines: widget.minLines,
-                decoration: InputDecoration(
-                  hintText: hasHints ? null : widget.hintText,
-                  border: const OutlineInputBorder(),
-                  contentPadding: const EdgeInsets.all(12),
-                  suffixIcon: widget.onDictate != null
-                      ? IconButton(
-                          icon: Icon(
-                            Icons.mic,
-                            color: widget.isDictating
-                                ? Colors.red
-                                : theme.colorScheme.primary,
-                          ),
-                          onPressed: widget.onDictate,
-                          tooltip: 'Dictar con voz',
-                        )
-                      : null,
-                ),
-                validator: widget.validator,
+            TextFormField(
+              key: _textFieldKey,
+              focusNode: _focusNode,
+              controller: widget.controller,
+              maxLines: widget.maxLines,
+              minLines: widget.minLines,
+              decoration: InputDecoration(
+                hintText: hasHints ? null : widget.hintText,
+                border: const OutlineInputBorder(),
+                contentPadding: const EdgeInsets.all(12),
+                suffixIcon: widget.onDictate != null
+                    ? IconButton(
+                        icon: Icon(
+                          Icons.mic,
+                          color: widget.isDictating
+                              ? Colors.red
+                              : theme.colorScheme.primary,
+                        ),
+                        onPressed: widget.onDictate,
+                        tooltip: 'Dictar con voz',
+                      )
+                    : null,
               ),
+              validator: widget.validator,
             ),
 
             // Hints overlay (only shown when empty and not focused)

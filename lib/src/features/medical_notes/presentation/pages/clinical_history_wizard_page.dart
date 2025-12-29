@@ -20,6 +20,7 @@ import '../controllers/medical_notes_controller.dart';
 import '../widgets/clinical_history_wizard/ai_suggestions_sheet.dart';
 import '../widgets/clinical_history_wizard/clinical_history_wizard.dart';
 import '../widgets/clinical_history_wizard/dictation_quick_sheet.dart';
+import '../widgets/clinical_history_wizard/vitals_card.dart';
 
 /// Multi-step wizard page for creating/editing clinical history notes.
 ///
@@ -84,6 +85,10 @@ class _ClinicalHistoryWizardPageState
   // Undo snapshot for AI suggestions
   Map<String, String>? _undoSnapshot;
 
+  // Dedupe guard for SnackBar: prevents showing the same message multiple times
+  int? _lastSnackBarAppliedCount;
+  DateTime? _lastSnackBarTime;
+
   // Text controllers for each section
   late final TextEditingController _motivoController;
   late final TextEditingController _antecedentesHeredofamiliaresController;
@@ -95,6 +100,19 @@ class _ClinicalHistoryWizardPageState
 
   // ORL Accordion controllers
   late final Map<String, TextEditingController> _orlControllers;
+
+  // Vital signs controllers
+  late final TextEditingController _weightController;
+  late final TextEditingController _heightController;
+  late final TextEditingController _bpSystolicController;
+  late final TextEditingController _bpDiastolicController;
+  late final TextEditingController _heartRateController;
+  late final TextEditingController _respiratoryRateController;
+  late final TextEditingController _temperatureController;
+  late final TextEditingController _spo2Controller;
+
+  // Prognosis controller
+  late final TextEditingController _prognosisController;
 
   // Attachments list (managed locally, saved with note)
   List<AttachmentEntity> _attachments = [];
@@ -149,6 +167,19 @@ class _ClinicalHistoryWizardPageState
       'laringoscopia': TextEditingController(),
     };
 
+    // Vital signs controllers
+    _weightController = TextEditingController();
+    _heightController = TextEditingController();
+    _bpSystolicController = TextEditingController();
+    _bpDiastolicController = TextEditingController();
+    _heartRateController = TextEditingController();
+    _respiratoryRateController = TextEditingController();
+    _temperatureController = TextEditingController();
+    _spo2Controller = TextEditingController();
+
+    // Prognosis controller
+    _prognosisController = TextEditingController();
+
     // Pre-fill if editing existing note
     if (widget.existingNote != null) {
       _prefillFromExistingNote(widget.existingNote!);
@@ -172,6 +203,37 @@ class _ClinicalHistoryWizardPageState
 
     // Parse exploracion into ORL sections
     _parseExploracion(note.exploracionFisicaOrl);
+
+    // Prefill vital signs
+    if (note.weightKg != null) {
+      _weightController.text = note.weightKg!.toString();
+    }
+    if (note.heightCm != null) {
+      _heightController.text = note.heightCm!.toString();
+    }
+    if (note.bpSystolic != null) {
+      _bpSystolicController.text = note.bpSystolic!.toString();
+    }
+    if (note.bpDiastolic != null) {
+      _bpDiastolicController.text = note.bpDiastolic!.toString();
+    }
+    if (note.heartRate != null) {
+      _heartRateController.text = note.heartRate!.toString();
+    }
+    if (note.respiratoryRate != null) {
+      _respiratoryRateController.text = note.respiratoryRate!.toString();
+    }
+    if (note.temperatureC != null) {
+      _temperatureController.text = note.temperatureC!.toString();
+    }
+    if (note.spo2 != null) {
+      _spo2Controller.text = note.spo2!.toString();
+    }
+
+    // Prefill prognosis
+    if (note.prognosis != null) {
+      _prognosisController.text = note.prognosis!;
+    }
 
     // Initialize attachments from existing note
     _attachments = List.from(note.attachments);
@@ -314,7 +376,9 @@ class _ClinicalHistoryWizardPageState
 
     try {
       final aiService = ref.read(noteAIServiceProvider);
-      final suggestions = await aiService.suggestStructuredFields(_rawTranscript!);
+      final suggestions = await aiService.suggestStructuredFields(
+        _rawTranscript!,
+      );
 
       if (!mounted) return;
 
@@ -606,7 +670,8 @@ class _ClinicalHistoryWizardPageState
     for (final section in sections) {
       if (!section.hasContent) continue;
 
-      final shouldApply = mode == ApplyMode.replace ||
+      final shouldApply =
+          mode == ApplyMode.replace ||
           (mode == ApplyMode.onlyEmpty && section.isCurrentEmpty);
 
       if (shouldApply) {
@@ -624,7 +689,8 @@ class _ClinicalHistoryWizardPageState
   void _applySingleSection(AISuggestionSection section, ApplyMode mode) {
     if (!section.hasContent) return;
 
-    final shouldApply = mode == ApplyMode.replace ||
+    final shouldApply =
+        mode == ApplyMode.replace ||
         (mode == ApplyMode.onlyEmpty && section.isCurrentEmpty);
 
     if (!shouldApply) return;
@@ -670,25 +736,47 @@ class _ClinicalHistoryWizardPageState
   }
 
   /// Shows a SnackBar with undo option after applying suggestions.
+  ///
+  /// Includes a dedupe guard to prevent the same message from being shown
+  /// multiple times within a short window (2 seconds).
   void _showUndoSnackBar(int appliedCount) {
+    // Dedupe guard: skip if same appliedCount was shown within 2 seconds
+    final now = DateTime.now();
+    if (_lastSnackBarAppliedCount == appliedCount && _lastSnackBarTime != null) {
+      final elapsed = now.difference(_lastSnackBarTime!);
+      if (elapsed.inSeconds < 2) {
+        return; // Skip duplicate SnackBar
+      }
+    }
+
+    // Update dedupe tracking
+    _lastSnackBarAppliedCount = appliedCount;
+    _lastSnackBarTime = now;
+
     final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
+    messenger.clearSnackBars();
+
     messenger.showSnackBar(
       SnackBar(
         content: Text('Se aplicaron $appliedCount sugerencias'),
         backgroundColor: Colors.green,
         duration: const Duration(seconds: 4),
+        behavior: SnackBarBehavior.floating,
+        dismissDirection: DismissDirection.horizontal,
+        showCloseIcon: true,
         action: SnackBarAction(
-          label: 'Deshacer',
+          label: 'Deshacer sugerencias',
           textColor: Colors.white,
           onPressed: () {
             if (_undoSnapshot != null) {
               _restoreFromSnapshot(_undoSnapshot!);
-              messenger.hideCurrentSnackBar();
+              messenger.clearSnackBars();
               messenger.showSnackBar(
                 const SnackBar(
                   content: Text('Cambios revertidos'),
                   duration: Duration(seconds: 2),
+                  behavior: SnackBarBehavior.floating,
+                  showCloseIcon: true,
                 ),
               );
             }
@@ -711,6 +799,17 @@ class _ClinicalHistoryWizardPageState
     for (final controller in _orlControllers.values) {
       controller.dispose();
     }
+    // Dispose vital signs controllers
+    _weightController.dispose();
+    _heightController.dispose();
+    _bpSystolicController.dispose();
+    _bpDiastolicController.dispose();
+    _heartRateController.dispose();
+    _respiratoryRateController.dispose();
+    _temperatureController.dispose();
+    _spo2Controller.dispose();
+    // Dispose prognosis controller
+    _prognosisController.dispose();
     super.dispose();
   }
 
@@ -914,6 +1013,19 @@ class _ClinicalHistoryWizardPageState
 
       final MedicalNoteEntity note;
 
+      // Parse vital signs from controllers
+      final weightKg = double.tryParse(_weightController.text);
+      final heightCm = double.tryParse(_heightController.text);
+      final bpSystolic = int.tryParse(_bpSystolicController.text);
+      final bpDiastolic = int.tryParse(_bpDiastolicController.text);
+      final heartRate = int.tryParse(_heartRateController.text);
+      final respiratoryRate = int.tryParse(_respiratoryRateController.text);
+      final temperatureC = double.tryParse(_temperatureController.text);
+      final spo2 = int.tryParse(_spo2Controller.text);
+      final prognosis = _prognosisController.text.trim().isEmpty
+          ? null
+          : _prognosisController.text.trim();
+
       if (isEditing && existingNote != null) {
         note = existingNote.copyWith(
           updatedAt: now,
@@ -923,6 +1035,15 @@ class _ClinicalHistoryWizardPageState
           exploracionFisicaOrl: exploracionOrl,
           diagnostico: _diagnosticoController.text.trim(),
           planTratamiento: _planController.text.trim(),
+          weightKg: weightKg,
+          heightCm: heightCm,
+          bpSystolic: bpSystolic,
+          bpDiastolic: bpDiastolic,
+          heartRate: heartRate,
+          respiratoryRate: respiratoryRate,
+          temperatureC: temperatureC,
+          spo2: spo2,
+          prognosis: prognosis,
           status: asDraft ? NoteStatus.draft : existingNote.status,
           attachments: _attachments,
         );
@@ -943,6 +1064,15 @@ class _ClinicalHistoryWizardPageState
           exploracionFisicaOrl: exploracionOrl,
           diagnostico: _diagnosticoController.text.trim(),
           planTratamiento: _planController.text.trim(),
+          weightKg: weightKg,
+          heightCm: heightCm,
+          bpSystolic: bpSystolic,
+          bpDiastolic: bpDiastolic,
+          heartRate: heartRate,
+          respiratoryRate: respiratoryRate,
+          temperatureC: temperatureC,
+          spo2: spo2,
+          prognosis: prognosis,
           rawTranscript: _rawTranscript ?? '',
           status: asDraft ? NoteStatus.draft : NoteStatus.draft,
           medicamentosRecetados: const [],
@@ -965,8 +1095,8 @@ class _ClinicalHistoryWizardPageState
               asDraft
                   ? 'Borrador guardado exitosamente'
                   : (isEditing
-                      ? 'Nota medica actualizada exitosamente'
-                      : 'Nota medica creada exitosamente'),
+                        ? 'Nota medica actualizada exitosamente'
+                        : 'Nota medica creada exitosamente'),
             ),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
@@ -1006,9 +1136,16 @@ class _ClinicalHistoryWizardPageState
 
   @override
   Widget build(BuildContext context) {
+    final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
-        title: Text(widget.isEditMode ? 'Editar historia clinica' : 'Nueva historia clinica'),
+        title: Text(
+          widget.isEditMode
+              ? 'Editar historia clinica'
+              : 'Nueva historia clinica',
+        ),
         actions: [
           // AI Suggestions action (only visible when raw transcript exists)
           if (_canGenerateSuggestions)
@@ -1035,41 +1172,94 @@ class _ClinicalHistoryWizardPageState
             ),
         ],
       ),
+      // Footer in bottomNavigationBar - takes its own layout space, never overlays
+      bottomNavigationBar: AnimatedPadding(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: WizardNavigationButtons(
+              currentStep: _currentStep,
+              totalSteps: _totalSteps,
+              onBack: _previousStep,
+              onNext: _nextStep,
+              onSave: () => _saveNote(),
+              isSaving: _isSaving,
+              canSaveAsDraft: true,
+              onSaveAsDraft: () => _saveNote(asDraft: true),
+              compact: keyboardOpen,
+            ),
+          ),
+        ),
+      ),
       body: SafeArea(
+        bottom: false,
         child: _isLoadingPatient
             ? const Center(child: CircularProgressIndicator())
             : Column(
                 children: [
-                  // Patient header
-                  if (_patient != null)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                      child: PatientHeader(
-                        patient: _patient!,
-                        date: _noteDate,
-                        isEditing: widget.isEditMode,
-                        onDateChanged: widget.isEditMode
-                            ? null
-                            : (date) {
-                                setState(() {
-                                  _noteDate = date;
-                                });
-                              },
-                      ),
-                    ),
-
-                  // Step indicator
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: WizardStepIndicator(
-                      currentStep: _currentStep,
-                      totalSteps: _totalSteps,
-                      stepTitles: _stepTitles,
-                      onStepTapped: _goToStep,
+                  // Patient header - collapses when keyboard is open
+                  ClipRect(
+                    child: AnimatedSize(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOut,
+                      child: keyboardOpen
+                          ? const SizedBox.shrink()
+                          : _patient != null
+                              ? Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    8,
+                                    16,
+                                    0,
+                                  ),
+                                  child: PatientHeader(
+                                    patient: _patient!,
+                                    date: _noteDate,
+                                    isEditing: widget.isEditMode,
+                                    onDateChanged: widget.isEditMode
+                                        ? null
+                                        : (date) {
+                                            setState(() {
+                                              _noteDate = date;
+                                            });
+                                          },
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
                     ),
                   ),
 
-                  // Step content
+                  // Step indicator - full version when keyboard closed,
+                  // compact version when keyboard open
+                  ClipRect(
+                    child: AnimatedSize(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOut,
+                      child: keyboardOpen
+                          ? CompactStepIndicator(
+                              currentStep: _currentStep,
+                              totalSteps: _totalSteps,
+                              stepTitle: _stepTitles[_currentStep],
+                            )
+                          : Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: WizardStepIndicator(
+                                currentStep: _currentStep,
+                                totalSteps: _totalSteps,
+                                stepTitles: _stepTitles,
+                                onStepTapped: _goToStep,
+                              ),
+                            ),
+                    ),
+                  ),
+
+                  // Step content (PageView inside Expanded)
                   Expanded(
                     child: Form(
                       key: _formKey,
@@ -1077,6 +1267,7 @@ class _ClinicalHistoryWizardPageState
                         controller: _pageController,
                         physics: const NeverScrollableScrollPhysics(),
                         onPageChanged: (page) {
+                          ScaffoldMessenger.of(context).clearSnackBars();
                           setState(() {
                             _currentStep = page;
                           });
@@ -1094,37 +1285,36 @@ class _ClinicalHistoryWizardPageState
                       ),
                     ),
                   ),
-
-                  // Navigation buttons
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: WizardNavigationButtons(
-                      currentStep: _currentStep,
-                      totalSteps: _totalSteps,
-                      onBack: _previousStep,
-                      onNext: _nextStep,
-                      onSave: () => _saveNote(),
-                      isSaving: _isSaving,
-                      canSaveAsDraft: true,
-                      onSaveAsDraft: () => _saveNote(asDraft: true),
-                    ),
-                  ),
                 ],
               ),
       ),
     );
   }
 
-  Widget _buildStepContainer({required Widget child}) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: child,
+  /// Scrollable wrapper for wizard steps.
+  ///
+  /// Simple scroll wrapper with uniform padding.
+  /// No footer compensation needed - footer is in bottomNavigationBar.
+  Widget _buildScrollableStep({required Widget child}) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.all(16),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: constraints.maxHeight,
+            ),
+            child: child,
+          ),
+        );
+      },
     );
   }
 
   // Step 0: Motivo de consulta
   Widget _buildStep0MotivoConsulta() {
-    return _buildStepContainer(
+    return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1132,13 +1322,22 @@ class _ClinicalHistoryWizardPageState
           GuidedTextArea(
             controller: _motivoController,
             label: 'Motivo de consulta',
-            hintText: 'Ej: Dolor de oido derecho persistente desde hace 3 dias...',
+            hintText:
+                'Ej: Dolor de oido derecho persistente desde hace 3 dias...',
             maxLines: 8,
             minLines: 4,
             onDictate: () => _handleFieldDictation(_motivoController),
             quickActions: const [
-              QuickAction(label: 'Revision', text: 'Revision de rutina', icon: Icons.check),
-              QuickAction(label: 'Seguimiento', text: 'Seguimiento de tratamiento', icon: Icons.sync),
+              QuickAction(
+                label: 'Revision',
+                text: 'Revision de rutina',
+                icon: Icons.check,
+              ),
+              QuickAction(
+                label: 'Seguimiento',
+                text: 'Seguimiento de tratamiento',
+                icon: Icons.sync,
+              ),
             ],
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
@@ -1154,7 +1353,7 @@ class _ClinicalHistoryWizardPageState
 
   // Step 1: Antecedentes heredofamiliares
   Widget _buildStep1AntecedentesHeredofamiliares() {
-    return _buildStepContainer(
+    return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1165,7 +1364,8 @@ class _ClinicalHistoryWizardPageState
             guidanceHints: ClinicalHints.familyHistory,
             maxLines: 10,
             minLines: 6,
-            onDictate: () => _handleFieldDictation(_antecedentesHeredofamiliaresController),
+            onDictate: () =>
+                _handleFieldDictation(_antecedentesHeredofamiliaresController),
             quickActions: QuickActionButtons.historyActions,
           ),
         ],
@@ -1175,7 +1375,7 @@ class _ClinicalHistoryWizardPageState
 
   // Step 2: Antecedentes personales NO patologicos
   Widget _buildStep2AntecedentesNoPatologicos() {
-    return _buildStepContainer(
+    return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1186,7 +1386,8 @@ class _ClinicalHistoryWizardPageState
             guidanceHints: ClinicalHints.nonPathologicalHistory,
             maxLines: 10,
             minLines: 6,
-            onDictate: () => _handleFieldDictation(_antecedentesNoPatologicosController),
+            onDictate: () =>
+                _handleFieldDictation(_antecedentesNoPatologicosController),
             quickActions: QuickActionButtons.historyActions,
           ),
         ],
@@ -1196,7 +1397,7 @@ class _ClinicalHistoryWizardPageState
 
   // Step 3: Antecedentes personales patologicos
   Widget _buildStep3AntecedentesPatologicos() {
-    return _buildStepContainer(
+    return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1207,7 +1408,8 @@ class _ClinicalHistoryWizardPageState
             guidanceHints: ClinicalHints.pathologicalHistory,
             maxLines: 12,
             minLines: 8,
-            onDictate: () => _handleFieldDictation(_antecedentesPatologicosController),
+            onDictate: () =>
+                _handleFieldDictation(_antecedentesPatologicosController),
             quickActions: QuickActionButtons.historyActions,
           ),
         ],
@@ -1217,7 +1419,7 @@ class _ClinicalHistoryWizardPageState
 
   // Step 4: Padecimiento actual
   Widget _buildStep4PadecimientoActual() {
-    return _buildStepContainer(
+    return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1225,14 +1427,28 @@ class _ClinicalHistoryWizardPageState
           GuidedTextArea(
             controller: _padecimientoActualController,
             label: 'Padecimiento actual',
-            hintText: 'Descripcion detallada del padecimiento actual, evolucion, sintomas...',
+            hintText:
+                'Descripcion detallada del padecimiento actual, evolucion, sintomas...',
             maxLines: 12,
             minLines: 8,
-            onDictate: () => _handleFieldDictation(_padecimientoActualController),
+            onDictate: () =>
+                _handleFieldDictation(_padecimientoActualController),
             quickActions: const [
-              QuickAction(label: 'Agudo', text: 'Inicio agudo', icon: Icons.flash_on),
-              QuickAction(label: 'Cronico', text: 'Evolucion cronica', icon: Icons.timeline),
-              QuickAction(label: 'Progresivo', text: 'Curso progresivo', icon: Icons.trending_up),
+              QuickAction(
+                label: 'Agudo',
+                text: 'Inicio agudo',
+                icon: Icons.flash_on,
+              ),
+              QuickAction(
+                label: 'Cronico',
+                text: 'Evolucion cronica',
+                icon: Icons.timeline,
+              ),
+              QuickAction(
+                label: 'Progresivo',
+                text: 'Curso progresivo',
+                icon: Icons.trending_up,
+              ),
             ],
           ),
         ],
@@ -1242,23 +1458,38 @@ class _ClinicalHistoryWizardPageState
 
   // Step 5: Exploracion fisica ORL
   Widget _buildStep5ExploracionOrl() {
-    return _buildStepContainer(
+    return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
+
+          // Vital signs card (compact)
+          VitalsCard(
+            weightController: _weightController,
+            heightController: _heightController,
+            bpSystolicController: _bpSystolicController,
+            bpDiastolicController: _bpDiastolicController,
+            heartRateController: _heartRateController,
+            respiratoryRateController: _respiratoryRateController,
+            temperatureController: _temperatureController,
+            spo2Controller: _spo2Controller,
+          ),
+
+          const SizedBox(height: 24),
+
           Text(
             'Exploracion fisica ORL',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 4),
           Text(
             'Expande cada seccion para documentar los hallazgos',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                ),
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+            ),
           ),
           const SizedBox(height: 16),
           OrlAccordion(
@@ -1272,7 +1503,7 @@ class _ClinicalHistoryWizardPageState
 
   // Step 6: Diagnostico y plan
   Widget _buildStep6DiagnosticoPlan() {
-    return _buildStepContainer(
+    return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1308,14 +1539,27 @@ class _ClinicalHistoryWizardPageState
             highlighted: true,
             child: GuidedTextArea(
               controller: _planController,
-              hintText: 'Ej: Amoxicilina 500mg c/8h por 7 dias, gotas oticas...',
+              hintText:
+                  'Ej: Amoxicilina 500mg c/8h por 7 dias, gotas oticas...',
               maxLines: 6,
               minLines: 4,
               onDictate: () => _handleFieldDictation(_planController),
               quickActions: const [
-                QuickAction(label: 'Observacion', text: 'Observacion y seguimiento', icon: Icons.visibility),
-                QuickAction(label: 'Medicamento', text: 'Se indica tratamiento medico:', icon: Icons.medication),
-                QuickAction(label: 'Referencia', text: 'Se refiere a especialista', icon: Icons.send),
+                QuickAction(
+                  label: 'Observacion',
+                  text: 'Observacion y seguimiento',
+                  icon: Icons.visibility,
+                ),
+                QuickAction(
+                  label: 'Medicamento',
+                  text: 'Se indica tratamiento medico:',
+                  icon: Icons.medication,
+                ),
+                QuickAction(
+                  label: 'Referencia',
+                  text: 'Se refiere a especialista',
+                  icon: Icons.send,
+                ),
               ],
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
@@ -1325,6 +1569,39 @@ class _ClinicalHistoryWizardPageState
               },
             ),
           ),
+
+          const SizedBox(height: 16),
+
+          // Pronostico
+          _WizardSectionCard(
+            title: 'Pronostico',
+            icon: Icons.trending_up,
+            highlighted: false,
+            child: GuidedTextArea(
+              controller: _prognosisController,
+              hintText: 'Ej: Bueno para la funcion, reservado para la vida...',
+              maxLines: 3,
+              minLines: 2,
+              onDictate: () => _handleFieldDictation(_prognosisController),
+              quickActions: const [
+                QuickAction(
+                  label: 'Bueno',
+                  text: 'Bueno para la funcion y la vida',
+                  icon: Icons.thumb_up,
+                ),
+                QuickAction(
+                  label: 'Reservado',
+                  text: 'Reservado',
+                  icon: Icons.help_outline,
+                ),
+                QuickAction(
+                  label: 'Malo',
+                  text: 'Malo',
+                  icon: Icons.thumb_down,
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -1332,7 +1609,7 @@ class _ClinicalHistoryWizardPageState
 
   // Step 7: Laboratorio y estudios (attachments)
   Widget _buildStep7Attachments() {
-    return _buildStepContainer(
+    return _buildScrollableStep(
       child: Stack(
         children: [
           AttachmentsStep(
@@ -1529,8 +1806,4 @@ class _WizardSectionCard extends StatelessWidget {
 }
 
 /// Action choices for dictation when field has existing content.
-enum _DictationAction {
-  replace,
-  append,
-  cancel,
-}
+enum _DictationAction { replace, append, cancel }

@@ -30,7 +30,7 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
   final Uuid _uuid;
 
   String? _currentRecordingPath;
-  bool _isRecording = false;
+  RecordingState _state = RecordingState.idle;
 
   AudioRecordingServiceImpl({
     AudioRecorder? recorder,
@@ -39,14 +39,19 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
         _uuid = uuid ?? const Uuid();
 
   @override
-  bool get isRecording => _isRecording;
+  RecordingState get state => _state;
+
+  @override
+  bool get isRecording =>
+      _state == RecordingState.recording || _state == RecordingState.paused;
 
   @override
   Future<bool> startRecording() async {
     // Check if recorder is already recording (either by our flag or actual state)
     final isActuallyRecording = await _recorder.isRecording();
-    if (_isRecording || isActuallyRecording) {
-      Log.warning('🎤 startRecording called but already recording (local: $_isRecording, actual: $isActuallyRecording)');
+    if (_state != RecordingState.idle || isActuallyRecording) {
+      Log.warning(
+          '🎤 startRecording called but already recording (state: $_state, actual: $isActuallyRecording)');
       throw AudioRecordingException(
         'Ya hay una grabación en curso',
         reason: RecordingFailureReason.alreadyRecording,
@@ -89,12 +94,12 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
         path: _currentRecordingPath!,
       );
 
-      _isRecording = true;
+      _state = RecordingState.recording;
       Log.info('🎤 Recording started successfully');
       return true;
     } catch (e, stackTrace) {
       Log.error('🎤 Error starting recording: $e');
-      _isRecording = false;
+      _state = RecordingState.idle;
       _currentRecordingPath = null;
 
       if (e is AudioRecordingException) {
@@ -109,13 +114,62 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
   }
 
   @override
+  Future<void> pauseRecording() async {
+    if (_state != RecordingState.recording) {
+      Log.warning('🎤 pauseRecording called but not recording (state: $_state)');
+      throw AudioRecordingException(
+        'No hay grabación activa para pausar',
+        reason: RecordingFailureReason.notRecording,
+      );
+    }
+
+    try {
+      await _recorder.pause();
+      _state = RecordingState.paused;
+      Log.info('🎤 Recording paused');
+    } catch (e) {
+      Log.error('🎤 Error pausing recording: $e');
+      throw AudioRecordingException(
+        'Error al pausar la grabación: ${e.toString()}',
+        reason: RecordingFailureReason.unexpected,
+      );
+    }
+  }
+
+  @override
+  Future<void> resumeRecording() async {
+    if (_state != RecordingState.paused) {
+      Log.warning(
+          '🎤 resumeRecording called but not paused (state: $_state)');
+      throw AudioRecordingException(
+        'No hay grabación pausada para reanudar',
+        reason: RecordingFailureReason.notPaused,
+      );
+    }
+
+    try {
+      await _recorder.resume();
+      _state = RecordingState.recording;
+      Log.info('🎤 Recording resumed');
+    } catch (e) {
+      Log.error('🎤 Error resuming recording: $e');
+      throw AudioRecordingException(
+        'Error al reanudar la grabación: ${e.toString()}',
+        reason: RecordingFailureReason.unexpected,
+      );
+    }
+  }
+
+  @override
   Future<String?> stopRecording() async {
     // State guard: Check actual recorder state (not just local flag)
     // This prevents issues if the service instance was recreated
     final isActuallyRecording = await _recorder.isRecording();
+    final isPaused = await _recorder.isPaused();
 
-    if (!_isRecording && !isActuallyRecording) {
-      Log.warning('🎤 stopRecording called but not recording (local flag: $_isRecording, actual: $isActuallyRecording)');
+    if (_state == RecordingState.idle && !isActuallyRecording && !isPaused) {
+      Log.warning(
+          '🎤 stopRecording called but not recording (state: $_state, actual: $isActuallyRecording)');
       return null;
     }
 
@@ -123,7 +177,7 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
       // 1. Stop the recorder
       final path = await _recorder.stop();
 
-      _isRecording = false;
+      _state = RecordingState.idle;
 
       // 2. Validate the recording
       if (path == null) {
@@ -157,12 +211,12 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
         );
       }
 
-      Log.info('🎤 Recording stopped successfully: $path (${fileSize} bytes)');
+      Log.info('🎤 Recording stopped successfully: $path ($fileSize bytes)');
       _currentRecordingPath = null;
       return path;
     } catch (e, stackTrace) {
       Log.error('🎤 Error stopping recording: $e');
-      _isRecording = false;
+      _state = RecordingState.idle;
       _currentRecordingPath = null;
 
       if (e is AudioRecordingException) {
@@ -178,27 +232,28 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
 
   @override
   Future<void> cancelRecording() async {
-    if (!_isRecording) {
+    if (_state == RecordingState.idle) {
       Log.info('🎤 cancelRecording called but not recording');
       return;
     }
 
     try {
       await _recorder.stop();
-      _isRecording = false;
+      _state = RecordingState.idle;
 
       // Delete the temp file if it exists
       if (_currentRecordingPath != null) {
         final file = File(_currentRecordingPath!);
         if (await file.exists()) {
           await file.delete();
-          Log.info('🎤 Cancelled recording and deleted temp file: $_currentRecordingPath');
+          Log.info(
+              '🎤 Cancelled recording and deleted temp file: $_currentRecordingPath');
         }
         _currentRecordingPath = null;
       }
     } catch (e) {
       Log.error('🎤 Error cancelling recording: $e');
-      _isRecording = false;
+      _state = RecordingState.idle;
       _currentRecordingPath = null;
     }
   }
@@ -267,10 +322,11 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
   Future<void> ensureStopped() async {
     try {
       final isActuallyRecording = await _recorder.isRecording();
-      if (_isRecording || isActuallyRecording) {
+      final isPaused = await _recorder.isPaused();
+      if (_state != RecordingState.idle || isActuallyRecording || isPaused) {
         Log.info('🎤 ensureStopped: Cleaning up orphaned recording state');
         await _recorder.stop();
-        _isRecording = false;
+        _state = RecordingState.idle;
 
         // Delete any orphaned temp file
         if (_currentRecordingPath != null) {
@@ -285,14 +341,14 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
     } catch (e) {
       Log.warning('🎤 ensureStopped: Error during cleanup (ignored): $e');
       // Reset state regardless of error
-      _isRecording = false;
+      _state = RecordingState.idle;
       _currentRecordingPath = null;
     }
   }
 
   /// Dispose resources when service is no longer needed
   Future<void> dispose() async {
-    if (_isRecording) {
+    if (_state != RecordingState.idle) {
       await cancelRecording();
     }
     await _recorder.dispose();

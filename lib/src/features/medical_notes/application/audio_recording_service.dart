@@ -1,5 +1,17 @@
 // lib/src/features/medical_notes/application/audio_recording_service.dart
 
+/// The current state of the audio recorder.
+enum RecordingState {
+  /// Not recording, ready to start.
+  idle,
+
+  /// Actively recording audio.
+  recording,
+
+  /// Recording is paused.
+  paused,
+}
+
 /// Reasons why audio recording might fail.
 enum RecordingFailureReason {
   /// Microphone permission was denied by the user.
@@ -14,6 +26,12 @@ enum RecordingFailureReason {
   /// The recorder is busy or in an invalid state.
   recorderBusy,
 
+  /// Cannot pause when not recording.
+  notRecording,
+
+  /// Cannot resume when not paused.
+  notPaused,
+
   /// Could not create the output file path.
   pathError,
 
@@ -26,6 +44,9 @@ enum RecordingFailureReason {
 /// Esta abstracción permite grabar audio para transcripción médica.
 /// En producción, esto usaría un paquete como `record` o `audio_recorder`.
 abstract class AudioRecordingService {
+  /// The current recording state.
+  RecordingState get state;
+
   /// Inicia la grabación de audio.
   ///
   /// Throws [AudioRecordingException] with a specific [RecordingFailureReason]
@@ -40,7 +61,19 @@ abstract class AudioRecordingService {
   /// o `null` si no se pudo grabar o no hay grabación activa.
   Future<String?> stopRecording();
 
-  /// Verifica si actualmente hay una grabación en curso.
+  /// Pauses the current recording.
+  ///
+  /// Throws [AudioRecordingException] with [RecordingFailureReason.notRecording]
+  /// if not currently recording.
+  Future<void> pauseRecording();
+
+  /// Resumes a paused recording.
+  ///
+  /// Throws [AudioRecordingException] with [RecordingFailureReason.notPaused]
+  /// if not currently paused.
+  Future<void> resumeRecording();
+
+  /// Verifica si actualmente hay una grabación en curso (recording or paused).
   bool get isRecording;
 
   /// Cancela la grabación actual sin guardar el archivo.
@@ -61,15 +94,19 @@ abstract class AudioRecordingService {
 /// En producción, esto se reemplazaría con una implementación real
 /// que use un paquete de grabación de audio.
 class AudioRecordingServiceStub implements AudioRecordingService {
-  bool _isRecording = false;
+  RecordingState _state = RecordingState.idle;
   DateTime? _recordingStartTime;
 
   @override
-  bool get isRecording => _isRecording;
+  RecordingState get state => _state;
+
+  @override
+  bool get isRecording =>
+      _state == RecordingState.recording || _state == RecordingState.paused;
 
   @override
   Future<bool> startRecording() async {
-    if (_isRecording) {
+    if (_state != RecordingState.idle) {
       throw AudioRecordingException(
         'Ya hay una grabación en curso',
         reason: RecordingFailureReason.alreadyRecording,
@@ -79,36 +116,65 @@ class AudioRecordingServiceStub implements AudioRecordingService {
     // Simula iniciar grabación
     await Future.delayed(const Duration(milliseconds: 300));
 
-    _isRecording = true;
+    _state = RecordingState.recording;
     _recordingStartTime = DateTime.now();
 
     return true;
   }
 
   @override
+  Future<void> pauseRecording() async {
+    if (_state != RecordingState.recording) {
+      throw AudioRecordingException(
+        'No hay grabación activa para pausar',
+        reason: RecordingFailureReason.notRecording,
+      );
+    }
+
+    await Future.delayed(const Duration(milliseconds: 100));
+    _state = RecordingState.paused;
+    print('🎤 [STUB] Grabación pausada');
+  }
+
+  @override
+  Future<void> resumeRecording() async {
+    if (_state != RecordingState.paused) {
+      throw AudioRecordingException(
+        'No hay grabación pausada para reanudar',
+        reason: RecordingFailureReason.notPaused,
+      );
+    }
+
+    await Future.delayed(const Duration(milliseconds: 100));
+    _state = RecordingState.recording;
+    print('🎤 [STUB] Grabación reanudada');
+  }
+
+  @override
   Future<String?> stopRecording() async {
-    if (!_isRecording) return null;
+    if (_state == RecordingState.idle) return null;
 
     // Simula detener grabación
     await Future.delayed(const Duration(milliseconds: 300));
 
-    _isRecording = false;
     final duration = DateTime.now().difference(_recordingStartTime!);
+    _state = RecordingState.idle;
 
     // Devuelve una ruta simulada
-    // En producción, esto sería una ruta real al archivo grabado
-    final fakeFilePath = '/fake/audio/recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    final fakeFilePath =
+        '/fake/audio/recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
-    print('🎤 [STUB] Grabación simulada de ${duration.inSeconds}s guardada en: $fakeFilePath');
+    print(
+        '🎤 [STUB] Grabación simulada de ${duration.inSeconds}s guardada en: $fakeFilePath');
 
     return fakeFilePath;
   }
 
   @override
   Future<void> cancelRecording() async {
-    if (!_isRecording) return;
+    if (_state == RecordingState.idle) return;
 
-    _isRecording = false;
+    _state = RecordingState.idle;
     _recordingStartTime = null;
 
     await Future.delayed(const Duration(milliseconds: 100));
@@ -118,7 +184,7 @@ class AudioRecordingServiceStub implements AudioRecordingService {
 
   @override
   Future<void> ensureStopped() async {
-    if (_isRecording) {
+    if (_state != RecordingState.idle) {
       await cancelRecording();
     }
   }

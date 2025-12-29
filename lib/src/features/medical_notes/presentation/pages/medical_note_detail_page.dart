@@ -14,6 +14,7 @@ import '../../domain/entities/medical_note_entity.dart';
 import '../../domain/entities/medical_note_type.dart';
 import '../../domain/entities/surgical_note_data_entity.dart';
 import 'create_medical_note_page.dart';
+import 'image_viewer_page.dart';
 
 /// Detail page for viewing a medical note (read-only)
 ///
@@ -105,6 +106,12 @@ class _MedicalNoteDetailContent extends ConsumerWidget {
           ),
           const SizedBox(height: 12),
 
+          // Vital signs display (only if any vitals are recorded)
+          if (_hasVitalSigns(note)) ...[
+            _VitalsDisplayCard(note: note),
+            const SizedBox(height: 12),
+          ],
+
           _SectionCard(
             title: 'Diagnóstico',
             icon: Icons.local_hospital,
@@ -120,6 +127,16 @@ class _MedicalNoteDetailContent extends ConsumerWidget {
             highlighted: true,
           ),
           const SizedBox(height: 12),
+
+          // Prognosis (only if recorded)
+          if (note.prognosis != null && note.prognosis!.isNotEmpty) ...[
+            _SectionCard(
+              title: 'Pronóstico',
+              icon: Icons.trending_up,
+              content: note.prognosis!,
+            ),
+            const SizedBox(height: 12),
+          ],
 
           // ===== SURGICAL DATA SECTION (Fix C - Goal 2) =====
           if (note.isSurgicalNote && note.surgicalData != null) ...[
@@ -1043,8 +1060,22 @@ Future<void> _downloadAttachment(
   }
 }
 
-/// Opens attachment URL
+/// Opens attachment - images use internal viewer, others use external app
 Future<void> _openAttachment(BuildContext context, AttachmentEntity attachment) async {
+  // Images: open in internal viewer to avoid compatibility issues on some devices
+  if (attachment.tipo == AttachmentType.image) {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ImageViewerPage(
+          imageUrl: attachment.url,
+          title: attachment.nombre,
+        ),
+      ),
+    );
+    return;
+  }
+
+  // Non-images: use external application (PDF, audio, video, other)
   final uri = Uri.tryParse(attachment.url);
   if (uri == null) {
     if (context.mounted) {
@@ -1168,6 +1199,168 @@ class _InfoRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Helper function to check if any vital signs are recorded
+bool _hasVitalSigns(MedicalNoteEntity note) {
+  return note.weightKg != null ||
+      note.heightCm != null ||
+      note.bpSystolic != null ||
+      note.bpDiastolic != null ||
+      note.heartRate != null ||
+      note.respiratoryRate != null ||
+      note.temperatureC != null ||
+      note.spo2 != null;
+}
+
+/// Display card for vital signs in read-only mode
+class _VitalsDisplayCard extends StatelessWidget {
+  const _VitalsDisplayCard({required this.note});
+
+  final MedicalNoteEntity note;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Card(
+      color: theme.colorScheme.surfaceContainerLow,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                Icon(
+                  Icons.monitor_heart_outlined,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Signos Vitales',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Vital signs grid
+            Wrap(
+              spacing: 16,
+              runSpacing: 12,
+              children: [
+                if (note.weightKg != null)
+                  _VitalItem(
+                    label: 'Peso',
+                    value: '${note.weightKg} kg',
+                    icon: Icons.fitness_center,
+                  ),
+                if (note.heightCm != null)
+                  _VitalItem(
+                    label: 'Talla',
+                    value: '${note.heightCm} cm',
+                    icon: Icons.height,
+                  ),
+                if (note.bpSystolic != null || note.bpDiastolic != null)
+                  _VitalItem(
+                    label: 'PA',
+                    value: '${note.bpSystolic ?? '-'}/${note.bpDiastolic ?? '-'} mmHg',
+                    icon: Icons.favorite,
+                  ),
+                if (note.heartRate != null)
+                  _VitalItem(
+                    label: 'FC',
+                    value: '${note.heartRate} lpm',
+                    icon: Icons.favorite_border,
+                  ),
+                if (note.respiratoryRate != null)
+                  _VitalItem(
+                    label: 'FR',
+                    value: '${note.respiratoryRate} rpm',
+                    icon: Icons.air,
+                  ),
+                if (note.temperatureC != null)
+                  _VitalItem(
+                    label: 'Temp',
+                    value: '${note.temperatureC} °C',
+                    icon: Icons.thermostat,
+                  ),
+                if (note.spo2 != null)
+                  _VitalItem(
+                    label: 'SpO2',
+                    value: '${note.spo2}%',
+                    icon: Icons.water_drop,
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Individual vital sign item for display
+class _VitalItem extends StatelessWidget {
+  const _VitalItem({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 16,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                ),
+              ),
+              Text(
+                value,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
