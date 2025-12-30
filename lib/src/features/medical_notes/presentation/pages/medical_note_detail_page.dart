@@ -1,9 +1,15 @@
 // lib/src/features/medical_notes/presentation/pages/medical_note_detail_page.dart
 
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/base/base.dart';
@@ -13,64 +19,631 @@ import '../../domain/entities/attachment_entity.dart';
 import '../../domain/entities/medical_note_entity.dart';
 import '../../domain/entities/medical_note_type.dart';
 import '../../domain/entities/surgical_note_data_entity.dart';
-import 'create_medical_note_page.dart';
+import '../controllers/medical_notes_controller.dart';
+import '../utils/medical_note_pdf_builder.dart';
 import 'image_viewer_page.dart';
 
-/// Detail page for viewing a medical note (read-only)
+/// Editable sections in the detail page
+enum _EditableSection {
+  motivoConsulta,
+  antecedentes,
+  exploracionFisicaOrl,
+  diagnostico,
+  planTratamiento,
+  prognosis,
+  resumen,
+  notaAdicional,
+}
+
+/// Detail page for viewing and inline editing a medical note
 ///
 /// US 1.4: View note detail
-/// - Displays all clinical fields from MedicalNoteEntity
-/// - Read-only mode (no editing)
-/// - Takes the full entity as a parameter (no need to fetch by ID)
-/// - Edit functionality will be added in US 1.5
-class MedicalNoteDetailPage extends ConsumerWidget {
-  const MedicalNoteDetailPage({
-    super.key,
-    required this.note,
-  });
+/// US 1.5: Inline edit by section
+class MedicalNoteDetailPage extends ConsumerStatefulWidget {
+  const MedicalNoteDetailPage({super.key, required this.note});
 
-  /// The medical note to display
   final MedicalNoteEntity note;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MedicalNoteDetailPage> createState() =>
+      _MedicalNoteDetailPageState();
+}
+
+class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
+  // Local mutable copy of the note
+  late MedicalNoteEntity _currentNote;
+
+  // Edit mode state
+  bool _isEditMode = false;
+  _EditableSection? _editingSection;
+  bool _isSaving = false;
+  bool _isGeneratingPdf = false;
+
+  // Cached patient name for PDF
+  String? _cachedPatientName;
+
+  // Controllers created on-demand
+  final Map<_EditableSection, TextEditingController> _controllers = {};
+
+  // Track if current section has unsaved changes
+  bool get _hasUnsavedChanges {
+    if (_editingSection == null) return false;
+    final controller = _controllers[_editingSection];
+    if (controller == null) return false;
+    final original = _getFieldValue(_editingSection!);
+    return controller.text != original;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _currentNote = widget.note;
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  /// Get the current value of a field from the note
+  String _getFieldValue(_EditableSection section) {
+    switch (section) {
+      case _EditableSection.motivoConsulta:
+        return _currentNote.motivoConsulta;
+      case _EditableSection.antecedentes:
+        return _currentNote.antecedentes;
+      case _EditableSection.exploracionFisicaOrl:
+        return _currentNote.exploracionFisicaOrl;
+      case _EditableSection.diagnostico:
+        return _currentNote.diagnostico;
+      case _EditableSection.planTratamiento:
+        return _currentNote.planTratamiento;
+      case _EditableSection.prognosis:
+        return _currentNote.prognosis ?? '';
+      case _EditableSection.resumen:
+        return _currentNote.resumen ?? '';
+      case _EditableSection.notaAdicional:
+        return _currentNote.notaAdicional ?? '';
+    }
+  }
+
+  /// Get or create a controller for a section
+  TextEditingController _getController(_EditableSection section) {
+    return _controllers.putIfAbsent(
+      section,
+      () => TextEditingController(text: _getFieldValue(section)),
+    );
+  }
+
+  /// Check if a field is a key field (requires confirmation to leave empty)
+  bool _isKeyField(_EditableSection section) {
+    return section == _EditableSection.motivoConsulta ||
+        section == _EditableSection.diagnostico ||
+        section == _EditableSection.planTratamiento;
+  }
+
+  /// Get display name for a section
+  String _getSectionName(_EditableSection section) {
+    switch (section) {
+      case _EditableSection.motivoConsulta:
+        return 'Motivo de consulta';
+      case _EditableSection.antecedentes:
+        return 'Antecedentes';
+      case _EditableSection.exploracionFisicaOrl:
+        return 'Exploración física ORL';
+      case _EditableSection.diagnostico:
+        return 'Diagnóstico';
+      case _EditableSection.planTratamiento:
+        return 'Plan de tratamiento';
+      case _EditableSection.prognosis:
+        return 'Pronóstico';
+      case _EditableSection.resumen:
+        return 'Resumen';
+      case _EditableSection.notaAdicional:
+        return 'Nota adicional';
+    }
+  }
+
+  /// Handle edit button tap for a section
+  Future<void> _onEditSection(_EditableSection section) async {
+    // If already editing this section, do nothing
+    if (_editingSection == section) return;
+
+    // If editing another section with unsaved changes, show dialog
+    if (_hasUnsavedChanges) {
+      final action = await _showUnsavedChangesDialog();
+      if (action == null) return; // Cancelled
+
+      if (action == _UnsavedAction.save) {
+        final saved = await _saveCurrentSection();
+        if (!saved) return; // Save failed
+      } else if (action == _UnsavedAction.discard) {
+        // Reset the controller to original value
+        final controller = _controllers[_editingSection];
+        if (controller != null && _editingSection != null) {
+          controller.text = _getFieldValue(_editingSection!);
+        }
+      }
+    }
+
+    // Initialize controller for new section
+    _getController(section);
+
+    setState(() {
+      _editingSection = section;
+    });
+  }
+
+  /// Show dialog for unsaved changes
+  Future<_UnsavedAction?> _showUnsavedChangesDialog() {
+    return showDialog<_UnsavedAction>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cambios sin guardar'),
+        content: const Text(
+          'Tienes cambios sin guardar en la sección actual. ¿Qué deseas hacer?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _UnsavedAction.discard),
+            child: const Text('Descartar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, _UnsavedAction.save),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Save the current section
+  Future<bool> _saveCurrentSection() async {
+    if (_editingSection == null) return true;
+
+    final controller = _controllers[_editingSection];
+    if (controller == null) return true;
+
+    final newValue = controller.text.trim();
+    final originalValue = _getFieldValue(_editingSection!);
+
+    // No changes
+    if (newValue == originalValue) {
+      setState(() {
+        _editingSection = null;
+      });
+      return true;
+    }
+
+    // Check if leaving key field empty
+    if (newValue.isEmpty && _isKeyField(_editingSection!)) {
+      final confirm = await _showEmptyFieldConfirmation();
+      if (!confirm) return false;
+    }
+
+    // Capture section info before nullifying
+    final sectionToSave = _editingSection!;
+    final sectionName = _getSectionName(sectionToSave);
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      // Create updated note
+      final updatedNote = _createUpdatedNote(sectionToSave, newValue);
+
+      // Save to backend
+      await ref
+          .read(medicalNotesControllerProvider.notifier)
+          .updateMedicalNote(updatedNote);
+
+      // Update local state
+      setState(() {
+        _currentNote = updatedNote;
+        _editingSection = null;
+        _isSaving = false;
+      });
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$sectionName actualizado'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+
+      return true;
+    } catch (e) {
+      setState(() {
+        _isSaving = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al guardar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+
+      return false;
+    }
+  }
+
+  /// Show confirmation dialog for leaving key field empty
+  Future<bool> _showEmptyFieldConfirmation() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Campo vacío'),
+        content: const Text(
+          '¿Estás seguro de dejar este campo vacío? Es un campo importante.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  /// Create an updated note with the new field value
+  MedicalNoteEntity _createUpdatedNote(
+    _EditableSection section,
+    String newValue,
+  ) {
+    switch (section) {
+      case _EditableSection.motivoConsulta:
+        return _currentNote.copyWith(
+          motivoConsulta: newValue,
+          updatedAt: DateTime.now(),
+        );
+      case _EditableSection.antecedentes:
+        return _currentNote.copyWith(
+          antecedentes: newValue,
+          updatedAt: DateTime.now(),
+        );
+      case _EditableSection.exploracionFisicaOrl:
+        return _currentNote.copyWith(
+          exploracionFisicaOrl: newValue,
+          updatedAt: DateTime.now(),
+        );
+      case _EditableSection.diagnostico:
+        return _currentNote.copyWith(
+          diagnostico: newValue,
+          updatedAt: DateTime.now(),
+        );
+      case _EditableSection.planTratamiento:
+        return _currentNote.copyWith(
+          planTratamiento: newValue,
+          updatedAt: DateTime.now(),
+        );
+      case _EditableSection.prognosis:
+        return _currentNote.copyWith(
+          prognosis: newValue.isEmpty ? null : newValue,
+          updatedAt: DateTime.now(),
+        );
+      case _EditableSection.resumen:
+        return _currentNote.copyWith(
+          resumen: newValue.isEmpty ? null : newValue,
+          updatedAt: DateTime.now(),
+        );
+      case _EditableSection.notaAdicional:
+        return _currentNote.copyWith(
+          notaAdicional: newValue.isEmpty ? null : newValue,
+          updatedAt: DateTime.now(),
+        );
+    }
+  }
+
+  /// Cancel editing current section
+  void _cancelEditing() {
+    if (_editingSection == null) return;
+
+    // Reset controller to original value
+    final controller = _controllers[_editingSection];
+    if (controller != null) {
+      controller.text = _getFieldValue(_editingSection!);
+    }
+
+    setState(() {
+      _editingSection = null;
+    });
+  }
+
+  /// Toggle edit mode
+  void _toggleEditMode() {
+    if (_isEditMode && _hasUnsavedChanges) {
+      // Show dialog before exiting edit mode
+      _showUnsavedChangesDialog().then((action) {
+        if (action == _UnsavedAction.save) {
+          _saveCurrentSection().then((saved) {
+            if (saved) {
+              setState(() {
+                _isEditMode = false;
+                _editingSection = null;
+              });
+            }
+          });
+        } else if (action == _UnsavedAction.discard) {
+          final controller = _controllers[_editingSection];
+          if (controller != null && _editingSection != null) {
+            controller.text = _getFieldValue(_editingSection!);
+          }
+          setState(() {
+            _isEditMode = false;
+            _editingSection = null;
+          });
+        }
+      });
+    } else {
+      setState(() {
+        _isEditMode = !_isEditMode;
+        if (!_isEditMode) {
+          _editingSection = null;
+        }
+      });
+    }
+  }
+
+  /// Load patient name for PDF generation
+  Future<String?> _loadPatientName() async {
+    if (_cachedPatientName != null) return _cachedPatientName;
+
+    try {
+      final useCase = ref.read(getPatientByIdUseCaseProvider);
+      final result = await useCase.call(_currentNote.patientId);
+      _cachedPatientName = result.when(
+        success: (patient) => patient?.fullName,
+        error: (_) => null,
+      );
+      return _cachedPatientName;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Generate PDF bytes
+  Future<(List<int>, String)?> _generatePdf() async {
+    setState(() => _isGeneratingPdf = true);
+
+    try {
+      final patientName = await _loadPatientName();
+      final builder = MedicalNotePdfBuilder(
+        note: _currentNote,
+        patientName: patientName,
+      );
+      final bytes = await builder.build();
+      final fileName = builder.suggestedFileName;
+      return (bytes.toList(), fileName);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al generar PDF: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return null;
+    } finally {
+      if (mounted) {
+        setState(() => _isGeneratingPdf = false);
+      }
+    }
+  }
+
+  /// Export PDF - saves to temp and opens share/download
+  Future<void> _onExportPdf() async {
+    final result = await _generatePdf();
+    if (result == null) return;
+
+    final (bytes, fileName) = result;
+
+    if (kIsWeb) {
+      // On web, use printing package to trigger download
+      await Printing.sharePdf(
+        bytes: Uint8List.fromList(bytes),
+        filename: fileName,
+      );
+    } else {
+      // On mobile, save to temp and share
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/$fileName');
+      await file.writeAsBytes(bytes);
+
+      if (mounted) {
+        await Share.shareXFiles([
+          XFile(file.path),
+        ], subject: 'Historia Clínica');
+      }
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('PDF generado correctamente'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  /// Share PDF via share intent (mobile) or download (web)
+  Future<void> _onSharePdf() async {
+    final result = await _generatePdf();
+    if (result == null) return;
+
+    final (bytes, fileName) = result;
+
+    if (kIsWeb) {
+      await Printing.sharePdf(
+        bytes: Uint8List.fromList(bytes),
+        filename: fileName,
+      );
+    } else {
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/$fileName');
+      await file.writeAsBytes(bytes);
+
+      if (mounted) {
+        await Share.shareXFiles(
+          [XFile(file.path)],
+          subject: 'Historia Clínica - ${_cachedPatientName ?? 'Paciente'}',
+          text: 'Adjunto la historia clínica del paciente.',
+        );
+      }
+    }
+  }
+
+  /// Print PDF (available on all platforms via printing package)
+  Future<void> _onPrintPdf() async {
+    final result = await _generatePdf();
+    if (result == null) return;
+
+    final (bytes, _) = result;
+
+    await Printing.layoutPdf(
+      onLayout: (_) async => Uint8List.fromList(bytes),
+      name: 'Historia Clínica',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Detalle de nota médica'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            tooltip: 'Editar nota',
-            onPressed: () async {
-              // US 1.5: Navigate to edit form
-              await Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => CreateMedicalNotePage(
-                    patientId: note.patientId,
-                    doctorId: note.doctorId,
-                    existingNote: note,
-                  ),
+          // PDF loading indicator
+          if (_isGeneratingPdf)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-              );
+              ),
+            ),
+          // Edit mode toggle
+          IconButton(
+            icon: Icon(_isEditMode ? Icons.check : Icons.edit),
+            tooltip: _isEditMode ? 'Salir de edición' : 'Modo edición',
+            onPressed: _isGeneratingPdf ? null : _toggleEditMode,
+          ),
+          // Export menu
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            enabled: !_isGeneratingPdf,
+            tooltip: 'Opciones',
+            onSelected: (value) {
+              switch (value) {
+                case 'export':
+                  _onExportPdf();
+                case 'share':
+                  _onSharePdf();
+                case 'print':
+                  _onPrintPdf();
+              }
             },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'export',
+                child: ListTile(
+                  leading: Icon(Icons.picture_as_pdf),
+                  title: Text('Exportar PDF'),
+                  contentPadding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'share',
+                child: ListTile(
+                  leading: Icon(Icons.share),
+                  title: Text('Compartir'),
+                  contentPadding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'print',
+                child: ListTile(
+                  leading: Icon(Icons.print),
+                  title: Text('Imprimir'),
+                  contentPadding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
           ),
         ],
       ),
-      body: _MedicalNoteDetailContent(note: note),
+      body: _MedicalNoteDetailContent(
+        note: _currentNote,
+        isEditMode: _isEditMode,
+        editingSection: _editingSection,
+        isSaving: _isSaving,
+        controllers: _controllers,
+        onEditSection: _onEditSection,
+        onSave: _saveCurrentSection,
+        onCancel: _cancelEditing,
+        getController: _getController,
+      ),
     );
   }
 }
 
+/// Actions for unsaved changes dialog
+enum _UnsavedAction { save, discard }
+
 /// Content widget that displays all medical note details
-class _MedicalNoteDetailContent extends ConsumerWidget {
-  const _MedicalNoteDetailContent({required this.note});
+class _MedicalNoteDetailContent extends StatelessWidget {
+  const _MedicalNoteDetailContent({
+    required this.note,
+    required this.isEditMode,
+    required this.editingSection,
+    required this.isSaving,
+    required this.controllers,
+    required this.onEditSection,
+    required this.onSave,
+    required this.onCancel,
+    required this.getController,
+  });
 
   final MedicalNoteEntity note;
+  final bool isEditMode;
+  final _EditableSection? editingSection;
+  final bool isSaving;
+  final Map<_EditableSection, TextEditingController> controllers;
+  final Future<void> Function(_EditableSection) onEditSection;
+  final Future<bool> Function() onSave;
+  final VoidCallback onCancel;
+  final TextEditingController Function(_EditableSection) getController;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-
+  Widget build(BuildContext context) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -84,25 +657,49 @@ class _MedicalNoteDetailContent extends ConsumerWidget {
           _NoteTypeBadge(type: note.type),
           const SizedBox(height: 16),
 
-          // Clinical Data Sections
-          _SectionCard(
+          // Clinical Data Sections - Editable
+          _EditableSectionCard(
+            section: _EditableSection.motivoConsulta,
             title: 'Motivo de consulta',
             icon: Icons.help_outline,
             content: note.motivoConsulta,
+            isEditMode: isEditMode,
+            isEditing: editingSection == _EditableSection.motivoConsulta,
+            isSaving: isSaving,
+            controller: getController(_EditableSection.motivoConsulta),
+            onEdit: () => onEditSection(_EditableSection.motivoConsulta),
+            onSave: onSave,
+            onCancel: onCancel,
           ),
           const SizedBox(height: 12),
 
-          _SectionCard(
+          _EditableSectionCard(
+            section: _EditableSection.antecedentes,
             title: 'Antecedentes',
             icon: Icons.history,
             content: note.antecedentes,
+            isEditMode: isEditMode,
+            isEditing: editingSection == _EditableSection.antecedentes,
+            isSaving: isSaving,
+            controller: getController(_EditableSection.antecedentes),
+            onEdit: () => onEditSection(_EditableSection.antecedentes),
+            onSave: onSave,
+            onCancel: onCancel,
           ),
           const SizedBox(height: 12),
 
-          _SectionCard(
+          _EditableSectionCard(
+            section: _EditableSection.exploracionFisicaOrl,
             title: 'Exploración física ORL',
             icon: Icons.medical_services,
             content: note.exploracionFisicaOrl,
+            isEditMode: isEditMode,
+            isEditing: editingSection == _EditableSection.exploracionFisicaOrl,
+            isSaving: isSaving,
+            controller: getController(_EditableSection.exploracionFisicaOrl),
+            onEdit: () => onEditSection(_EditableSection.exploracionFisicaOrl),
+            onSave: onSave,
+            onCancel: onCancel,
           ),
           const SizedBox(height: 12),
 
@@ -112,218 +709,132 @@ class _MedicalNoteDetailContent extends ConsumerWidget {
             const SizedBox(height: 12),
           ],
 
-          _SectionCard(
+          _EditableSectionCard(
+            section: _EditableSection.diagnostico,
             title: 'Diagnóstico',
             icon: Icons.local_hospital,
             content: note.diagnostico,
             highlighted: true,
+            isEditMode: isEditMode,
+            isEditing: editingSection == _EditableSection.diagnostico,
+            isSaving: isSaving,
+            controller: getController(_EditableSection.diagnostico),
+            onEdit: () => onEditSection(_EditableSection.diagnostico),
+            onSave: onSave,
+            onCancel: onCancel,
           ),
           const SizedBox(height: 12),
 
-          _SectionCard(
+          _EditableSectionCard(
+            section: _EditableSection.planTratamiento,
             title: 'Plan de tratamiento',
             icon: Icons.medication,
             content: note.planTratamiento,
             highlighted: true,
+            isEditMode: isEditMode,
+            isEditing: editingSection == _EditableSection.planTratamiento,
+            isSaving: isSaving,
+            controller: getController(_EditableSection.planTratamiento),
+            onEdit: () => onEditSection(_EditableSection.planTratamiento),
+            onSave: onSave,
+            onCancel: onCancel,
           ),
           const SizedBox(height: 12),
 
-          // Prognosis (only if recorded)
-          if (note.prognosis != null && note.prognosis!.isNotEmpty) ...[
-            _SectionCard(
+          // Prognosis (editable, show if has content OR in edit mode)
+          if (note.prognosis != null && note.prognosis!.isNotEmpty ||
+              isEditMode) ...[
+            _EditableSectionCard(
+              section: _EditableSection.prognosis,
               title: 'Pronóstico',
               icon: Icons.trending_up,
-              content: note.prognosis!,
+              content: note.prognosis ?? '',
+              isEditMode: isEditMode,
+              isEditing: editingSection == _EditableSection.prognosis,
+              isSaving: isSaving,
+              controller: getController(_EditableSection.prognosis),
+              onEdit: () => onEditSection(_EditableSection.prognosis),
+              onSave: onSave,
+              onCancel: onCancel,
             ),
             const SizedBox(height: 12),
           ],
 
-          // ===== SURGICAL DATA SECTION (Fix C - Goal 2) =====
+          // Surgical data section (read-only)
           if (note.isSurgicalNote && note.surgicalData != null) ...[
             _SurgicalDataSection(surgicalData: note.surgicalData!),
             const SizedBox(height: 12),
           ],
 
-          if (note.resumen != null && note.resumen!.isNotEmpty) ...[
-            _SectionCard(
+          // Resumen (editable)
+          if (note.resumen != null && note.resumen!.isNotEmpty ||
+              isEditMode) ...[
+            _EditableSectionCard(
+              section: _EditableSection.resumen,
               title: 'Resumen',
               icon: Icons.summarize,
-              content: note.resumen!,
+              content: note.resumen ?? '',
+              isEditMode: isEditMode,
+              isEditing: editingSection == _EditableSection.resumen,
+              isSaving: isSaving,
+              controller: getController(_EditableSection.resumen),
+              onEdit: () => onEditSection(_EditableSection.resumen),
+              onSave: onSave,
+              onCancel: onCancel,
             ),
             const SizedBox(height: 12),
           ],
 
-          if (note.notaAdicional != null && note.notaAdicional!.isNotEmpty) ...[
-            _SectionCard(
+          // Nota adicional (editable)
+          if (note.notaAdicional != null && note.notaAdicional!.isNotEmpty ||
+              isEditMode) ...[
+            _EditableSectionCard(
+              section: _EditableSection.notaAdicional,
               title: 'Nota adicional',
               icon: Icons.note_add,
-              content: note.notaAdicional!,
+              content: note.notaAdicional ?? '',
+              isEditMode: isEditMode,
+              isEditing: editingSection == _EditableSection.notaAdicional,
+              isSaving: isSaving,
+              controller: getController(_EditableSection.notaAdicional),
+              onEdit: () => onEditSection(_EditableSection.notaAdicional),
+              onSave: onSave,
+              onCancel: onCancel,
             ),
             const SizedBox(height: 12),
           ],
 
-          // Medications
+          // Medications (read-only)
           if (note.medicamentosRecetados.isNotEmpty) ...[
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.medication, color: theme.colorScheme.primary, size: 20),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Medicamentos recetados',
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    ...note.medicamentosRecetados.map((med) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('• '),
-                              Expanded(
-                                child: Text(
-                                  '${med.nombre} - ${med.dosis}\n${med.frecuencia} por ${med.duracion}',
-                                  style: theme.textTheme.bodyMedium,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )),
-                  ],
-                ),
-              ),
-            ),
+            _MedicationsCard(medications: note.medicamentosRecetados),
             const SizedBox(height: 12),
           ],
 
-          // Studies
+          // Studies (read-only)
           if (note.estudiosIndicados.isNotEmpty) ...[
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.biotech, color: theme.colorScheme.primary, size: 20),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Estudios indicados',
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    ...note.estudiosIndicados.map((study) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('• '),
-                              Expanded(
-                                child: Text(
-                                  '${study.tipo}: ${study.descripcion}',
-                                  style: theme.textTheme.bodyMedium,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )),
-                  ],
-                ),
-              ),
-            ),
+            _StudiesCard(studies: note.estudiosIndicados),
             const SizedBox(height: 12),
           ],
 
-          // ===== ATTACHMENTS SECTION (Fix C - Goal 1) =====
+          // Attachments (read-only)
           if (note.attachments.isNotEmpty) ...[
             _AttachmentsSection(attachments: note.attachments),
             const SizedBox(height: 12),
           ],
 
-          // Next appointment
+          // Next appointment (read-only)
           if (note.proximaCita != null) ...[
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Icon(Icons.event, color: theme.colorScheme.primary),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Próxima cita',
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _formatDateTime(note.proximaCita!),
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            _NextAppointmentCard(date: note.proximaCita!),
             const SizedBox(height: 12),
           ],
 
-          // Tags
+          // Tags (read-only)
           if (note.tags.isNotEmpty) ...[
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.label, color: theme.colorScheme.primary, size: 20),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Etiquetas',
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: note.tags.map((tag) => Chip(
-                            label: Text(tag),
-                            labelStyle: theme.textTheme.bodySmall,
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                          )).toList(),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            _TagsCard(tags: note.tags),
             const SizedBox(height: 12),
           ],
 
-          // Raw transcript (collapsible or at the end)
+          // Raw transcript (read-only)
           _SectionCard(
             title: 'Transcripción original',
             icon: Icons.mic,
@@ -334,16 +845,150 @@ class _MedicalNoteDetailContent extends ConsumerWidget {
       ),
     );
   }
+}
 
-  String _formatDateTime(DateTime dateTime) {
-    final dateFormat = DateFormat('dd/MM/yyyy');
-    final timeFormat = DateFormat('HH:mm');
-    return '${dateFormat.format(dateTime)} a las ${timeFormat.format(dateTime)}';
+/// Editable section card with inline editing support
+class _EditableSectionCard extends StatelessWidget {
+  const _EditableSectionCard({
+    required this.section,
+    required this.title,
+    required this.icon,
+    required this.content,
+    required this.isEditMode,
+    required this.isEditing,
+    required this.isSaving,
+    required this.controller,
+    required this.onEdit,
+    required this.onSave,
+    required this.onCancel,
+    this.highlighted = false,
+  });
+
+  final _EditableSection section;
+  final String title;
+  final IconData icon;
+  final String content;
+  final bool isEditMode;
+  final bool isEditing;
+  final bool isSaving;
+  final TextEditingController controller;
+  final VoidCallback onEdit;
+  final Future<bool> Function() onSave;
+  final VoidCallback onCancel;
+  final bool highlighted;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Card(
+      color: highlighted
+          ? theme.colorScheme.primaryContainer.withOpacity(0.3)
+          : null,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header row with edit button
+            Row(
+              children: [
+                Icon(
+                  icon,
+                  color: highlighted
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurface.withOpacity(0.7),
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: highlighted ? theme.colorScheme.primary : null,
+                    ),
+                  ),
+                ),
+                // Edit button (only in edit mode, not while editing this section)
+                if (isEditMode && !isEditing)
+                  IconButton(
+                    icon: const Icon(Icons.edit, size: 20),
+                    onPressed: onEdit,
+                    tooltip: 'Editar',
+                    style: IconButton.styleFrom(
+                      foregroundColor: theme.colorScheme.primary,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Content: Text or TextField
+            if (isEditing) ...[
+              TextField(
+                controller: controller,
+                maxLines: null,
+                minLines: 3,
+                enabled: !isSaving,
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  hintText: 'Ingrese $title...',
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 12),
+              // Action buttons
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: isSaving ? null : () => onSave(),
+                      icon: isSaving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.save, size: 18),
+                      label: Text(isSaving ? 'Guardando...' : 'Guardar'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton(
+                      onPressed: isSaving ? null : onCancel,
+                      child: const Text('Cancelar'),
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              Text(
+                content.isEmpty ? '(No especificado)' : content,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: content.isEmpty
+                      ? theme.colorScheme.onSurface.withOpacity(0.5)
+                      : null,
+                  fontStyle: content.isEmpty ? FontStyle.italic : null,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }
 
-/// ===== PATIENT INFO CARD (Fix C - Goal 3) =====
-/// Loads patient data using existing repository/provider
+/// Patient info card (read-only)
 class _PatientInfoCard extends ConsumerWidget {
   const _PatientInfoCard({required this.note});
 
@@ -395,14 +1040,18 @@ class _PatientInfoCard extends ConsumerWidget {
                             Text(
                               '${snapshot.data!.age} años • ${snapshot.data!.sexDisplay}',
                               style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                                color: theme.colorScheme.onSurface.withOpacity(
+                                  0.6,
+                                ),
                               ),
                             ),
                           ] else ...[
                             Text(
                               'ID: ${note.patientId}',
                               style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                                color: theme.colorScheme.onSurface.withOpacity(
+                                  0.6,
+                                ),
                               ),
                             ),
                           ],
@@ -437,17 +1086,12 @@ class _PatientInfoCard extends ConsumerWidget {
     );
   }
 
-  /// Load patient using existing use case
   Future<PatientEntity?> _loadPatient(WidgetRef ref, String patientId) async {
     final useCase = ref.read(getPatientByIdUseCaseProvider);
     final result = await useCase.call(patientId);
-    return result.when(
-      success: (patient) => patient,
-      error: (_) => null,
-    );
+    return result.when(success: (patient) => patient, error: (_) => null);
   }
 
-  /// Resolve patient name handling edge cases
   String _resolvePatientName(AsyncSnapshot<PatientEntity?> snapshot) {
     if (snapshot.connectionState == ConnectionState.waiting) {
       return 'Cargando...';
@@ -468,7 +1112,7 @@ class _PatientInfoCard extends ConsumerWidget {
   }
 }
 
-/// ===== NOTE TYPE BADGE =====
+/// Note type badge
 class _NoteTypeBadge extends StatelessWidget {
   const _NoteTypeBadge({required this.type});
 
@@ -513,8 +1157,7 @@ class _NoteTypeBadge extends StatelessWidget {
   }
 }
 
-/// ===== SURGICAL DATA SECTION (Fix C - Goal 2) =====
-/// Displays surgical note specific fields
+/// Surgical data section (read-only)
 class _SurgicalDataSection extends StatelessWidget {
   const _SurgicalDataSection({required this.surgicalData});
 
@@ -524,7 +1167,6 @@ class _SurgicalDataSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // Don't render if no content
     if (!surgicalData.hasContent) {
       return const SizedBox.shrink();
     }
@@ -536,7 +1178,6 @@ class _SurgicalDataSection extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Section header
             Row(
               children: [
                 Icon(
@@ -555,8 +1196,6 @@ class _SurgicalDataSection extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-
-            // Surgical fields (only show non-empty)
             if (surgicalData.tecnicaQuirurgica.isNotEmpty) ...[
               _SurgicalField(
                 label: 'Técnica Quirúrgica',
@@ -564,15 +1203,10 @@ class _SurgicalDataSection extends StatelessWidget {
               ),
               const SizedBox(height: 12),
             ],
-
             if (surgicalData.hallazgos.isNotEmpty) ...[
-              _SurgicalField(
-                label: 'Hallazgos',
-                value: surgicalData.hallazgos,
-              ),
+              _SurgicalField(label: 'Hallazgos', value: surgicalData.hallazgos),
               const SizedBox(height: 12),
             ],
-
             if (surgicalData.observaciones.isNotEmpty) ...[
               _SurgicalField(
                 label: 'Observaciones',
@@ -580,7 +1214,6 @@ class _SurgicalDataSection extends StatelessWidget {
               ),
               const SizedBox(height: 12),
             ],
-
             if (surgicalData.complicaciones.isNotEmpty) ...[
               _SurgicalField(
                 label: 'Complicaciones',
@@ -595,7 +1228,6 @@ class _SurgicalDataSection extends StatelessWidget {
   }
 }
 
-/// Helper widget for surgical data fields
 class _SurgicalField extends StatelessWidget {
   const _SurgicalField({
     required this.label,
@@ -635,10 +1267,208 @@ class _SurgicalField extends StatelessWidget {
   }
 }
 
-/// ===== ATTACHMENTS SECTION (Fix C - Goal 1, Fix D - Web UX) =====
-/// Displays attachments with type-specific rendering
-/// Web: responsive grid for images, enhanced rows for other types
-/// Mobile: simple list UI
+/// Medications card (read-only)
+class _MedicationsCard extends StatelessWidget {
+  const _MedicationsCard({required this.medications});
+
+  final List<dynamic> medications;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.medication,
+                  color: theme.colorScheme.primary,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Medicamentos recetados',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...medications.map(
+              (med) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('• '),
+                    Expanded(
+                      child: Text(
+                        '${med.nombre} - ${med.dosis}\n${med.frecuencia} por ${med.duracion}',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Studies card (read-only)
+class _StudiesCard extends StatelessWidget {
+  const _StudiesCard({required this.studies});
+
+  final List<dynamic> studies;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.biotech, color: theme.colorScheme.primary, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Estudios indicados',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...studies.map(
+              (study) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('• '),
+                    Expanded(
+                      child: Text(
+                        '${study.tipo}: ${study.descripcion}',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Next appointment card (read-only)
+class _NextAppointmentCard extends StatelessWidget {
+  const _NextAppointmentCard({required this.date});
+
+  final DateTime date;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dateFormat = DateFormat('dd/MM/yyyy');
+    final timeFormat = DateFormat('HH:mm');
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(Icons.event, color: theme.colorScheme.primary),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Próxima cita',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${dateFormat.format(date)} a las ${timeFormat.format(date)}',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Tags card (read-only)
+class _TagsCard extends StatelessWidget {
+  const _TagsCard({required this.tags});
+
+  final List<String> tags;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.label, color: theme.colorScheme.primary, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Etiquetas',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: tags
+                  .map(
+                    (tag) => Chip(
+                      label: Text(tag),
+                      labelStyle: theme.textTheme.bodySmall,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Attachments section (read-only)
 class _AttachmentsSection extends StatelessWidget {
   const _AttachmentsSection({required this.attachments});
 
@@ -654,10 +1484,13 @@ class _AttachmentsSection extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Section header
             Row(
               children: [
-                Icon(Icons.attach_file, color: theme.colorScheme.primary, size: 20),
+                Icon(
+                  Icons.attach_file,
+                  color: theme.colorScheme.primary,
+                  size: 20,
+                ),
                 const SizedBox(width: 8),
                 Text(
                   'Archivos adjuntos',
@@ -675,16 +1508,14 @@ class _AttachmentsSection extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-
-            // Image thumbnails grid
             if (_hasImages) ...[
               _ImageThumbnailsGrid(
-                images: attachments.where((a) => a.tipo == AttachmentType.image).toList(),
+                images: attachments
+                    .where((a) => a.tipo == AttachmentType.image)
+                    .toList(),
               ),
               const SizedBox(height: 12),
             ],
-
-            // Non-image files list
             ...attachments
                 .where((a) => a.tipo != AttachmentType.image)
                 .map((attachment) => _AttachmentRow(attachment: attachment)),
@@ -697,7 +1528,7 @@ class _AttachmentsSection extends StatelessWidget {
   bool get _hasImages => attachments.any((a) => a.tipo == AttachmentType.image);
 }
 
-/// Grid of image thumbnails - responsive on web, simple wrap on mobile
+/// Grid of image thumbnails
 class _ImageThumbnailsGrid extends StatelessWidget {
   const _ImageThumbnailsGrid({required this.images});
 
@@ -706,15 +1537,15 @@ class _ImageThumbnailsGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!kIsWeb) {
-      // Mobile: simple wrap with fixed size thumbnails
       return Wrap(
         spacing: 8,
         runSpacing: 8,
-        children: images.map((image) => _ImageThumbnail(attachment: image)).toList(),
+        children: images
+            .map((image) => _ImageThumbnail(attachment: image))
+            .toList(),
       );
     }
 
-    // Web: responsive grid layout
     return LayoutBuilder(
       builder: (context, constraints) {
         final crossAxisCount = _calculateColumns(constraints.maxWidth);
@@ -728,10 +1559,8 @@ class _ImageThumbnailsGrid extends StatelessWidget {
             childAspectRatio: 1,
           ),
           itemCount: images.length,
-          itemBuilder: (context, index) => _ImageThumbnail(
-            attachment: images[index],
-            isWeb: true,
-          ),
+          itemBuilder: (context, index) =>
+              _ImageThumbnail(attachment: images[index], isWeb: true),
         );
       },
     );
@@ -744,12 +1573,9 @@ class _ImageThumbnailsGrid extends StatelessWidget {
   }
 }
 
-/// Tappable image thumbnail
+/// Image thumbnail
 class _ImageThumbnail extends StatelessWidget {
-  const _ImageThumbnail({
-    required this.attachment,
-    this.isWeb = false,
-  });
+  const _ImageThumbnail({required this.attachment, this.isWeb = false});
 
   final AttachmentEntity attachment;
   final bool isWeb;
@@ -758,8 +1584,6 @@ class _ImageThumbnail extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final imageUrl = attachment.thumbnail ?? attachment.url;
-
-    // On web, use larger thumbnails that fill the grid cell
     final size = isWeb ? double.infinity : 80.0;
 
     return MouseRegion(
@@ -796,20 +1620,22 @@ class _ImageThumbnail extends StatelessWidget {
                       strokeWidth: 2,
                       value: loadingProgress.expectedTotalBytes != null
                           ? loadingProgress.cumulativeBytesLoaded /
-                              loadingProgress.expectedTotalBytes!
+                                loadingProgress.expectedTotalBytes!
                           : null,
                     ),
                   );
                 },
               ),
-              // Web: hover overlay with filename
               if (isWeb)
                 Positioned(
                   left: 0,
                   right: 0,
                   bottom: 0,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
@@ -838,8 +1664,7 @@ class _ImageThumbnail extends StatelessWidget {
   }
 }
 
-/// Row for non-image attachments (PDF, audio, video, other)
-/// Web: explicit action buttons, Mobile: simple tap-to-open
+/// Attachment row for non-image files
 class _AttachmentRow extends StatelessWidget {
   const _AttachmentRow({required this.attachment});
 
@@ -866,7 +1691,6 @@ class _AttachmentRow extends StatelessWidget {
             ),
             child: Row(
               children: [
-                // Type-specific icon
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
@@ -880,7 +1704,6 @@ class _AttachmentRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                // File info
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -903,7 +1726,6 @@ class _AttachmentRow extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Web: explicit action buttons, Mobile: action icon
                 if (kIsWeb)
                   _WebActionButtons(attachment: attachment)
                 else
@@ -974,7 +1796,7 @@ class _AttachmentRow extends StatelessWidget {
   }
 }
 
-/// Web-specific action buttons for attachments
+/// Web action buttons for attachments
 class _WebActionButtons extends StatelessWidget {
   const _WebActionButtons({required this.attachment});
 
@@ -987,7 +1809,6 @@ class _WebActionButtons extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Open button (all types)
         TextButton.icon(
           onPressed: () => _openAttachment(context, attachment),
           icon: Icon(_getOpenIcon(), size: 18),
@@ -997,7 +1818,6 @@ class _WebActionButtons extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           ),
         ),
-        // Download button (for PDFs and other files)
         if (attachment.tipo == AttachmentType.pdf ||
             attachment.tipo == AttachmentType.other) ...[
           const SizedBox(width: 4),
@@ -1035,53 +1855,53 @@ class _WebActionButtons extends StatelessWidget {
   }
 }
 
-/// Downloads attachment (opens with download mode on web)
+/// Downloads attachment
 Future<void> _downloadAttachment(
-    BuildContext context, AttachmentEntity attachment) async {
+  BuildContext context,
+  AttachmentEntity attachment,
+) async {
   final uri = Uri.tryParse(attachment.url);
   if (uri == null) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('URL inválida')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('URL inválida')));
     }
     return;
   }
 
   try {
-    // On web, this opens in a new tab which triggers browser download behavior
     await launchUrl(uri, webOnlyWindowName: '_blank');
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al descargar: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al descargar: $e')));
     }
   }
 }
 
-/// Opens attachment - images use internal viewer, others use external app
-Future<void> _openAttachment(BuildContext context, AttachmentEntity attachment) async {
-  // Images: open in internal viewer to avoid compatibility issues on some devices
+/// Opens attachment
+Future<void> _openAttachment(
+  BuildContext context,
+  AttachmentEntity attachment,
+) async {
   if (attachment.tipo == AttachmentType.image) {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ImageViewerPage(
-          imageUrl: attachment.url,
-          title: attachment.nombre,
-        ),
+        builder: (_) =>
+            ImageViewerPage(imageUrl: attachment.url, title: attachment.nombre),
       ),
     );
     return;
   }
 
-  // Non-images: use external application (PDF, audio, video, other)
   final uri = Uri.tryParse(attachment.url);
   if (uri == null) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('URL inválida')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('URL inválida')));
     }
     return;
   }
@@ -1098,14 +1918,14 @@ Future<void> _openAttachment(BuildContext context, AttachmentEntity attachment) 
     }
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 }
 
-/// Reusable section card for clinical data
+/// Read-only section card
 class _SectionCard extends StatelessWidget {
   const _SectionCard({
     required this.title,
@@ -1124,7 +1944,9 @@ class _SectionCard extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Card(
-      color: highlighted ? theme.colorScheme.primaryContainer.withOpacity(0.3) : null,
+      color: highlighted
+          ? theme.colorScheme.primaryContainer.withOpacity(0.3)
+          : null,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -1134,7 +1956,9 @@ class _SectionCard extends StatelessWidget {
               children: [
                 Icon(
                   icon,
-                  color: highlighted ? theme.colorScheme.primary : theme.colorScheme.onSurface.withOpacity(0.7),
+                  color: highlighted
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurface.withOpacity(0.7),
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -1151,7 +1975,9 @@ class _SectionCard extends StatelessWidget {
             Text(
               content.isEmpty ? '(No especificado)' : content,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: content.isEmpty ? theme.colorScheme.onSurface.withOpacity(0.5) : null,
+                color: content.isEmpty
+                    ? theme.colorScheme.onSurface.withOpacity(0.5)
+                    : null,
                 fontStyle: content.isEmpty ? FontStyle.italic : null,
               ),
             ),
@@ -1162,7 +1988,7 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
-/// Reusable info row for metadata
+/// Info row widget
 class _InfoRow extends StatelessWidget {
   const _InfoRow({
     required this.icon,
@@ -1192,18 +2018,13 @@ class _InfoRow extends StatelessWidget {
             color: theme.colorScheme.onSurface.withOpacity(0.6),
           ),
         ),
-        Expanded(
-          child: Text(
-            value,
-            style: theme.textTheme.bodyMedium,
-          ),
-        ),
+        Expanded(child: Text(value, style: theme.textTheme.bodyMedium)),
       ],
     );
   }
 }
 
-/// Helper function to check if any vital signs are recorded
+/// Check if note has vital signs
 bool _hasVitalSigns(MedicalNoteEntity note) {
   return note.weightKg != null ||
       note.heightCm != null ||
@@ -1215,7 +2036,7 @@ bool _hasVitalSigns(MedicalNoteEntity note) {
       note.spo2 != null;
 }
 
-/// Display card for vital signs in read-only mode
+/// Vitals display card
 class _VitalsDisplayCard extends StatelessWidget {
   const _VitalsDisplayCard({required this.note});
 
@@ -1232,7 +2053,6 @@ class _VitalsDisplayCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
             Row(
               children: [
                 Icon(
@@ -1251,8 +2071,6 @@ class _VitalsDisplayCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-
-            // Vital signs grid
             Wrap(
               spacing: 16,
               runSpacing: 12,
@@ -1272,7 +2090,8 @@ class _VitalsDisplayCard extends StatelessWidget {
                 if (note.bpSystolic != null || note.bpDiastolic != null)
                   _VitalItem(
                     label: 'PA',
-                    value: '${note.bpSystolic ?? '-'}/${note.bpDiastolic ?? '-'} mmHg',
+                    value:
+                        '${note.bpSystolic ?? '-'}/${note.bpDiastolic ?? '-'} mmHg',
                     icon: Icons.favorite,
                   ),
                 if (note.heartRate != null)
@@ -1308,7 +2127,7 @@ class _VitalsDisplayCard extends StatelessWidget {
   }
 }
 
-/// Individual vital sign item for display
+/// Vital sign item
 class _VitalItem extends StatelessWidget {
   const _VitalItem({
     required this.label,
@@ -1329,18 +2148,12 @@ class _VitalItem extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant,
-        ),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 16,
-            color: theme.colorScheme.primary,
-          ),
+          Icon(icon, size: 16, color: theme.colorScheme.primary),
           const SizedBox(width: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
