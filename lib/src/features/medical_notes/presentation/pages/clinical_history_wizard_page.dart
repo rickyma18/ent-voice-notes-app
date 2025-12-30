@@ -79,6 +79,10 @@ class _ClinicalHistoryWizardPageState
   // State flags
   bool _isSaving = false;
   bool _isGeneratingSuggestions = false;
+  bool _bannerDismissed = false;
+  bool _dictationChoiceShown = false;
+  bool _neverShowDictationChoice = false;
+  bool _suggestionsGenerated = false;
 
   // Raw transcript from DictationAssistPage (for future AI processing)
   String? _rawTranscript;
@@ -463,14 +467,42 @@ class _ClinicalHistoryWizardPageState
   // AI Suggestions
   // ---------------------------------------------------------------------------
 
-  bool get _canGenerateSuggestions =>
-      _rawTranscript?.trim().isNotEmpty == true && !_isGeneratingSuggestions;
+  /// Whether a dictation transcript exists and is non-empty.
+  bool get _hasDictation =>
+      _rawTranscript != null && _rawTranscript!.trim().isNotEmpty;
+
+  bool get _canGenerateSuggestions => _hasDictation && !_isGeneratingSuggestions;
+
+  /// Whether the AI banner should be shown.
+  bool _shouldShowAiBanner(bool keyboardOpen) =>
+      !keyboardOpen &&
+      _hasDictation &&
+      !_isGeneratingSuggestions &&
+      !_bannerDismissed;
+
+  /// Whether the post-dictation options sheet should be shown.
+  bool _shouldShowPostDictationSheet(String transcript) =>
+      transcript.length > 80 &&
+      _countEmptyKeyFields() >= 2 &&
+      !_dictationChoiceShown &&
+      !_neverShowDictationChoice &&
+      _canGenerateSuggestions;
+
+  /// Builds filtered AI suggestion sections for a specific wizard step.
+  List<AISuggestionSection> _buildSectionsForStep(
+    Map<String, String> suggestions,
+    int stepIndex,
+  ) {
+    final allSections = _buildSuggestionsForSheet(suggestions);
+    return _filterSectionsForStep(allSections, stepIndex);
+  }
 
   Future<void> _generateAISuggestions() async {
     if (!_canGenerateSuggestions) return;
 
     setState(() {
       _isGeneratingSuggestions = true;
+      _bannerDismissed = true;
     });
 
     try {
@@ -491,7 +523,7 @@ class _ClinicalHistoryWizardPageState
       if (sections.isEmpty || sections.every((s) => !s.hasContent)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('La IA no genero sugerencias para este texto'),
+            content: Text('No se encontraron hallazgos clinicos claros en el dictado para sugerir campos.'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -697,6 +729,9 @@ class _ClinicalHistoryWizardPageState
     List<AISuggestionSection> sections,
     Map<String, String> rawSuggestions,
   ) {
+    setState(() {
+      _suggestionsGenerated = true;
+    });
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -888,6 +923,127 @@ class _ClinicalHistoryWizardPageState
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Step-specific AI Suggestions
+  // ---------------------------------------------------------------------------
+
+  /// Returns section IDs relevant to a specific wizard step.
+  List<String> _getSectionIdsForStep(int stepIndex) {
+    switch (stepIndex) {
+      case 0:
+        return ['motivoConsulta'];
+      case 1:
+        return ['heredofamiliares'];
+      case 2:
+        return ['noPatologicos'];
+      case 3:
+        return ['patologicos'];
+      case 4:
+        return ['padecimientoActual'];
+      case 5:
+        return [
+          'otoscopia',
+          'rinoscopia',
+          'orofaringe',
+          'cuello',
+          'laringoscopia',
+        ];
+      case 6:
+        return ['diagnostico', 'planTratamiento'];
+      default:
+        return [];
+    }
+  }
+
+  /// Filters sections to only include those relevant to a specific step.
+  List<AISuggestionSection> _filterSectionsForStep(
+    List<AISuggestionSection> allSections,
+    int stepIndex,
+  ) {
+    final relevantIds = _getSectionIdsForStep(stepIndex);
+    return allSections.where((s) => relevantIds.contains(s.id)).toList();
+  }
+
+  /// Generates AI suggestions filtered for a specific step.
+  Future<void> _generateAISuggestionsForStep(int stepIndex) async {
+    if (!_canGenerateSuggestions) return;
+
+    setState(() {
+      _isGeneratingSuggestions = true;
+      _bannerDismissed = true;
+    });
+
+    try {
+      final aiService = ref.read(noteAIServiceProvider);
+      final suggestions = await aiService.suggestStructuredFields(
+        _rawTranscript!,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _isGeneratingSuggestions = false;
+      });
+
+      // Build filtered sections for this step
+      final stepSections = _buildSectionsForStep(suggestions, stepIndex);
+
+      if (stepSections.isEmpty || stepSections.every((s) => !s.hasContent)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se encontraron hallazgos clinicos claros en el dictado para sugerir campos.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Show suggestions sheet with filtered sections
+      if (mounted) {
+        _showSuggestionsSheet(stepSections, suggestions);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isGeneratingSuggestions = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al generar sugerencias: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Builds the CTA widget for step-specific AI suggestions.
+  Widget? _buildStepAICta(int stepIndex, TextEditingController controller) {
+    // Don't show CTA for step 7 (attachments)
+    if (stepIndex == 7) return null;
+
+    // Don't show if no transcript or field is not empty
+    if (!_hasDictation) return null;
+    if (controller.text.trim().isNotEmpty) return null;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextButton.icon(
+        onPressed: _isGeneratingSuggestions
+            ? null
+            : () => _generateAISuggestionsForStep(stepIndex),
+        icon: _isGeneratingSuggestions
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.auto_awesome, size: 18),
+        label: const Text('Sugerir con IA para este apartado'),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _pageController.dispose();
@@ -933,7 +1089,31 @@ class _ClinicalHistoryWizardPageState
 
     if (!mounted || transcript == null || transcript.trim().isEmpty) return;
 
-    _applyTranscriptToController(controller, transcript.trim());
+    final trimmedTranscript = transcript.trim();
+
+    // Check if we should show the dictation options modal
+    if (_shouldShowPostDictationSheet(trimmedTranscript)) {
+      _dictationChoiceShown = true;
+
+      final action = await _showDictationOptionsSheet();
+      if (!mounted) return;
+
+      switch (action) {
+        case _DictationOptionsAction.applyToField:
+          _applyTranscriptToController(controller, trimmedTranscript);
+        case _DictationOptionsAction.generateAI:
+          // Store transcript for AI processing if not already set
+          _rawTranscript ??= trimmedTranscript;
+          _generateAISuggestions();
+        case _DictationOptionsAction.cancel:
+        case null:
+          // Do nothing - user cancelled
+          break;
+      }
+      return;
+    }
+
+    _applyTranscriptToController(controller, trimmedTranscript);
   }
 
   /// Handles dictation for an ORL accordion section.
@@ -1002,6 +1182,87 @@ class _ClinicalHistoryWizardPageState
             child: const Text('Reemplazar'),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Counts how many key wizard fields are empty.
+  int _countEmptyKeyFields() {
+    int count = 0;
+    if (_motivoController.text.trim().isEmpty) count++;
+    if (_antecedentesHeredofamiliaresController.text.trim().isEmpty) count++;
+    if (_antecedentesNoPatologicosController.text.trim().isEmpty) count++;
+    if (_antecedentesPatologicosController.text.trim().isEmpty) count++;
+    if (_padecimientoActualController.text.trim().isEmpty) count++;
+    if (_diagnosticoController.text.trim().isEmpty) count++;
+    if (_planController.text.trim().isEmpty) count++;
+    // Check ORL fields
+    for (final controller in _orlControllers.values) {
+      if (controller.text.trim().isEmpty) count++;
+    }
+    return count;
+  }
+
+  /// Shows options sheet for long dictations when multiple fields are empty.
+  ///
+  /// Returns the chosen action or null if cancelled.
+  Future<_DictationOptionsAction?> _showDictationOptionsSheet() {
+    return showModalBottomSheet<_DictationOptionsAction>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '¿Que deseas hacer con el dictado?',
+                style: Theme.of(ctx).textTheme.titleLarge,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(
+                  ctx,
+                  _DictationOptionsAction.applyToField,
+                ),
+                icon: const Icon(Icons.text_fields),
+                label: const Text('Aplicar solo a este campo'),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.tonalIcon(
+                onPressed: () => Navigator.pop(
+                  ctx,
+                  _DictationOptionsAction.generateAI,
+                ),
+                icon: const Icon(Icons.auto_awesome),
+                label: const Text('Generar sugerencias con IA'),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () => Navigator.pop(
+                  ctx,
+                  _DictationOptionsAction.cancel,
+                ),
+                child: const Text('Cancelar'),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () {
+                  _neverShowDictationChoice = true;
+                  Navigator.pop(ctx, _DictationOptionsAction.applyToField);
+                },
+                child: Text(
+                  'No volver a mostrar',
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(ctx).colorScheme.outline,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1236,6 +1497,44 @@ class _ClinicalHistoryWizardPageState
     );
   }
 
+  /// Builds the AI state chip based on current wizard state.
+  Widget? _buildAIStateChip() {
+    // No dictation → don't show
+    if (!_hasDictation) return null;
+
+    // Generating AI → Chip with CircularProgressIndicator
+    if (_isGeneratingSuggestions) {
+      return Chip(
+        avatar: const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        label: const Text('Procesando...'),
+        backgroundColor:
+            Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5),
+      );
+    }
+
+    // Suggestions available → "✨ Sugerencias listas"
+    if (_suggestionsGenerated) {
+      return Chip(
+        avatar: const Text('✨', style: TextStyle(fontSize: 14)),
+        label: const Text('Sugerencias listas'),
+        backgroundColor:
+            Theme.of(context).colorScheme.tertiaryContainer.withOpacity(0.7),
+      );
+    }
+
+    // Dictation detected → "🧠 Dictado listo"
+    return Chip(
+      avatar: const Text('🧠', style: TextStyle(fontSize: 14)),
+      label: const Text('Dictado listo'),
+      backgroundColor:
+          Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.7),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
@@ -1263,7 +1562,7 @@ class _ClinicalHistoryWizardPageState
                 : IconButton(
                     onPressed: _generateAISuggestions,
                     icon: const Icon(Icons.auto_awesome),
-                    tooltip: 'Sugerir con IA',
+                    tooltip: 'La IA puede ayudarte a estructurar la nota a partir del dictado',
                   ),
           // Save as draft action
           if (!_isSaving)
@@ -1337,6 +1636,61 @@ class _ClinicalHistoryWizardPageState
                     ),
                   ),
 
+                  // AI dictation banner - non-intrusive prompt
+                  if (_shouldShowAiBanner(keyboardOpen))
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: Card(
+                        elevation: 2,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primaryContainer
+                            .withOpacity(0.7),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.auto_awesome,
+                                color: Theme.of(context).colorScheme.primary,
+                                size: 24,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Se detecto un dictado. La IA puede ayudarte a estructurar la historia clinica.',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onPrimaryContainer,
+                                      ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              TextButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _bannerDismissed = true;
+                                  });
+                                },
+                                child: const Text('Cerrar'),
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: FilledButton.tonal(
+                                  onPressed: _generateAISuggestions,
+                                  child: const Text('Generar'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+
                   // Step indicator - full version when keyboard closed,
                   // compact version when keyboard open
                   ClipRect(
@@ -1360,6 +1714,18 @@ class _ClinicalHistoryWizardPageState
                             ),
                     ),
                   ),
+
+                  // AI state chip - shows near step indicator
+                  if (!keyboardOpen) ...[
+                    if (_buildAIStateChip() case final chip?)
+                      Align(
+                        alignment: Alignment.center,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: chip,
+                        ),
+                      ),
+                  ],
 
                   // Step content (PageView inside Expanded)
                   Expanded(
@@ -1416,11 +1782,13 @@ class _ClinicalHistoryWizardPageState
 
   // Step 0: Motivo de consulta
   Widget _buildStep0MotivoConsulta() {
+    final cta = _buildStepAICta(0, _motivoController);
     return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
+          if (cta != null) cta,
           GuidedTextArea(
             controller: _motivoController,
             label: 'Motivo de consulta',
@@ -1455,11 +1823,13 @@ class _ClinicalHistoryWizardPageState
 
   // Step 1: Antecedentes heredofamiliares
   Widget _buildStep1AntecedentesHeredofamiliares() {
+    final cta = _buildStepAICta(1, _antecedentesHeredofamiliaresController);
     return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
+          if (cta != null) cta,
           GuidedTextArea(
             controller: _antecedentesHeredofamiliaresController,
             label: 'Antecedentes heredofamiliares',
@@ -1477,11 +1847,13 @@ class _ClinicalHistoryWizardPageState
 
   // Step 2: Antecedentes personales NO patologicos
   Widget _buildStep2AntecedentesNoPatologicos() {
+    final cta = _buildStepAICta(2, _antecedentesNoPatologicosController);
     return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
+          if (cta != null) cta,
           GuidedTextArea(
             controller: _antecedentesNoPatologicosController,
             label: 'Antecedentes personales NO patologicos',
@@ -1499,11 +1871,13 @@ class _ClinicalHistoryWizardPageState
 
   // Step 3: Antecedentes personales patologicos
   Widget _buildStep3AntecedentesPatologicos() {
+    final cta = _buildStepAICta(3, _antecedentesPatologicosController);
     return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
+          if (cta != null) cta,
           GuidedTextArea(
             controller: _antecedentesPatologicosController,
             label: 'Antecedentes personales patologicos',
@@ -1521,11 +1895,13 @@ class _ClinicalHistoryWizardPageState
 
   // Step 4: Padecimiento actual
   Widget _buildStep4PadecimientoActual() {
+    final cta = _buildStepAICta(4, _padecimientoActualController);
     return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
+          if (cta != null) cta,
           GuidedTextArea(
             controller: _padecimientoActualController,
             label: 'Padecimiento actual',
@@ -1560,11 +1936,34 @@ class _ClinicalHistoryWizardPageState
 
   // Step 5: Exploracion fisica ORL
   Widget _buildStep5ExploracionOrl() {
+    // Check if all ORL fields are empty for CTA
+    final allOrlEmpty = _orlControllers.values.every(
+      (c) => c.text.trim().isEmpty,
+    );
+    final showCta = _hasDictation && allOrlEmpty;
+
     return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
+          if (showCta)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: TextButton.icon(
+                onPressed: _isGeneratingSuggestions
+                    ? null
+                    : () => _generateAISuggestionsForStep(5),
+                icon: _isGeneratingSuggestions
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.auto_awesome, size: 18),
+                label: const Text('Sugerir con IA para este apartado'),
+              ),
+            ),
 
           // Vital signs card (compact)
           VitalsCard(
@@ -1605,11 +2004,13 @@ class _ClinicalHistoryWizardPageState
 
   // Step 6: Diagnostico y plan
   Widget _buildStep6DiagnosticoPlan() {
+    final cta = _buildStepAICta(6, _diagnosticoController);
     return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
+          if (cta != null) cta,
 
           // Diagnostico
           _WizardSectionCard(
@@ -1909,3 +2310,6 @@ class _WizardSectionCard extends StatelessWidget {
 
 /// Action choices for dictation when field has existing content.
 enum _DictationAction { replace, append, cancel }
+
+/// Action choices for the dictation options sheet (long transcripts).
+enum _DictationOptionsAction { applyToField, generateAI, cancel }

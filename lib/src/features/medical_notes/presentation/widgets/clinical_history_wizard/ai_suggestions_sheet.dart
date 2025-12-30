@@ -198,6 +198,13 @@ class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
                           ),
                           const SizedBox(height: 4),
                           Text(
+                            'Revisa y decide que sugerencias aplicar. Nada se guarda automaticamente.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
                             '$emptyCount campos vacios, $overwriteCount con contenido',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onSurface.withValues(alpha: 0.6),

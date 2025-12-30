@@ -227,7 +227,7 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
 
   void _continueToSurgicalNote() {
     context.pushNamed(
-      RouteNames.medicalNotesCreate,
+      RouteNames.surgicalNoteWizard,
       extra: {
         'patient': widget.patient,
         'initialRawTranscript': _rawTranscript,
