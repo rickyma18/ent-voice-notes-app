@@ -1,5 +1,6 @@
 // lib/src/features/medical_notes/presentation/pages/dictation_assist_page.dart
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -52,6 +53,21 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
   DictationStatus _status = DictationStatus.idle;
   String _rawTranscript = '';
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // RATE LIMIT PROTECTION: Guards anti doble ejecucion y cooldown
+  // ─────────────────────────────────────────────────────────────────────────
+  bool _transcribeInFlight = false;
+  DateTime? _lastTranscribeAt;
+
+  /// Cooldown entre transcripciones (en segundos)
+  static const int _cooldownSeconds = 5;
+
+  /// Maximo de reintentos para rate-limit (429)
+  static const int _maxRetries = 2;
+
+  /// Delays para backoff exponencial (en segundos)
+  static const List<int> _retryDelays = [2, 5];
+
   RecordingState get _recordingState {
     switch (_status) {
       case DictationStatus.idle:
@@ -84,7 +100,7 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
             action:
                 e.reason == RecordingFailureReason.permissionPermanentlyDenied
                     ? SnackBarAction(
-                        label: 'Configuración',
+                        label: 'Configuracion',
                         textColor: Colors.white,
                         onPressed: () {
                           // Could open app settings here
@@ -113,6 +129,38 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
   }
 
   Future<void> _onStop() async {
+    // ─────────────────────────────────────────────────────────────────────────
+    // GUARD 1: Anti doble ejecucion - evita disparar 2 transcripciones
+    // ─────────────────────────────────────────────────────────────────────────
+    if (_transcribeInFlight) {
+      debugPrint('⚠️ STT: Transcripcion ya en curso, ignorando _onStop()');
+      return;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // GUARD 2: Cooldown - evita spam a la API
+    // ─────────────────────────────────────────────────────────────────────────
+    if (_lastTranscribeAt != null) {
+      final elapsed = DateTime.now().difference(_lastTranscribeAt!).inSeconds;
+      if (elapsed < _cooldownSeconds) {
+        final remaining = _cooldownSeconds - elapsed;
+        debugPrint('⚠️ STT: Cooldown activo, faltan $remaining segundos');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Espera $remaining segundos antes de transcribir de nuevo...'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    // Activar guard
+    _transcribeInFlight = true;
+
     final audioService = ref.read(audioRecordingServiceProvider);
     final sttService = ref.read(speechToTextServiceProvider);
 
@@ -138,26 +186,151 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
         return;
       }
 
-      final transcript = await sttService.transcribeAudio(audioFilePath);
+      // ─────────────────────────────────────────────────────────────────────────
+      // TRANSCRIPCION CON RETRY PARA RATE-LIMIT (429)
+      // ─────────────────────────────────────────────────────────────────────────
+      String? transcript;
+      int attempt = 0;
+      Object? lastError;
+      StackTrace? lastStack;
 
-      if (mounted) {
+      while (attempt <= _maxRetries) {
+        try {
+          debugPrint('🎤 STT: Intento ${attempt + 1} de ${_maxRetries + 1}');
+          transcript = await sttService.transcribeAudio(audioFilePath);
+
+          // Exito - registrar tiempo y salir del loop
+          _lastTranscribeAt = DateTime.now();
+          debugPrint('✅ STT: Transcripcion exitosa en intento ${attempt + 1}');
+          break;
+        } catch (e, st) {
+          lastError = e;
+          lastStack = st;
+
+          debugPrint('🛑 STT ERROR (intento ${attempt + 1}): $e');
+          debugPrint('🧵 STACK: $st');
+
+          final msg = e.toString().toLowerCase();
+
+          // ─────────────────────────────────────────────────────────────────────
+          // DETECTAR TIPO DE ERROR
+          // ─────────────────────────────────────────────────────────────────────
+          final isRateLimit = msg.contains('429') ||
+              msg.contains('rate limit') ||
+              msg.contains('rate_limit') ||
+              msg.contains('too many requests');
+
+          final isQuotaBilling = msg.contains('insufficient_quota') ||
+              msg.contains('quota') ||
+              msg.contains('billing') ||
+              msg.contains('payment') ||
+              msg.contains('exceeded');
+
+          // Si es quota/billing, NO reintentar - mostrar error y salir
+          if (isQuotaBilling) {
+            debugPrint('💳 STT: Error de cuota/billing detectado - NO reintentar');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Cuota agotada o problema de billing. Revisa el plan de tu proyecto OpenAI.',
+                  ),
+                  backgroundColor: Colors.orange,
+                  duration: Duration(seconds: 6),
+                  showCloseIcon: true,
+                ),
+              );
+              setState(() {
+                _status = DictationStatus.idle;
+              });
+            }
+            return;
+          }
+
+          // Si es rate-limit y quedan reintentos, hacer backoff
+          if (isRateLimit && attempt < _maxRetries) {
+            final delay = _retryDelays[attempt];
+            debugPrint('⏳ STT: Rate-limit detectado. Esperando $delay segundos antes de reintentar...');
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Limite de solicitudes. Reintentando en $delay segundos...'),
+                  backgroundColor: Colors.orange,
+                  duration: Duration(seconds: delay),
+                ),
+              );
+            }
+
+            await Future.delayed(Duration(seconds: delay));
+            attempt++;
+            continue;
+          }
+
+          // Si no es rate-limit o ya no hay reintentos, salir del loop
+          break;
+        }
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // RESULTADO FINAL
+      // ─────────────────────────────────────────────────────────────────────────
+      if (transcript != null && mounted) {
         setState(() {
-          _rawTranscript = transcript;
+          _rawTranscript = transcript!;
           _status = DictationStatus.ready;
         });
-      }
-    } catch (e) {
-      if (mounted) {
+      } else if (mounted) {
+        // Todos los reintentos fallaron
+        final msg = lastError.toString().toLowerCase();
+        final isRateLimit = msg.contains('429') ||
+            msg.contains('rate limit') ||
+            msg.contains('rate_limit') ||
+            msg.contains('too many requests');
+
+        debugPrint('❌ STT: Todos los intentos fallaron. Ultimo error: $lastError');
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al transcribir: $e'),
-            backgroundColor: Colors.red,
+            content: Text(
+              isRateLimit
+                  ? 'Limite de solicitudes alcanzado. Espera 10-20 segundos y vuelve a intentar.'
+                  : 'Error al transcribir el audio: ${lastError.toString().split('\n').first}',
+            ),
+            backgroundColor: isRateLimit ? Colors.orange : Colors.red,
+            duration: const Duration(seconds: 5),
+            showCloseIcon: true,
           ),
         );
+
         setState(() {
           _status = DictationStatus.idle;
         });
       }
+    } catch (e, st) {
+      // Error inesperado fuera del loop de transcripcion
+      debugPrint('🛑 STT ERROR INESPERADO: $e');
+      debugPrint('🧵 STACK: $st');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error inesperado: ${e.toString().split('\n').first}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+            showCloseIcon: true,
+          ),
+        );
+
+        setState(() {
+          _status = DictationStatus.idle;
+        });
+      }
+    } finally {
+      // ─────────────────────────────────────────────────────────────────────────
+      // SIEMPRE liberar el guard
+      // ─────────────────────────────────────────────────────────────────────────
+      _transcribeInFlight = false;
     }
   }
 

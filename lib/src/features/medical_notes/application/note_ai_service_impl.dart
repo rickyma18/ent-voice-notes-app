@@ -49,6 +49,17 @@ class NoteAIServiceImpl implements NoteAIService {
   /// DISABLED by default for safety. Enable only after testing.
   final bool _enablePhoneticMedicationMatching;
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // RATE LIMIT PROTECTION: Serialization lock to prevent concurrent calls
+  // ─────────────────────────────────────────────────────────────────────────
+  bool _transcriptionInFlight = false;
+
+  /// Max retry attempts for rate limit errors (429)
+  static const int _maxRetries = 2;
+
+  /// Backoff delays in seconds for each retry attempt
+  static const List<int> _retryDelaySeconds = [3, 8];
+
   /// Allowed field names that the AI can generate.
   /// Any fields not in this list will be filtered out.
   static const _allowedFields = {
@@ -63,6 +74,19 @@ class NoteAIServiceImpl implements NoteAIService {
 
   @override
   Future<String> transcribeAudio(String filePath) async {
+    // ─────────────────────────────────────────────────────────────────────────
+    // GUARD: Prevent concurrent transcription calls (serialization lock)
+    // ─────────────────────────────────────────────────────────────────────────
+    if (_transcriptionInFlight) {
+      Log.warning('🔒 Transcription already in progress, rejecting new call');
+      throw NoteAIException(
+        'Transcripción en proceso. Intenta en unos segundos.',
+      );
+    }
+
+    _transcriptionInFlight = true;
+    Log.info('🔒 Transcription lock acquired');
+
     try {
       Log.info('🎙️ Starting audio transcription: $filePath');
 
@@ -97,11 +121,75 @@ class NoteAIServiceImpl implements NoteAIService {
         Log.info('🎙️ Using medical prompt (${medicalPrompt.length} chars)');
       }
 
-      // Call Whisper API with medical prompt
-      final rawTranscript = await _openAIClient.transcribeAudio(
-        filePath,
-        prompt: medicalPrompt.isNotEmpty ? medicalPrompt : null,
-      );
+      // ─────────────────────────────────────────────────────────────────────────
+      // CALL WHISPER API WITH RETRY + BACKOFF FOR RATE LIMIT (429)
+      // ─────────────────────────────────────────────────────────────────────────
+      String? rawTranscript;
+      int attempt = 0;
+      Object? lastError;
+
+      while (attempt <= _maxRetries) {
+        try {
+          Log.info('🎙️ Whisper API call - attempt ${attempt + 1} of ${_maxRetries + 1}');
+
+          rawTranscript = await _openAIClient.transcribeAudio(
+            filePath,
+            prompt: medicalPrompt.isNotEmpty ? medicalPrompt : null,
+          );
+
+          // Success - exit retry loop
+          Log.info('✅ Whisper API call successful on attempt ${attempt + 1}');
+          break;
+        } catch (e) {
+          lastError = e;
+          final errorMsg = e.toString().toLowerCase();
+
+          // Log full error details for debugging
+          Log.error('🛑 Whisper API error (attempt ${attempt + 1}): $e');
+
+          // ─────────────────────────────────────────────────────────────────────
+          // DETECT RATE LIMIT vs OTHER ERRORS
+          // ─────────────────────────────────────────────────────────────────────
+          final isRateLimit = errorMsg.contains('429') ||
+              errorMsg.contains('rate limit') ||
+              errorMsg.contains('rate_limit') ||
+              errorMsg.contains('too many requests') ||
+              errorMsg.contains('límite de solicitudes');
+
+          // If NOT rate limit, do NOT retry - rethrow immediately
+          if (!isRateLimit) {
+            Log.warning('⚠️ Non-rate-limit error detected, not retrying');
+            rethrow;
+          }
+
+          // If rate limit and retries remaining, apply backoff
+          if (attempt < _maxRetries) {
+            final delaySeconds = _retryDelaySeconds[attempt];
+            Log.warning(
+              '⏳ Rate limit hit. Waiting $delaySeconds seconds before retry ${attempt + 2}...',
+            );
+            await Future.delayed(Duration(seconds: delaySeconds));
+            attempt++;
+            continue;
+          }
+
+          // All retries exhausted
+          Log.error('❌ All ${_maxRetries + 1} attempts failed due to rate limit');
+          break;
+        }
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // HANDLE FINAL RESULT
+      // ─────────────────────────────────────────────────────────────────────────
+      if (rawTranscript == null) {
+        // All retries failed
+        final errorStr = lastError?.toString() ?? 'Unknown error';
+        Log.error('🛑 Final transcription failure: $errorStr');
+        throw NoteAIException(
+          'Error al transcribir: límite de solicitudes. Espera 10-20 segundos.',
+        );
+      }
 
       if (rawTranscript.trim().isEmpty) {
         throw NoteAIException(
@@ -162,6 +250,12 @@ class NoteAIServiceImpl implements NoteAIService {
       throw NoteAIException(
         'Error al transcribir el audio: ${e.toString()}',
       );
+    } finally {
+      // ─────────────────────────────────────────────────────────────────────────
+      // ALWAYS release the lock
+      // ─────────────────────────────────────────────────────────────────────────
+      _transcriptionInFlight = false;
+      Log.info('🔓 Transcription lock released');
     }
   }
 

@@ -94,6 +94,10 @@ class _ClinicalHistoryWizardPageState
   int? _lastSnackBarAppliedCount;
   DateTime? _lastSnackBarTime;
 
+  // ScaffoldMessenger key for SnackBars inside the AI suggestions BottomSheet
+  // This ensures SnackBars appear ABOVE the BottomSheet, not behind it
+  GlobalKey<ScaffoldMessengerState>? _sheetMessengerKey;
+
   // Text controllers for each section
   late final TextEditingController _motivoController;
   late final TextEditingController _antecedentesHeredofamiliaresController;
@@ -732,31 +736,38 @@ class _ClinicalHistoryWizardPageState
     setState(() {
       _suggestionsGenerated = true;
     });
+
+    // Create a fresh key for this sheet's ScaffoldMessenger
+    _sheetMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => AISuggestionsSheet(
-        sections: sections,
-        onApply: (editedSections, mode) {
-          Navigator.pop(ctx);
-          // Schedule after sheet disposal to avoid build scope conflicts
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            _applySuggestions(editedSections, mode);
-          });
-        },
-        onApplySection: (editedSection, mode) {
-          Navigator.pop(ctx);
-          // Schedule after sheet disposal to avoid build scope conflicts
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            _applySingleSection(editedSection, mode);
-          });
-        },
-        onCancel: () => Navigator.pop(ctx),
-      ),
-    );
+      builder: (ctx) {
+        // Wrap with ScaffoldMessenger so SnackBars appear ABOVE the BottomSheet
+        return ScaffoldMessenger(
+          key: _sheetMessengerKey,
+          child: Builder(
+            builder: (innerCtx) => AISuggestionsSheet(
+              sections: sections,
+              onApply: (editedSections, mode) {
+                // DO NOT close the sheet - allow applying multiple suggestions
+                _applySuggestions(editedSections, mode);
+              },
+              onApplySection: (editedSection, mode) {
+                // DO NOT close the sheet - allow applying multiple suggestions
+                _applySingleSectionWithFeedback(editedSection, mode);
+              },
+              onCancel: () => Navigator.pop(ctx),
+            ),
+          ),
+        );
+      },
+    ).whenComplete(() {
+      // Clear the key when sheet is closed
+      _sheetMessengerKey = null;
+    });
   }
 
   /// Creates a snapshot of all controller values for undo.
@@ -822,8 +833,10 @@ class _ClinicalHistoryWizardPageState
     _showUndoSnackBar(appliedCount);
   }
 
-  /// Applies a single section suggestion.
-  void _applySingleSection(AISuggestionSection section, ApplyMode mode) {
+  /// Applies a single section suggestion with individual field feedback.
+  ///
+  /// Shows a short SnackBar indicating which field was updated.
+  void _applySingleSectionWithFeedback(AISuggestionSection section, ApplyMode mode) {
     if (!section.hasContent) return;
 
     final shouldApply =
@@ -839,7 +852,48 @@ class _ClinicalHistoryWizardPageState
 
     setState(() {});
 
-    _showUndoSnackBar(1);
+    // Show individual field feedback SnackBar
+    _showSingleFieldSnackBar(section.label);
+  }
+
+  /// Shows a short SnackBar for a single field suggestion applied.
+  ///
+  /// Uses the sheet's local ScaffoldMessenger if available, so the SnackBar
+  /// appears ABOVE the BottomSheet instead of behind it.
+  void _showSingleFieldSnackBar(String fieldLabel) {
+    // Use sheet messenger if available, otherwise fall back to page messenger
+    final messenger = _sheetMessengerKey?.currentState ?? ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Sugerencia aplicada: $fieldLabel'),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        showCloseIcon: true,
+        action: SnackBarAction(
+          label: 'Deshacer',
+          textColor: Colors.white,
+          onPressed: () {
+            if (_undoSnapshot != null) {
+              _restoreFromSnapshot(_undoSnapshot!);
+              // Use same messenger for consistency
+              final undoMessenger = _sheetMessengerKey?.currentState ?? ScaffoldMessenger.of(context);
+              undoMessenger.clearSnackBars();
+              undoMessenger.showSnackBar(
+                const SnackBar(
+                  content: Text('Cambio revertido'),
+                  duration: Duration(seconds: 2),
+                  behavior: SnackBarBehavior.floating,
+                  showCloseIcon: true,
+                ),
+              );
+            }
+          },
+        ),
+      ),
+    );
   }
 
   /// Sets a controller value by section ID.
@@ -876,6 +930,9 @@ class _ClinicalHistoryWizardPageState
   ///
   /// Includes a dedupe guard to prevent the same message from being shown
   /// multiple times within a short window (2 seconds).
+  ///
+  /// Uses the sheet's local ScaffoldMessenger if available, so the SnackBar
+  /// appears ABOVE the BottomSheet instead of behind it.
   void _showUndoSnackBar(int appliedCount) {
     // Dedupe guard: skip if same appliedCount was shown within 2 seconds
     final now = DateTime.now();
@@ -890,7 +947,8 @@ class _ClinicalHistoryWizardPageState
     _lastSnackBarAppliedCount = appliedCount;
     _lastSnackBarTime = now;
 
-    final messenger = ScaffoldMessenger.of(context);
+    // Use sheet messenger if available, otherwise fall back to page messenger
+    final messenger = _sheetMessengerKey?.currentState ?? ScaffoldMessenger.of(context);
     messenger.clearSnackBars();
 
     messenger.showSnackBar(
@@ -907,8 +965,10 @@ class _ClinicalHistoryWizardPageState
           onPressed: () {
             if (_undoSnapshot != null) {
               _restoreFromSnapshot(_undoSnapshot!);
-              messenger.clearSnackBars();
-              messenger.showSnackBar(
+              // Use same messenger for consistency
+              final undoMessenger = _sheetMessengerKey?.currentState ?? ScaffoldMessenger.of(context);
+              undoMessenger.clearSnackBars();
+              undoMessenger.showSnackBar(
                 const SnackBar(
                   content: Text('Cambios revertidos'),
                   duration: Duration(seconds: 2),

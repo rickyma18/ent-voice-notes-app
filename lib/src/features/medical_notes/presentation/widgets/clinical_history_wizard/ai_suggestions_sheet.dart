@@ -44,6 +44,7 @@ class AISuggestionsSheet extends StatefulWidget {
     required this.onApply,
     required this.onApplySection,
     required this.onCancel,
+    this.closeOnApply = false,
   });
 
   final List<AISuggestionSection> sections;
@@ -55,6 +56,10 @@ class AISuggestionsSheet extends StatefulWidget {
   final void Function(AISuggestionSection editedSection, ApplyMode mode)
       onApplySection;
   final VoidCallback onCancel;
+
+  /// If true, the sheet will close after applying suggestions.
+  /// If false (default), the sheet stays open to allow applying multiple suggestions.
+  final bool closeOnApply;
 
   @override
   State<AISuggestionsSheet> createState() => _AISuggestionsSheetState();
@@ -468,13 +473,12 @@ class _SuggestionCard extends StatelessWidget {
                     color: theme.colorScheme.outlineVariant,
                   ),
                 ),
-                child: Text(
-                  _truncate(section.currentValue, 100),
+                child: _ExpandableText(
+                  text: section.currentValue.trim(),
+                  collapsedLines: 2,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(height: 8),
@@ -499,11 +503,10 @@ class _SuggestionCard extends StatelessWidget {
                   color: theme.colorScheme.primary.withValues(alpha: 0.3),
                 ),
               ),
-              child: Text(
-                _truncate(section.suggestion, 200),
+              child: _ExpandableText(
+                text: section.suggestion.trim(),
+                collapsedLines: 4,
                 style: theme.textTheme.bodySmall,
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
               ),
             ),
             const SizedBox(height: 12),
@@ -543,11 +546,109 @@ class _SuggestionCard extends StatelessWidget {
       ),
     );
   }
+}
 
-  String _truncate(String text, int maxLength) {
-    final clean = text.trim();
-    if (clean.length <= maxLength) return clean;
-    return '${clean.substring(0, maxLength)}...';
+/// Widget that shows text with expand/collapse functionality.
+///
+/// Shows a limited number of lines by default with a "Ver más" button
+/// if the text exceeds the limit. Uses AnimatedSize for smooth transitions.
+class _ExpandableText extends StatefulWidget {
+  const _ExpandableText({
+    required this.text,
+    this.collapsedLines = 4,
+    this.style,
+  });
+
+  final String text;
+  final int collapsedLines;
+  final TextStyle? style;
+
+  @override
+  State<_ExpandableText> createState() => _ExpandableTextState();
+}
+
+class _ExpandableTextState extends State<_ExpandableText> {
+  bool _isExpanded = false;
+  bool _needsExpansion = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _checkIfNeedsExpansion();
+  }
+
+  @override
+  void didUpdateWidget(_ExpandableText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text != widget.text ||
+        oldWidget.collapsedLines != widget.collapsedLines) {
+      _checkIfNeedsExpansion();
+    }
+  }
+
+  void _checkIfNeedsExpansion() {
+    // Use a post-frame callback to measure after layout
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: widget.text,
+          style: widget.style ?? Theme.of(context).textTheme.bodySmall,
+        ),
+        maxLines: widget.collapsedLines,
+        textDirection: TextDirection.ltr,
+      );
+      // Use a reasonable width for calculation
+      textPainter.layout(maxWidth: MediaQuery.of(context).size.width - 100);
+      final needsExpansion = textPainter.didExceedMaxLines;
+      if (needsExpansion != _needsExpansion) {
+        setState(() {
+          _needsExpansion = needsExpansion;
+        });
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final effectiveStyle = widget.style ?? theme.textTheme.bodySmall;
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeInOut,
+      alignment: Alignment.topLeft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            widget.text,
+            style: effectiveStyle,
+            maxLines: _isExpanded ? null : widget.collapsedLines,
+            overflow: _isExpanded ? null : TextOverflow.ellipsis,
+          ),
+          if (_needsExpansion)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _isExpanded = !_isExpanded;
+                  });
+                },
+                child: Text(
+                  _isExpanded ? 'Ver menos' : 'Ver más',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 
