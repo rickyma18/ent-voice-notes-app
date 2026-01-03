@@ -18,6 +18,7 @@ import '../../domain/entities/note_status.dart';
 import '../../domain/entities/surgical_note_data_entity.dart';
 import '../../medical_notes_providers.dart';
 import '../controllers/medical_notes_controller.dart';
+import '../widgets/clinical_history_wizard/ai_suggestions_sheet.dart';
 import '../widgets/clinical_history_wizard/clinical_history_wizard.dart';
 import '../widgets/clinical_history_wizard/dictation_quick_sheet.dart';
 
@@ -74,15 +75,35 @@ class _SurgicalNoteWizardPageState
 
   // State flags
   bool _isSaving = false;
+  bool _isGeneratingSuggestions = false;
+  bool _bannerDismissed = false;
+  bool _dictationChoiceShown = false;
+  bool _neverShowDictationChoice = false;
+  bool _suggestionsGenerated = false;
 
   // Raw transcript from DictationAssistPage
   String? _rawTranscript;
+
+  // ScaffoldMessenger key for SnackBars inside the AI suggestions BottomSheet
+  // This ensures SnackBars appear ABOVE the BottomSheet, not behind it
+  GlobalKey<ScaffoldMessengerState>? _sheetMessengerKey;
+
+  // Parent ScaffoldMessenger captured before opening the sheet
+  ScaffoldMessengerState? _parentMessenger;
+
+  /// Returns the active ScaffoldMessenger for showing SnackBars.
+  /// Priority: sheet messenger (if open) > parent messenger > context fallback
+  ScaffoldMessengerState get _activeMessenger =>
+      _sheetMessengerKey?.currentState ??
+      _parentMessenger ??
+      ScaffoldMessenger.of(context);
 
   // Text controllers for each section
   // Common fields
   late final TextEditingController _procedimientoController; // motivoConsulta
   late final TextEditingController _diagnosticoPreopController; // diagnostico
-  late final TextEditingController _diagnosticoPostopController; // planTratamiento
+  late final TextEditingController
+      _diagnosticoPostopController; // planTratamiento
 
   // Surgical-specific fields (SurgicalNoteDataEntity)
   late final TextEditingController _tecnicaQuirurgicaController;
@@ -102,11 +123,11 @@ class _SurgicalNoteWizardPageState
   // Step definitions
   static const List<String> _stepTitles = [
     'Procedimiento',
-    'Diagnostico preoperatorio',
-    'Tecnica quirurgica',
+    'Diagnóstico preoperatorio',
+    'Técnica quirúrgica',
     'Hallazgos intraoperatorios',
     'Complicaciones',
-    'Diagnostico postoperatorio y plan',
+    'Diagnóstico postoperatorio y plan',
     'Archivos adjuntos',
   ];
 
@@ -205,6 +226,302 @@ class _SurgicalNoteWizardPageState
   }
 
   // ---------------------------------------------------------------------------
+  // AI Suggestions
+  // ---------------------------------------------------------------------------
+
+  /// Whether a dictation transcript exists and is non-empty.
+  bool get _hasDictation =>
+      _rawTranscript != null && _rawTranscript!.trim().isNotEmpty;
+
+  bool get _canGenerateSuggestions =>
+      _hasDictation && !_isGeneratingSuggestions;
+
+  /// Whether the AI banner should be shown.
+  bool _shouldShowAiBanner(bool keyboardOpen) =>
+      !keyboardOpen &&
+      _hasDictation &&
+      !_isGeneratingSuggestions &&
+      !_bannerDismissed;
+
+  /// Whether the post-dictation options sheet should be shown.
+  bool _shouldShowPostDictationSheet(String transcript) =>
+      transcript.length > 80 &&
+      _countEmptyKeyFields() >= 2 &&
+      !_dictationChoiceShown &&
+      !_neverShowDictationChoice &&
+      _canGenerateSuggestions;
+
+  /// Counts how many key wizard fields are empty.
+  /// Only counts fields that AI can actually fill:
+  /// - procedimiento/indicación
+  /// - diagnóstico preoperatorio
+  /// - diagnóstico postoperatorio/plan
+  int _countEmptyKeyFields() {
+    int count = 0;
+    if (_procedimientoController.text.trim().isEmpty) count++;
+    if (_diagnosticoPreopController.text.trim().isEmpty) count++;
+    if (_diagnosticoPostopController.text.trim().isEmpty) count++;
+    return count;
+  }
+
+  Future<void> _generateAISuggestions() async {
+    if (!_canGenerateSuggestions) return;
+
+    setState(() {
+      _isGeneratingSuggestions = true;
+      _bannerDismissed = true;
+    });
+
+    try {
+      final aiService = ref.read(noteAIServiceProvider);
+      final suggestions = await aiService.suggestStructuredFields(
+        _rawTranscript!,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _isGeneratingSuggestions = false;
+      });
+
+      // Build sections for the sheet (mapped to surgical fields)
+      final sections = _buildSuggestionsForSheet(suggestions);
+
+      if (sections.isEmpty || sections.every((s) => !s.hasContent)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No se encontraron datos clínicos claros para sugerir campos.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Show suggestions sheet
+      if (mounted) {
+        _showSuggestionsSheet(sections);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isGeneratingSuggestions = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al generar sugerencias: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Builds suggestion sections for the sheet.
+  /// Maps Clinical AI response keys to Surgical wizard fields:
+  /// - motivoConsulta → Procedimiento e indicación
+  /// - diagnostico → Diagnóstico preoperatorio
+  /// - planTratamiento → Diagnóstico postoperatorio y plan
+  List<AISuggestionSection> _buildSuggestionsForSheet(
+    Map<String, String> suggestions,
+  ) {
+    return [
+      AISuggestionSection(
+        id: 'procedimiento',
+        label: 'Procedimiento e indicación',
+        suggestion: suggestions['motivoConsulta'] ?? '',
+        currentValue: _procedimientoController.text,
+      ),
+      AISuggestionSection(
+        id: 'diagnosticoPreop',
+        label: 'Diagnóstico preoperatorio',
+        suggestion: suggestions['diagnostico'] ?? '',
+        currentValue: _diagnosticoPreopController.text,
+      ),
+      AISuggestionSection(
+        id: 'diagnosticoPostop',
+        label: 'Diagnóstico postoperatorio y plan',
+        suggestion: suggestions['planTratamiento'] ?? '',
+        currentValue: _diagnosticoPostopController.text,
+      ),
+    ];
+  }
+
+  void _showSuggestionsSheet(List<AISuggestionSection> sections) {
+    setState(() {
+      _suggestionsGenerated = true;
+    });
+
+    // Capture parent messenger BEFORE opening sheet
+    _parentMessenger = ScaffoldMessenger.of(context);
+
+    // Create a fresh key for this sheet's ScaffoldMessenger
+    _sheetMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        // Wrap with ScaffoldMessenger + Scaffold so SnackBars can be shown
+        return ScaffoldMessenger(
+          key: _sheetMessengerKey,
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            body: AISuggestionsSheet(
+              sections: sections,
+              onApply: (editedSections, mode) {
+                _applySuggestions(editedSections, mode);
+              },
+              onApplySection: (editedSection, mode) {
+                _applySingleSectionWithFeedback(editedSection, mode);
+              },
+              onCancel: () => Navigator.pop(ctx),
+            ),
+          ),
+        );
+      },
+    ).whenComplete(() {
+      _sheetMessengerKey = null;
+      _parentMessenger = null;
+    });
+  }
+
+  /// Applies suggestions to controllers based on mode.
+  void _applySuggestions(List<AISuggestionSection> sections, ApplyMode mode) {
+    int appliedCount = 0;
+
+    for (final section in sections) {
+      if (!section.hasContent) continue;
+
+      final shouldApply = mode == ApplyMode.replace ||
+          (mode == ApplyMode.onlyEmpty && section.isCurrentEmpty);
+
+      if (shouldApply) {
+        _setControllerValue(section.id, section.suggestion);
+        appliedCount++;
+      }
+    }
+
+    setState(() {});
+
+    _showApplySnackBar(appliedCount, mode);
+  }
+
+  /// Applies a single section suggestion with individual field feedback.
+  void _applySingleSectionWithFeedback(
+    AISuggestionSection section,
+    ApplyMode mode,
+  ) {
+    if (!section.hasContent) return;
+
+    final shouldApply = mode == ApplyMode.replace ||
+        (mode == ApplyMode.onlyEmpty && section.isCurrentEmpty);
+
+    if (!shouldApply) return;
+
+    _setControllerValue(section.id, section.suggestion);
+
+    setState(() {});
+
+    _showSingleFieldSnackBar(section.label);
+  }
+
+  /// Shows a short SnackBar for a single field suggestion applied.
+  void _showSingleFieldSnackBar(String fieldLabel) {
+    _activeMessenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('Aplicado: $fieldLabel'),
+          backgroundColor: Colors.green,
+          duration: const Duration(milliseconds: 1000),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
+  /// Sets a controller value by section ID.
+  void _setControllerValue(String sectionId, String value) {
+    switch (sectionId) {
+      case 'procedimiento':
+        _procedimientoController.text = value;
+        break;
+      case 'diagnosticoPreop':
+        _diagnosticoPreopController.text = value;
+        break;
+      case 'diagnosticoPostop':
+        _diagnosticoPostopController.text = value;
+        break;
+      default:
+        debugPrint('Unknown sectionId: $sectionId');
+    }
+  }
+
+  /// Shows a short SnackBar after applying all suggestions.
+  void _showApplySnackBar(int appliedCount, ApplyMode mode) {
+    final String message;
+    final Color bgColor;
+
+    if (appliedCount == 0) {
+      message = 'No hubo cambios';
+      bgColor = Colors.orange;
+    } else if (mode == ApplyMode.replace) {
+      message = 'Sugerencias aplicadas';
+      bgColor = Colors.green;
+    } else {
+      message = 'Sugerencias aplicadas a campos vacios';
+      bgColor = Colors.green;
+    }
+
+    _activeMessenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: bgColor,
+          duration: const Duration(milliseconds: 1000),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
+  /// Builds the AI state chip based on current wizard state.
+  Widget? _buildAIStateChip() {
+    if (!_hasDictation) return null;
+
+    if (_isGeneratingSuggestions) {
+      return Chip(
+        avatar: const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        label: const Text('Procesando...'),
+        backgroundColor:
+            Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
+      );
+    }
+
+    if (_suggestionsGenerated) {
+      return Chip(
+        avatar: const Text('\u2728', style: TextStyle(fontSize: 14)),
+        label: const Text('Sugerencias listas'),
+        backgroundColor:
+            Theme.of(context).colorScheme.tertiaryContainer.withValues(alpha: 0.7),
+      );
+    }
+
+    return Chip(
+      avatar: const Text('\u{1F9E0}', style: TextStyle(fontSize: 14)),
+      label: const Text('Dictado listo'),
+      backgroundColor:
+          Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.7),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Field Dictation
   // ---------------------------------------------------------------------------
 
@@ -219,7 +536,95 @@ class _SurgicalNoteWizardPageState
 
     if (!mounted || transcript == null || transcript.trim().isEmpty) return;
 
-    await _applyTranscriptToController(controller, transcript.trim());
+    final trimmedTranscript = transcript.trim();
+
+    // Check if we should show the dictation options modal
+    if (_shouldShowPostDictationSheet(trimmedTranscript)) {
+      _dictationChoiceShown = true;
+
+      final action = await _showDictationOptionsSheet();
+      if (!mounted) return;
+
+      switch (action) {
+        case _DictationOptionsAction.applyToField:
+          await _applyTranscriptToController(controller, trimmedTranscript);
+          break;
+        case _DictationOptionsAction.generateAI:
+          // Store transcript for AI processing if not already set
+          _rawTranscript ??= trimmedTranscript;
+          _generateAISuggestions();
+          break;
+        case _DictationOptionsAction.cancel:
+        case null:
+          // Do nothing
+          break;
+      }
+      return;
+    }
+
+    await _applyTranscriptToController(controller, trimmedTranscript);
+  }
+
+  /// Shows options sheet for long dictations when multiple fields are empty.
+  Future<_DictationOptionsAction?> _showDictationOptionsSheet() {
+    return showModalBottomSheet<_DictationOptionsAction>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '¿Qué deseas hacer con el dictado?',
+                style: Theme.of(ctx).textTheme.titleLarge,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(
+                  ctx,
+                  _DictationOptionsAction.applyToField,
+                ),
+                icon: const Icon(Icons.text_fields),
+                label: const Text('Aplicar solo a este campo'),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.tonalIcon(
+                onPressed: () => Navigator.pop(
+                  ctx,
+                  _DictationOptionsAction.generateAI,
+                ),
+                icon: const Icon(Icons.auto_awesome),
+                label: const Text('Generar sugerencias con IA'),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () => Navigator.pop(
+                  ctx,
+                  _DictationOptionsAction.cancel,
+                ),
+                child: const Text('Cancelar'),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () {
+                  _neverShowDictationChoice = true;
+                  Navigator.pop(ctx); // Solo cierra sin forzar acción
+                },
+                child: Text(
+                  'No volver a mostrar',
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(ctx).colorScheme.outline,
+                      ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   /// Applies a transcript to a controller, showing a dialog if the field has content.
@@ -328,12 +733,12 @@ class _SurgicalNoteWizardPageState
         return;
       }
       if (_tecnicaQuirurgicaController.text.trim().isEmpty) {
-        _showValidationError('La tecnica quirurgica es requerida');
+        _showValidationError('La técnica quirúrgica es requerida');
         _goToStep(2);
         return;
       }
       if (_diagnosticoPostopController.text.trim().isEmpty) {
-        _showValidationError('El diagnostico postoperatorio es requerido');
+        _showValidationError('El diagnóstico postoperatorio es requerido');
         _goToStep(5);
         return;
       }
@@ -461,9 +866,26 @@ class _SurgicalNoteWizardPageState
     return Scaffold(
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
-        title: Text(
-            widget.isEditMode ? 'Editar nota quirurgica' : 'Nueva nota quirurgica'),
+        title: Text(widget.isEditMode
+            ? 'Editar nota quirurgica'
+            : 'Nueva nota quirurgica'),
         actions: [
+          // AI Suggestions action (only visible when raw transcript exists)
+          if (_canGenerateSuggestions)
+            _isGeneratingSuggestions
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : IconButton(
+                    onPressed: _generateAISuggestions,
+                    icon: const Icon(Icons.auto_awesome),
+                    tooltip: 'Generar sugerencias con IA',
+                  ),
           // Save as draft action
           if (!_isSaving)
             TextButton.icon(
@@ -473,7 +895,7 @@ class _SurgicalNoteWizardPageState
             ),
         ],
       ),
-      // Footer in bottomNavigationBar - takes its own layout space, never overlays
+      // Footer in bottomNavigationBar
       bottomNavigationBar: AnimatedPadding(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
@@ -536,8 +958,62 @@ class _SurgicalNoteWizardPageState
                     ),
                   ),
 
-                  // Step indicator - full version when keyboard closed,
-                  // compact version when keyboard open
+                  // AI dictation banner - non-intrusive prompt
+                  if (_shouldShowAiBanner(keyboardOpen))
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: Card(
+                        elevation: 2,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primaryContainer
+                            .withValues(alpha: 0.7),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.auto_awesome,
+                                color: Theme.of(context).colorScheme.primary,
+                                size: 24,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Se detectó un dictado. La IA puede ayudarte a estructurar la nota quirúrgica.',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onPrimaryContainer,
+                                      ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              TextButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _bannerDismissed = true;
+                                  });
+                                },
+                                child: const Text('Cerrar'),
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: FilledButton.tonal(
+                                  onPressed: _generateAISuggestions,
+                                  child: const Text('Generar'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  // Step indicator
                   ClipRect(
                     child: AnimatedSize(
                       duration: const Duration(milliseconds: 180),
@@ -560,6 +1036,18 @@ class _SurgicalNoteWizardPageState
                     ),
                   ),
 
+                  // AI state chip
+                  if (!keyboardOpen) ...[
+                    if (_buildAIStateChip() case final chip?)
+                      Align(
+                        alignment: Alignment.center,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: chip,
+                        ),
+                      ),
+                  ],
+
                   // Step content (PageView inside Expanded)
                   Expanded(
                     child: Form(
@@ -568,6 +1056,7 @@ class _SurgicalNoteWizardPageState
                         controller: _pageController,
                         physics: const NeverScrollableScrollPhysics(),
                         onPageChanged: (page) {
+                          ScaffoldMessenger.of(context).clearSnackBars();
                           setState(() {
                             _currentStep = page;
                           });
@@ -591,9 +1080,6 @@ class _SurgicalNoteWizardPageState
   }
 
   /// Scrollable wrapper for wizard steps.
-  ///
-  /// Simple scroll wrapper with uniform padding.
-  /// No footer compensation needed - footer is in bottomNavigationBar.
   Widget _buildScrollableStep({required Widget child}) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -620,8 +1106,8 @@ class _SurgicalNoteWizardPageState
           const SizedBox(height: 8),
           GuidedTextArea(
             controller: _procedimientoController,
-            label: 'Procedimiento e indicacion',
-            hintText: 'Ej: Septoplastia por desviacion septal obstructiva...',
+            label: 'Procedimiento e indicación',
+            hintText: 'Ej: Septoplastia por desviación septal obstructiva...',
             maxLines: 8,
             minLines: 4,
             onDictate: () => _handleFieldDictation(_procedimientoController),
@@ -660,8 +1146,9 @@ class _SurgicalNoteWizardPageState
           const SizedBox(height: 8),
           GuidedTextArea(
             controller: _diagnosticoPreopController,
-            label: 'Diagnostico preoperatorio',
-            hintText: 'Ej: Desviacion septal obstructiva, Hipertrofia de cornetes...',
+            label: 'Diagnóstico preoperatorio',
+            hintText:
+                'Ej: Desviación septal obstructiva, Hipertrofia de cornetes...',
             maxLines: 8,
             minLines: 4,
             onDictate: () => _handleFieldDictation(_diagnosticoPreopController),
@@ -679,13 +1166,13 @@ class _SurgicalNoteWizardPageState
         children: [
           const SizedBox(height: 8),
           _SurgicalSectionCard(
-            title: 'Tecnica quirurgica',
+            title: 'Técnica quirúrgica',
             icon: Icons.content_cut,
             highlighted: true,
             child: GuidedTextArea(
               controller: _tecnicaQuirurgicaController,
               hintText:
-                  'Descripcion detallada de la tecnica quirurgica empleada...',
+                  'Descripción detallada de la técnica quirúrgica empleada...',
               maxLines: 10,
               minLines: 6,
               showQuickActions: false,
@@ -693,7 +1180,7 @@ class _SurgicalNoteWizardPageState
                   _handleFieldDictation(_tecnicaQuirurgicaController),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
-                  return 'La tecnica quirurgica es requerida';
+                  return 'La técnica quirúrgica es requerida';
                 }
                 return null;
               },
@@ -775,12 +1262,12 @@ class _SurgicalNoteWizardPageState
 
           // Diagnóstico postoperatorio
           _SurgicalSectionCard(
-            title: 'Diagnostico postoperatorio',
+            title: 'Diagnóstico postoperatorio',
             icon: Icons.medical_information,
             highlighted: true,
             child: GuidedTextArea(
               controller: _diagnosticoPostopController,
-              hintText: 'Ej: PO de septoplastia, evolucion satisfactoria...',
+              hintText: 'Ej: PO de septoplastia, evolución satisfactoria...',
               maxLines: 4,
               minLines: 2,
               showQuickActions: false,
@@ -788,7 +1275,7 @@ class _SurgicalNoteWizardPageState
                   _handleFieldDictation(_diagnosticoPostopController),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
-                  return 'El diagnostico postoperatorio es requerido';
+                  return 'El diagnóstico postoperatorio es requerido';
                 }
                 return null;
               },
@@ -1032,5 +1519,12 @@ class _SurgicalSectionCard extends StatelessWidget {
 enum _DictationAction {
   replace,
   append,
+  cancel,
+}
+
+/// Action choices for the dictation options sheet (long transcripts).
+enum _DictationOptionsAction {
+  applyToField,
+  generateAI,
   cancel,
 }
