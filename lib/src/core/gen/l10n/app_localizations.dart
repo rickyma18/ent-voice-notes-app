@@ -425,7 +425,7 @@ abstract class AppLocalizations {
   /// No description provided for @medicalNotesTitle.
   ///
   /// In en, this message translates to:
-  /// **'Medical Notes'**
+  /// **'Docsoft ORL'**
   String get medicalNotesTitle;
 
   /// No description provided for @medicalNotesSubtitle.

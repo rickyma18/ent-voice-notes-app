@@ -191,7 +191,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Password must contain at least one special character';
 
   @override
-  String get medicalNotesTitle => 'Medical Notes';
+  String get medicalNotesTitle => 'Docsoft ORL';
 
   @override
   String get medicalNotesSubtitle => 'Voice-based clinical notes for ENT';

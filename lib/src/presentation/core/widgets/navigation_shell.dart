@@ -16,7 +16,6 @@ class _NavigationShellState extends State<NavigationShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Notas Médicas')),
       body: widget.statefulNavigationShell,
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: widget.statefulNavigationShell.currentIndex,

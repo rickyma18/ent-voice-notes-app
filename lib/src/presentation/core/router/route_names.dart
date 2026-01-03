@@ -17,6 +17,7 @@ class RouteNames {
   // Shell routes
   static const String home = 'home';
   static const String profile = 'profile';
+  static const String editProfile = 'editProfile';
 
   // Medical notes routes (feature-scoped unique names)
   static const String medicalNotesList = 'medicalNotesList';

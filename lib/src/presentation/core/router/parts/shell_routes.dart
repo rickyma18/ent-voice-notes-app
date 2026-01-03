@@ -25,6 +25,15 @@ StatefulShellRoute _shellRoutes(ref) {
             pageBuilder: (context, state) {
               return const MaterialPage(child: ProfilePage());
             },
+            routes: [
+              GoRoute(
+                path: Routes.editProfile,
+                name: RouteNames.editProfile,
+                pageBuilder: (context, state) {
+                  return const MaterialPage(child: EditProfilePage());
+                },
+              ),
+            ],
           ),
         ],
       ),

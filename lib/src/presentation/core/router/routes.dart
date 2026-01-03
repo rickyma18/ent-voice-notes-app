@@ -17,6 +17,7 @@ class Routes {
   // Shell routes
   static const String home = '/home';
   static const String profile = '/profile';
+  static const String editProfile = 'edit';
 
   // Medical notes routes (paths can be reused across features)
   static const String medicalNotesList = '/medical-notes';
