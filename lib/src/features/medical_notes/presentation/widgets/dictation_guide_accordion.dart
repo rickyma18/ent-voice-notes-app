@@ -79,10 +79,92 @@ class DictationGuideAccordion extends StatelessWidget {
               ),
             ),
 
+            // AI interpretation guide
+            _buildAIInterpretationSection(theme),
+            const SizedBox(height: 12),
+
             // Section list
             ..._buildSectionItems(theme),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildAIInterpretationSection(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.tertiaryContainer.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: theme.colorScheme.tertiary.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.psychology,
+                size: 16,
+                color: theme.colorScheme.tertiary,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '¿Cómo interpreta la IA lo que dices?',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.tertiary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _buildAIBullet(
+            theme,
+            'Si hablas en primera persona ("me duele", "tengo"), '
+                'se interpreta como voz del paciente',
+          ),
+          _buildAIBullet(
+            theme,
+            'La IA redacta la nota en lenguaje clínico',
+          ),
+          _buildAIBullet(
+            theme,
+            'Puedes hablar como en una consulta normal',
+          ),
+          _buildAIBullet(
+            theme,
+            'No es necesario dictar en formato médico',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAIBullet(ThemeData theme, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '• ',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              text,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

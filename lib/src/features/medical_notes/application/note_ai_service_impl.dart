@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 
 import '../../../core/logger/log.dart';
 import 'medical_lexicon_loader.dart';
@@ -272,6 +273,21 @@ class NoteAIServiceImpl implements NoteAIService {
         );
       }
 
+      // ─────────────────────────────────────────────────────────────────────────
+      // AUDIT: Preserve original transcript for clinical safety review
+      // Release: only HASH + LENGTH (no PHI in logs)
+      // Debug: HASH + LENGTH + PREVIEW (first 150 chars)
+      // ─────────────────────────────────────────────────────────────────────────
+      Log.info('📝 [AUDIT] LENGTH=${rawTranscript.length}');
+      Log.info('📝 [AUDIT] HASH=${rawTranscript.hashCode}');
+      if (!kReleaseMode) {
+        // Debug only: log preview for development/testing
+        final preview = rawTranscript.length > 150
+            ? '${rawTranscript.substring(0, 150)}...'
+            : rawTranscript;
+        Log.info('📝 [AUDIT][DEBUG] PREVIEW="$preview"');
+      }
+
       // Build the LLM prompt
       final prompt = _buildStructuredFieldsPrompt(rawTranscript);
 
@@ -297,69 +313,147 @@ class NoteAIServiceImpl implements NoteAIService {
 
   /// Builds the LLM prompt for structured field generation.
   ///
-  /// This prompt is critical for getting accurate, consistent medical notes.
-  /// It instructs the model to:
-  /// - Use Spanish medical terminology
-  /// - Output ONLY valid JSON
-  /// - Use exact field names
-  /// - Use structured headings for antecedentes and exploracionFisicaOrl
-  /// - Omit fields when insufficient data (except structured sections)
-  /// - Not hallucinate diagnoses or medications
+  /// STRATEGY C: Correction + Structuring in a single GPT call.
+  /// Optimized for production: ~50% fewer tokens than v1.
+  /// v2: Optimized for medical interviews (patient voice vs clinical voice).
+  ///
+  /// Safety rules:
+  /// - Only correct with HIGH certainty (>90%)
+  /// - If in doubt, preserve original text
+  /// - NEVER infer diagnoses
+  /// - ALWAYS include all 7 keys (use "" if no data)
   String _buildStructuredFieldsPrompt(String rawTranscript) {
     return '''
-Eres un asistente médico especializado en otorrinolaringología (ORL).
+Asistente médico ORL. Tarea: corregir errores STT + estructurar en JSON.
 
-Tu tarea es convertir la siguiente transcripción de una consulta médica en una nota clínica estructurada.
+PASO 1: CORRECCIÓN STT (solo si certeza >90%, si hay duda NO corrijas)
+- Medicamentos: "omeprasol"→"omeprazol", "metorfina"→"metformina"
+- Dosis: "20 de omeprazol"→"omeprazol 20 mg" (solo si unidad es obvia)
+- Abreviaturas: tx→tratamiento, dx→diagnóstico
 
-REGLAS ESTRICTAS:
-1. Debes responder ÚNICAMENTE con un objeto JSON válido.
-2. NO incluyas explicaciones, markdown, ni texto adicional.
-3. SOLO usa las siguientes claves (nombres exactos):
-   - motivoConsulta
-   - antecedentes
-   - exploracionFisicaOrl
-   - diagnostico
-   - planTratamiento
-   - resumen
-   - notaAdicional
+REGLA CRÍTICA: Si hay CUALQUIER duda, conserva el texto original.
+PROHIBIDO: Inventar diagnósticos, medicamentos o dosis.
 
-4. FORMATO OBLIGATORIO para "antecedentes":
-   El valor DEBE ser UN SOLO string con los siguientes encabezados en MAYÚSCULAS, cada uno en su propia línea:
-   HEREDOFAMILIARES:
-   (contenido o "Sin datos relevantes.")
-   NO PATOLOGICOS:
-   (contenido o "Sin datos relevantes.")
-   PATOLOGICOS:
-   (contenido o "Sin datos relevantes.")
-   PADECIMIENTO ACTUAL:
-   (contenido o "Sin datos relevantes.")
+PASO 2: REDACCIÓN CLÍNICA
+- 1ª persona ("me duele", "tengo", "siento") = voz del PACIENTE → usar "refiere", "menciona", "niega".
+- NO convertir quejas subjetivas en afirmaciones clínicas absolutas.
+- motivoConsulta = síntoma guía (razón principal de la consulta).
+- antecedentes incluye PADECIMIENTO ACTUAL = evolución temporal (inicio, duración, progresión).
+- Si diagnóstico proviene SOLO de entrevista (sin exploración explícita), usar "sugestivo de", "probable", "a descartar".
 
-5. FORMATO OBLIGATORIO para "exploracionFisicaOrl":
-   El valor DEBE ser UN SOLO string con los siguientes encabezados en MAYÚSCULAS, cada uno en su propia línea:
-   OTOSCOPIA:
-   (contenido o "Sin datos relevantes.")
-   RINOSCOPIA:
-   (contenido o "Sin datos relevantes.")
-   OROFARINGE:
-   (contenido o "Sin datos relevantes.")
-   CUELLO:
-   (contenido o "Sin datos relevantes.")
-   LARINGOSCOPIA:
-   (contenido o "Sin datos relevantes.")
+PASO 3: JSON con TODAS estas claves (usar "" si no hay datos):
+- motivoConsulta
+- antecedentes (HEREDOFAMILIARES: / NO PATOLOGICOS: / PATOLOGICOS: / PADECIMIENTO ACTUAL:)
+- exploracionFisicaOrl (OTOSCOPIA: / RINOSCOPIA: / OROFARINGE: / CUELLO: / LARINGOSCOPIA:)
+- diagnostico
+- planTratamiento
+- resumen
+- notaAdicional
 
-6. Si no hay suficiente información para motivoConsulta, diagnostico, planTratamiento, resumen o notaAdicional, OMITE ese campo del JSON.
-7. NUNCA inventes diagnósticos si los datos son insuficientes.
-8. NUNCA inventes medicamentos, dosis ni tratamientos.
-9. Usa terminología médica profesional en español.
-10. Sé conciso y clínico.
-11. Todos los valores deben ser strings (NO arrays, NO objetos anidados).
+IMPORTANTE: Incluir SIEMPRE las 7 claves. Si no hay info, usar "".
 
 TRANSCRIPCIÓN:
 """
 $rawTranscript
 """
 
-Responde SOLO con el objeto JSON:''';
+JSON:''';
+  }
+
+  @override
+  Future<String> suggestTreatmentPlan({
+    required String diagnostico,
+    String? motivo,
+    String? padecimientoActual,
+    String? exploracionOrl,
+  }) async {
+    try {
+      Log.info('💊 Generating treatment plan suggestion');
+
+      if (diagnostico.trim().isEmpty) {
+        throw NoteAIException(
+          'Se requiere un diagnóstico para generar el plan de tratamiento.',
+        );
+      }
+
+      // Build compact context string
+      final prompt = _buildTreatmentPlanPrompt(
+        diagnostico: diagnostico,
+        motivo: motivo,
+        padecimientoActual: padecimientoActual,
+        exploracionOrl: exploracionOrl,
+      );
+
+      // Call GPT-4 API for treatment plan
+      final response = await _openAIClient.generateTreatmentPlan(prompt);
+
+      if (response.trim().isEmpty) {
+        throw NoteAIException(
+          'No se pudo generar un plan. Intenta de nuevo.',
+        );
+      }
+
+      Log.info('💊 Treatment plan generated: ${response.length} chars');
+      return response;
+    } on NoteAIException {
+      rethrow;
+    } catch (e) {
+      Log.error('💊 Error generating treatment plan: $e');
+      throw NoteAIException(
+        'Error al generar plan de tratamiento: ${e.toString()}',
+      );
+    }
+  }
+
+  /// Builds prompt for treatment plan generation.
+  ///
+  /// CLINICAL SAFETY RULES:
+  /// - NO inventar alergias, comorbilidades, embarazo, peso, edad
+  /// - Dosis genéricas si faltan datos (según peso/edad)
+  /// - Siempre incluir disclaimer de revisión clínica
+  /// - Idioma: Español clínico
+  String _buildTreatmentPlanPrompt({
+    required String diagnostico,
+    String? motivo,
+    String? padecimientoActual,
+    String? exploracionOrl,
+  }) {
+    final contextParts = <String>[];
+
+    contextParts.add('DIAGNÓSTICO: $diagnostico');
+
+    if (motivo != null && motivo.trim().isNotEmpty) {
+      contextParts.add('MOTIVO: $motivo');
+    }
+    if (padecimientoActual != null && padecimientoActual.trim().isNotEmpty) {
+      contextParts.add('PADECIMIENTO: $padecimientoActual');
+    }
+    if (exploracionOrl != null && exploracionOrl.trim().isNotEmpty) {
+      contextParts.add('EXPLORACIÓN ORL: $exploracionOrl');
+    }
+
+    final context = contextParts.join('\n');
+
+    return '''
+Asistente médico ORL. Genera plan de tratamiento.
+
+REGLAS DE SEGURIDAD CLÍNICA:
+- NO inventar: alergias, comorbilidades, embarazo, peso, edad
+- Si faltan datos, usar dosis genéricas ("según peso/edad")
+- Usar frases tipo "valorar", "considerar" si hay incertidumbre
+- Solo tratamientos estándar para ORL
+
+CONTEXTO CLÍNICO:
+$context
+
+Genera plan conciso (máx 200 palabras):
+1. Tratamiento farmacológico (si aplica)
+2. Medidas generales
+3. Seguimiento/cita control
+
+Al final incluir: "(Sugerencia: revisar contra guías y criterio clínico)"
+
+PLAN:''';
   }
 
   /// Parses the LLM response and validates field names.
@@ -402,8 +496,8 @@ Responde SOLO con el objeto JSON:''';
           continue;
         }
 
-        // Ensure value is string and non-empty
-        if (value is String && value.trim().isNotEmpty) {
+        // Accept string values (including empty strings for missing data)
+        if (value is String) {
           validatedFields[key] = value.trim();
         }
       }
@@ -525,6 +619,9 @@ class OpenAIClient {
   /// [prompt] should contain the full instruction and raw transcript.
   ///
   /// Returns the raw JSON string from the model.
+  ///
+  /// STRATEGY C: The prompt now includes STT correction instructions,
+  /// so GPT-4 corrects transcription errors AND structures in one call.
   Future<String> generateStructuredFields(String prompt) async {
     try {
       final requestBody = {
@@ -532,10 +629,10 @@ class OpenAIClient {
         'messages': [
           {
             'role': 'system',
-            'content':
-                'Eres un asistente médico especializado en '
-                    'otorrinolaringología. Generas notas médicas '
-                    'estructuradas en formato JSON válido.',
+            'content': 'Eres un asistente médico ORL. '
+                'Tu trabajo: 1) Corregir errores STT (medicamentos, dosis), '
+                '2) Estructurar en JSON. Solo corrige con alta certeza. '
+                'Nunca inventes datos.',
           },
           {
             'role': 'user',
@@ -562,6 +659,78 @@ class OpenAIClient {
       if (response.statusCode == 200) {
         final content = response.data['choices'][0]['message']['content'];
         return content.toString();
+      } else if (response.statusCode == 401) {
+        throw NoteAIException(
+          'Error de autenticación con OpenAI. Verifica tu API key.',
+        );
+      } else if (response.statusCode == 429) {
+        throw NoteAIException(
+          'Límite de solicitudes excedido. Intenta más tarde.',
+        );
+      } else {
+        final errorMsg =
+            response.data?['error']?['message'] ?? 'Error desconocido';
+        throw NoteAIException(
+          'Error de OpenAI: $errorMsg',
+        );
+      }
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout) {
+        throw NoteAIException(
+          'Tiempo de espera agotado. Verifica tu conexión a internet.',
+        );
+      } else if (e.type == DioExceptionType.connectionError) {
+        throw NoteAIException(
+          'No se pudo conectar con OpenAI. Verifica tu conexión a internet.',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  /// Generates a treatment plan suggestion using GPT-4.
+  ///
+  /// [prompt] should contain clinical context and safety rules.
+  ///
+  /// Returns plain text (NOT JSON) with the treatment plan.
+  /// Optimized for short responses (~200 words max).
+  Future<String> generateTreatmentPlan(String prompt) async {
+    try {
+      final requestBody = {
+        'model': _gptModel,
+        'messages': [
+          {
+            'role': 'system',
+            'content': 'Eres un asistente médico ORL. '
+                'Generas planes de tratamiento concisos y seguros. '
+                'Nunca inventes datos del paciente (alergias, peso, edad). '
+                'Usa dosis genéricas si faltan datos.',
+          },
+          {
+            'role': 'user',
+            'content': prompt,
+          },
+        ],
+        'temperature': 0.4,
+        'max_tokens': 500, // Short response for treatment plan
+      };
+
+      final response = await _dio.post(
+        _chatEndpoint,
+        data: requestBody,
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $apiKey',
+            'Content-Type': 'application/json',
+          },
+          validateStatus: (status) => status! < 500,
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final content = response.data['choices'][0]['message']['content'];
+        return content.toString().trim();
       } else if (response.statusCode == 401) {
         throw NoteAIException(
           'Error de autenticación con OpenAI. Verifica tu API key.',

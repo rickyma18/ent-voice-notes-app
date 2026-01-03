@@ -72,6 +72,26 @@ abstract class NoteAIService {
   Future<Map<String, String>> suggestStructuredFields(
     String rawTranscript,
   );
+
+  /// Genera sugerencia de plan de tratamiento basándose en contexto clínico.
+  ///
+  /// NO requiere transcripción de dictado. Usa campos ya ingresados.
+  ///
+  /// [diagnostico] es REQUERIDO y debe tener contenido.
+  /// [motivo], [padecimientoActual], [exploracionOrl] son opcionales.
+  ///
+  /// Regresa un String con el plan sugerido (texto plano, no JSON).
+  /// Incluye disclaimer de revisión clínica al final.
+  ///
+  /// Throws [NoteAIException] si:
+  /// - diagnostico está vacío
+  /// - Error de red/API
+  Future<String> suggestTreatmentPlan({
+    required String diagnostico,
+    String? motivo,
+    String? padecimientoActual,
+    String? exploracionOrl,
+  });
 }
 
 /// Implementación de prueba (stub).
@@ -99,5 +119,24 @@ class NoteAIServiceStub implements NoteAIService {
       'planTratamiento': 'IA recomienda: tratamiento simulado.',
       // Los demás campos son opcionales y pueden omitirse.
     };
+  }
+
+  @override
+  Future<String> suggestTreatmentPlan({
+    required String diagnostico,
+    String? motivo,
+    String? padecimientoActual,
+    String? exploracionOrl,
+  }) async {
+    await Future.delayed(const Duration(milliseconds: 600));
+    return '''
+Plan de tratamiento simulado para: $diagnostico
+
+1. Tratamiento médico según protocolo
+2. Seguimiento en 7-14 días
+3. Indicaciones generales
+
+(Sugerencia IA: revisar contra guías clínicas y criterio médico)
+''';
   }
 }

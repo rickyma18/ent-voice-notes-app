@@ -79,6 +79,7 @@ class _ClinicalHistoryWizardPageState
   // State flags
   bool _isSaving = false;
   bool _isGeneratingSuggestions = false;
+  bool _isGeneratingPlan = false;
   bool _bannerDismissed = false;
   bool _dictationChoiceShown = false;
   bool _neverShowDictationChoice = false;
@@ -87,16 +88,20 @@ class _ClinicalHistoryWizardPageState
   // Raw transcript from DictationAssistPage (for future AI processing)
   String? _rawTranscript;
 
-  // Undo snapshot for AI suggestions
-  Map<String, String>? _undoSnapshot;
-
-  // Dedupe guard for SnackBar: prevents showing the same message multiple times
-  int? _lastSnackBarAppliedCount;
-  DateTime? _lastSnackBarTime;
-
   // ScaffoldMessenger key for SnackBars inside the AI suggestions BottomSheet
   // This ensures SnackBars appear ABOVE the BottomSheet, not behind it
   GlobalKey<ScaffoldMessengerState>? _sheetMessengerKey;
+
+  // Parent ScaffoldMessenger captured before opening the sheet
+  // This ensures SnackBars appear on the actual Scaffold, not inside the sheet
+  ScaffoldMessengerState? _parentMessenger;
+
+  /// Returns the active ScaffoldMessenger for showing SnackBars.
+  /// Priority: sheet messenger (if open) > parent messenger > context fallback
+  ScaffoldMessengerState get _activeMessenger =>
+      _sheetMessengerKey?.currentState ??
+      _parentMessenger ??
+      ScaffoldMessenger.of(context);
 
   // Text controllers for each section
   late final TextEditingController _motivoController;
@@ -737,6 +742,9 @@ class _ClinicalHistoryWizardPageState
       _suggestionsGenerated = true;
     });
 
+    // Capture parent messenger BEFORE opening sheet (for reliable SnackBars)
+    _parentMessenger = ScaffoldMessenger.of(context);
+
     // Create a fresh key for this sheet's ScaffoldMessenger
     _sheetMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
@@ -745,11 +753,14 @@ class _ClinicalHistoryWizardPageState
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        // Wrap with ScaffoldMessenger so SnackBars appear ABOVE the BottomSheet
+        // Wrap with ScaffoldMessenger + Scaffold so SnackBars can be shown.
+        // IMPORTANT: ScaffoldMessenger REQUIRES a Scaffold descendant to
+        // render SnackBars. Without it, showSnackBar() silently fails.
         return ScaffoldMessenger(
           key: _sheetMessengerKey,
-          child: Builder(
-            builder: (innerCtx) => AISuggestionsSheet(
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            body: AISuggestionsSheet(
               sections: sections,
               onApply: (editedSections, mode) {
                 // DO NOT close the sheet - allow applying multiple suggestions
@@ -765,54 +776,14 @@ class _ClinicalHistoryWizardPageState
         );
       },
     ).whenComplete(() {
-      // Clear the key when sheet is closed
+      // Clear references when sheet is closed
       _sheetMessengerKey = null;
-    });
-  }
-
-  /// Creates a snapshot of all controller values for undo.
-  Map<String, String> _createSnapshot() {
-    return {
-      'motivoConsulta': _motivoController.text,
-      'heredofamiliares': _antecedentesHeredofamiliaresController.text,
-      'noPatologicos': _antecedentesNoPatologicosController.text,
-      'patologicos': _antecedentesPatologicosController.text,
-      'padecimientoActual': _padecimientoActualController.text,
-      'otoscopia': _orlControllers['otoscopia']?.text ?? '',
-      'rinoscopia': _orlControllers['rinoscopia']?.text ?? '',
-      'orofaringe': _orlControllers['orofaringe']?.text ?? '',
-      'cuello': _orlControllers['cuello']?.text ?? '',
-      'laringoscopia': _orlControllers['laringoscopia']?.text ?? '',
-      'diagnostico': _diagnosticoController.text,
-      'planTratamiento': _planController.text,
-    };
-  }
-
-  /// Restores controller values from a snapshot.
-  void _restoreFromSnapshot(Map<String, String> snapshot) {
-    setState(() {
-      _motivoController.text = snapshot['motivoConsulta'] ?? '';
-      _antecedentesHeredofamiliaresController.text =
-          snapshot['heredofamiliares'] ?? '';
-      _antecedentesNoPatologicosController.text =
-          snapshot['noPatologicos'] ?? '';
-      _antecedentesPatologicosController.text = snapshot['patologicos'] ?? '';
-      _padecimientoActualController.text = snapshot['padecimientoActual'] ?? '';
-      _orlControllers['otoscopia']?.text = snapshot['otoscopia'] ?? '';
-      _orlControllers['rinoscopia']?.text = snapshot['rinoscopia'] ?? '';
-      _orlControllers['orofaringe']?.text = snapshot['orofaringe'] ?? '';
-      _orlControllers['cuello']?.text = snapshot['cuello'] ?? '';
-      _orlControllers['laringoscopia']?.text = snapshot['laringoscopia'] ?? '';
-      _diagnosticoController.text = snapshot['diagnostico'] ?? '';
-      _planController.text = snapshot['planTratamiento'] ?? '';
+      _parentMessenger = null;
     });
   }
 
   /// Applies suggestions to controllers based on mode.
   void _applySuggestions(List<AISuggestionSection> sections, ApplyMode mode) {
-    // Create snapshot before applying
-    _undoSnapshot = _createSnapshot();
-
     int appliedCount = 0;
 
     for (final section in sections) {
@@ -830,7 +801,7 @@ class _ClinicalHistoryWizardPageState
 
     setState(() {});
 
-    _showUndoSnackBar(appliedCount);
+    _showApplySnackBar(appliedCount, mode);
   }
 
   /// Applies a single section suggestion with individual field feedback.
@@ -845,9 +816,6 @@ class _ClinicalHistoryWizardPageState
 
     if (!shouldApply) return;
 
-    // Create snapshot before applying
-    _undoSnapshot = _createSnapshot();
-
     _setControllerValue(section.id, section.suggestion);
 
     setState(() {});
@@ -858,42 +826,18 @@ class _ClinicalHistoryWizardPageState
 
   /// Shows a short SnackBar for a single field suggestion applied.
   ///
-  /// Uses the sheet's local ScaffoldMessenger if available, so the SnackBar
-  /// appears ABOVE the BottomSheet instead of behind it.
+  /// Uses _activeMessenger to show SnackBar ABOVE the BottomSheet if open.
   void _showSingleFieldSnackBar(String fieldLabel) {
-    // Use sheet messenger if available, otherwise fall back to page messenger
-    final messenger = _sheetMessengerKey?.currentState ?? ScaffoldMessenger.of(context);
-    messenger.clearSnackBars();
-
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('Sugerencia aplicada: $fieldLabel'),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-        showCloseIcon: true,
-        action: SnackBarAction(
-          label: 'Deshacer',
-          textColor: Colors.white,
-          onPressed: () {
-            if (_undoSnapshot != null) {
-              _restoreFromSnapshot(_undoSnapshot!);
-              // Use same messenger for consistency
-              final undoMessenger = _sheetMessengerKey?.currentState ?? ScaffoldMessenger.of(context);
-              undoMessenger.clearSnackBars();
-              undoMessenger.showSnackBar(
-                const SnackBar(
-                  content: Text('Cambio revertido'),
-                  duration: Duration(seconds: 2),
-                  behavior: SnackBarBehavior.floating,
-                  showCloseIcon: true,
-                ),
-              );
-            }
-          },
+    _activeMessenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('Aplicado: $fieldLabel'),
+          backgroundColor: Colors.green,
+          duration: const Duration(milliseconds: 1000),
+          behavior: SnackBarBehavior.floating,
         ),
-      ),
-    );
+      );
   }
 
   /// Sets a controller value by section ID.
@@ -901,86 +845,78 @@ class _ClinicalHistoryWizardPageState
     switch (sectionId) {
       case 'motivoConsulta':
         _motivoController.text = value;
+        break;
       case 'heredofamiliares':
         _antecedentesHeredofamiliaresController.text = value;
+        break;
       case 'noPatologicos':
         _antecedentesNoPatologicosController.text = value;
+        break;
       case 'patologicos':
         _antecedentesPatologicosController.text = value;
+        break;
       case 'padecimientoActual':
         _padecimientoActualController.text = value;
+        break;
       case 'otoscopia':
         _orlControllers['otoscopia']?.text = value;
+        break;
       case 'rinoscopia':
         _orlControllers['rinoscopia']?.text = value;
+        break;
       case 'orofaringe':
         _orlControllers['orofaringe']?.text = value;
+        break;
       case 'cuello':
         _orlControllers['cuello']?.text = value;
+        break;
       case 'laringoscopia':
         _orlControllers['laringoscopia']?.text = value;
+        break;
       case 'diagnostico':
         _diagnosticoController.text = value;
+        break;
       case 'planTratamiento':
         _planController.text = value;
+        break;
+      default:
+        debugPrint('⚠️ Unknown sectionId: $sectionId');
     }
   }
 
-  /// Shows a SnackBar with undo option after applying suggestions.
+  /// Shows a short SnackBar after applying all suggestions.
   ///
-  /// Includes a dedupe guard to prevent the same message from being shown
-  /// multiple times within a short window (2 seconds).
+  /// Uses _activeMessenger to show SnackBar ABOVE the BottomSheet if open.
   ///
-  /// Uses the sheet's local ScaffoldMessenger if available, so the SnackBar
-  /// appears ABOVE the BottomSheet instead of behind it.
-  void _showUndoSnackBar(int appliedCount) {
-    // Dedupe guard: skip if same appliedCount was shown within 2 seconds
-    final now = DateTime.now();
-    if (_lastSnackBarAppliedCount == appliedCount && _lastSnackBarTime != null) {
-      final elapsed = now.difference(_lastSnackBarTime!);
-      if (elapsed.inSeconds < 2) {
-        return; // Skip duplicate SnackBar
-      }
+  /// Messages:
+  /// - appliedCount == 0: "No hubo cambios"
+  /// - ApplyMode.replace: "Sugerencias aplicadas"
+  /// - ApplyMode.onlyEmpty: "Sugerencias aplicadas a campos vacíos"
+  void _showApplySnackBar(int appliedCount, ApplyMode mode) {
+    final String message;
+    final Color bgColor;
+
+    if (appliedCount == 0) {
+      message = 'No hubo cambios';
+      bgColor = Colors.orange;
+    } else if (mode == ApplyMode.replace) {
+      message = 'Sugerencias aplicadas';
+      bgColor = Colors.green;
+    } else {
+      message = 'Sugerencias aplicadas a campos vacíos';
+      bgColor = Colors.green;
     }
 
-    // Update dedupe tracking
-    _lastSnackBarAppliedCount = appliedCount;
-    _lastSnackBarTime = now;
-
-    // Use sheet messenger if available, otherwise fall back to page messenger
-    final messenger = _sheetMessengerKey?.currentState ?? ScaffoldMessenger.of(context);
-    messenger.clearSnackBars();
-
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('Se aplicaron $appliedCount sugerencias'),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 4),
-        behavior: SnackBarBehavior.floating,
-        dismissDirection: DismissDirection.horizontal,
-        showCloseIcon: true,
-        action: SnackBarAction(
-          label: 'Deshacer sugerencias',
-          textColor: Colors.white,
-          onPressed: () {
-            if (_undoSnapshot != null) {
-              _restoreFromSnapshot(_undoSnapshot!);
-              // Use same messenger for consistency
-              final undoMessenger = _sheetMessengerKey?.currentState ?? ScaffoldMessenger.of(context);
-              undoMessenger.clearSnackBars();
-              undoMessenger.showSnackBar(
-                const SnackBar(
-                  content: Text('Cambios revertidos'),
-                  duration: Duration(seconds: 2),
-                  behavior: SnackBarBehavior.floating,
-                  showCloseIcon: true,
-                ),
-              );
-            }
-          },
+    _activeMessenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: bgColor,
+          duration: const Duration(milliseconds: 1000),
+          behavior: SnackBarBehavior.floating,
         ),
-      ),
-    );
+      );
   }
 
   // ---------------------------------------------------------------------------
@@ -1075,6 +1011,193 @@ class _ClinicalHistoryWizardPageState
         );
       }
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // AI Plan Autocomplete (Step 6 - no dictation required)
+  // ---------------------------------------------------------------------------
+
+  /// Whether the AI plan autocomplete CTA should be shown.
+  ///
+  /// Visible if:
+  /// - Plan field is empty
+  /// - At least one of: diagnostico, motivo, or padecimientoActual is non-empty
+  /// - Not currently generating
+  bool get _canShowPlanAutocompleteCta {
+    if (_planController.text.trim().isNotEmpty) return false;
+    if (_isGeneratingPlan) return false;
+
+    // At least one context field must have content
+    final hasDiagnostico = _diagnosticoController.text.trim().isNotEmpty;
+    final hasMotivo = _motivoController.text.trim().isNotEmpty;
+    final hasPadecimiento = _padecimientoActualController.text.trim().isNotEmpty;
+
+    return hasDiagnostico || hasMotivo || hasPadecimiento;
+  }
+
+  /// Generates treatment plan suggestion using AI.
+  ///
+  /// Uses context from: diagnostico (required), motivo, padecimiento, exploración ORL.
+  /// Opens AISuggestionsSheet with a single section for user review.
+  Future<void> _generateAIPlanSuggestion() async {
+    if (_isGeneratingPlan) return;
+
+    final diagnostico = _diagnosticoController.text.trim();
+    final motivo = _motivoController.text.trim();
+    final padecimiento = _padecimientoActualController.text.trim();
+
+    // Build ORL exploration text from controllers
+    final orlParts = <String>[];
+    for (final entry in _orlControllers.entries) {
+      final text = entry.value.text.trim();
+      if (text.isNotEmpty) {
+        orlParts.add('${entry.key.toUpperCase()}: $text');
+      }
+    }
+    final exploracionOrl = orlParts.isNotEmpty ? orlParts.join('\n') : null;
+
+    // Validate context
+    if (diagnostico.isEmpty && motivo.isEmpty && padecimiento.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ingresa diagnóstico, motivo o padecimiento primero'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isGeneratingPlan = true;
+    });
+
+    try {
+      final aiService = ref.read(noteAIServiceProvider);
+
+      final planSuggestion = await aiService.suggestTreatmentPlan(
+        diagnostico: diagnostico.isNotEmpty ? diagnostico : motivo,
+        motivo: motivo.isNotEmpty ? motivo : null,
+        padecimientoActual: padecimiento.isNotEmpty ? padecimiento : null,
+        exploracionOrl: exploracionOrl,
+      );
+
+      if (!mounted) return;
+
+      if (planSuggestion.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo generar un plan con el contexto actual'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Build single section for AISuggestionsSheet
+      final sections = [
+        AISuggestionSection(
+          id: 'planTratamiento',
+          label: 'Plan de tratamiento (autocompletado)',
+          suggestion: planSuggestion,
+          currentValue: _planController.text,
+        ),
+      ];
+
+      // Show suggestions sheet
+      _showPlanAutocompleteSheet(sections);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isGeneratingPlan = false;
+        });
+      }
+    }
+  }
+
+  /// Shows the AI suggestions sheet for plan autocomplete.
+  ///
+  /// Similar to _showSuggestionsSheet but specifically for plan autocomplete.
+  void _showPlanAutocompleteSheet(List<AISuggestionSection> sections) {
+    // Capture parent messenger BEFORE opening sheet
+    _parentMessenger = ScaffoldMessenger.of(context);
+
+    // Create a fresh key for this sheet's ScaffoldMessenger
+    _sheetMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return ScaffoldMessenger(
+          key: _sheetMessengerKey,
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            body: AISuggestionsSheet(
+              sections: sections,
+              onApply: (editedSections, mode) {
+                _applySuggestions(editedSections, mode);
+              },
+              onApplySection: (editedSection, mode) {
+                _applySingleSectionWithFeedback(editedSection, mode);
+              },
+              onCancel: () => Navigator.pop(ctx),
+            ),
+          ),
+        );
+      },
+    ).whenComplete(() {
+      _sheetMessengerKey = null;
+      _parentMessenger = null;
+    });
+  }
+
+  /// Builds the CTA widget for plan autocomplete (Step 6 only).
+  ///
+  /// Shows: "Autocompletar plan con IA"
+  /// Microcopy: "Basado en diagnóstico/motivo. Revisa antes de aplicar."
+  Widget? _buildPlanAutocompleteCta() {
+    if (!_canShowPlanAutocompleteCta) return null;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextButton.icon(
+            onPressed: _isGeneratingPlan ? null : _generateAIPlanSuggestion,
+            icon: _isGeneratingPlan
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.auto_awesome, size: 18),
+            label: const Text('Autocompletar plan con IA'),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 12),
+            child: Text(
+              'Basado en diagnóstico/motivo. Revisa antes de aplicar.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.6),
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Builds the CTA widget for step-specific AI suggestions.
@@ -2094,6 +2217,10 @@ class _ClinicalHistoryWizardPageState
           ),
 
           const SizedBox(height: 16),
+
+          // AI Plan Autocomplete CTA (no dictation required)
+          if (_buildPlanAutocompleteCta() case final planCta?)
+            planCta,
 
           // Plan de tratamiento
           _WizardSectionCard(

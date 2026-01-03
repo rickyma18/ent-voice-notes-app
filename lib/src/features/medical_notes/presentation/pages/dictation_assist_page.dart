@@ -465,15 +465,84 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
       elevation: 2,
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: RecordingControls(
-          state: _recordingState,
-          isProcessing: _status == DictationStatus.transcribing,
-          onStart: _onStart,
-          onStop: _onStop,
-          onPause: _onPause,
-          onResume: _onResume,
-          size: RecordingControlsSize.large,
+        child: Column(
+          children: [
+            // Capability chips (informational, non-interactive)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildCapabilityChip(theme, Icons.description, 'Nota médica'),
+                const SizedBox(width: 8),
+                _buildCapabilityChip(theme, Icons.forum, 'Entrevista'),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            // Helper text
+            Text(
+              'La IA detecta el contexto automáticamente',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+
+            // Recording controls
+            RecordingControls(
+              state: _recordingState,
+              isProcessing: _status == DictationStatus.transcribing,
+              onStart: _onStart,
+              onStop: _onStop,
+              onPause: _onPause,
+              onResume: _onResume,
+              size: RecordingControlsSize.large,
+            ),
+
+            const SizedBox(height: 16),
+
+            // Secondary micro-copy
+            Text(
+              'Puedes dictar una nota médica o grabar una entrevista médico-paciente.\n'
+              'La IA se adapta automáticamente.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCapabilityChip(ThemeData theme, IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 14,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurface,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }
