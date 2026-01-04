@@ -38,20 +38,13 @@ extension BuildContextExtension on BuildContext {
   /// [DarkColorExtension] for dark themes. This provides seamless
   /// access to theme-appropriate colors throughout the application.
   ///
-  /// Throws if the theme extension is not found.
-  /// In debug, an assertion explains the missing registration.
-  /// In release, a null-check error will be thrown if not registered.
+  /// Falls back to [LightColorExtension] if the extension is not registered.
   ColorExtension get color {
     final ext = _theme.brightness == Brightness.light
         ? _theme.extension<LightColorExtension>()
         : _theme.extension<DarkColorExtension>();
 
-    assert(
-      ext != null,
-      'Ensure ColorExtension is added to ThemeData.extensions in src/theme_data.dart.',
-    );
-
-    return ext!;
+    return ext ?? const LightColorExtension();
   }
 
   /// Gets the text style extension from the current theme.
@@ -60,18 +53,9 @@ extension BuildContextExtension on BuildContext {
   /// This includes predefined text styles for different UI elements
   /// such as headings, body text, captions, etc.
   ///
-  /// Throws if the text style extension is not found.
-  /// In debug mode, an assertion explains the missing registration.
-  /// In release mode, a null-check error will be thrown if not registered.
+  /// Falls back to [TextStyleExtension] if the extension is not registered.
   TextStyleExtension get textStyle {
-    final ext = _theme.extension<TextStyleExtension>();
-
-    assert(
-      ext != null,
-      'Ensure TextStyleExtension is added to ThemeData.extensions in src/theme_data.dart.',
-    );
-
-    return ext!;
+    return _theme.extension<TextStyleExtension>() ?? const TextStyleExtension();
   }
 
   /// Gets the light theme data configuration.

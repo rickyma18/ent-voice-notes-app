@@ -10,7 +10,7 @@ import 'src/core/logger/riverpod_log.dart';
 import 'src/features/medical_notes/medical_notes_providers.dart';
 import 'src/presentation/core/application_state/localization_provider/localization_provider.dart';
 import 'src/presentation/core/router/router.dart';
-import 'src/presentation/core/theme/theme.dart';
+import 'ui/docsoft_ui.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -80,12 +80,12 @@ class MyApp extends ConsumerWidget {
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.5,
       child: MaterialApp.router(
+        debugShowCheckedModeBanner: false,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         locale: ref.watch(localizationProvider),
-        theme: context.lightTheme,
-        darkTheme: context.darkTheme,
-        themeMode: ThemeMode.system,
+        theme: DocsoftTheme.lightTheme,
+        themeMode: ThemeMode.light,
         routerConfig: ref.read(goRouterProvider),
       ),
     );
