@@ -92,16 +92,25 @@ dev_dependencies:
   dart_mappable_builder:
   retrofit_generator: '>=8.0.0 <10.0.0'
   freezed: ^3.0.6
+  flutter_launcher_icons: ^0.14.3
 
 flutter:
   uses-material-design: true
   generate: true
   assets:
     - lib/src/features/medical_notes/resources/medical_lexicon/
-
+    - assets/branding/icon/
+    - assets/branding/symbol/
+    - assets/branding/logo/
 flutter_gen:
   output: lib/src/presentation/core/gen
   line_length: 80
 
   integrations:
     flutter_svg: true
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/branding/icon/app_icon_1024.png"
+  remove_alpha_ios: true

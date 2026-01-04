@@ -47,29 +47,23 @@ class _SplashPageState extends State<SplashPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: DocsoftColors.primaryGradient,
-        ),
-        child: Center(
-          child: AnimatedBuilder(
-            animation: _controller,
-            builder: (context, child) {
-              return Transform.scale(
-                scale: _scale.value,
-                child: Opacity(
-                  opacity: _fade.value,
-                  child: child,
-                ),
-              );
-            },
-            child: const Icon(
-              Icons.mic_rounded,
-              size: 96,
-              color: Colors.white,
-            ),
+      backgroundColor: DocsoftColors.primary,
+      body: Center(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            return Transform.scale(
+              scale: _scale.value,
+              child: Opacity(
+                opacity: _fade.value,
+                child: child,
+              ),
+            );
+          },
+          child: Image.asset(
+            'assets/branding/symbol/docsoft_symbol.png',
+            width: 200,
+            height: 200,
           ),
         ),
       ),

@@ -330,10 +330,13 @@ class _DocsoftAuthSheetState extends State<DocsoftAuthSheet>
                           ),
                         ],
                       ),
-                      child: const Icon(
-                        Icons.medical_services_outlined,
-                        color: DocsoftColors.primary,
-                        size: 28,
+                      child: ClipOval(
+                        child: Image.asset(
+                          'assets/branding/symbol/docsoft_symbol.png',
+                          width: 36,
+                          height: 36,
+                          fit: BoxFit.cover,
+                        ),
                       ),
                     ),
                   ),
