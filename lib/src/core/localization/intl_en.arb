@@ -79,7 +79,7 @@
     "passwordLowerCaseValidation": "Password must contain at least one lowercase letter",
     "passwordUpperCaseValidation": "Password must contain at least one uppercase letter",
     "passwordSpecialCharValidation": "Password must contain at least one special character",
-    "medicalNotesTitle": "Docsoft ORL",
+    "medicalNotesTitle": "Docsoft",
     "medicalNotesSubtitle": "Voice-based clinical notes for ENT",
     "viewMedicalNotes": "View Medical Notes",
     "createNewNote": "Create New Note",

@@ -79,7 +79,7 @@
   "passwordLowerCaseValidation": "La contraseña debe contener al menos una letra minúscula",
   "passwordUpperCaseValidation": "La contraseña debe contener al menos una letra mayúscula",
   "passwordSpecialCharValidation": "La contraseña debe contener al menos un carácter especial",
-  "medicalNotesTitle": "Docsoft ORL",
+  "medicalNotesTitle": "Docsoft",
   "medicalNotesSubtitle": "Notas clínicas por voz para ORL",
   "viewMedicalNotes": "Ver notas médicas",
   "createNewNote": "Crear nueva nota",

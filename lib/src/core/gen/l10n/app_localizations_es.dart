@@ -193,7 +193,7 @@ class AppLocalizationsEs extends AppLocalizations {
       'La contraseña debe contener al menos un carácter especial';
 
   @override
-  String get medicalNotesTitle => 'Docsoft ORL';
+  String get medicalNotesTitle => 'Docsoft';
 
   @override
   String get medicalNotesSubtitle => 'Notas clínicas por voz para ORL';
