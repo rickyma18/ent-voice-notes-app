@@ -445,6 +445,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Create New Note'**
   String get createNewNote;
+
+  /// No description provided for @appTagline.
+  ///
+  /// In en, this message translates to:
+  /// **'Smart health, exceptional care'**
+  String get appTagline;
 }
 
 class _AppLocalizationsDelegate

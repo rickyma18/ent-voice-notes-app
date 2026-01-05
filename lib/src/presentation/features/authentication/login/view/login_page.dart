@@ -22,7 +22,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _shouldRemember = ValueNotifier<bool>(false);
-  
+
   // Auth sheet state
   bool _showSheet = false;
   bool _isLoginMode = true;
@@ -86,11 +86,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   void _onSubmit() {
     if (_formKey.currentState!.validate()) {
       if (_isLoginMode) {
-        ref.read(loginProvider.notifier).login(
-          email: _emailController.text,
-          password: _passwordController.text,
-          shouldRemember: _shouldRemember.value,
-        );
+        ref
+            .read(loginProvider.notifier)
+            .login(
+              email: _emailController.text,
+              password: _passwordController.text,
+              shouldRemember: _shouldRemember.value,
+            );
       } else {
         // Navigate to registration page for full registration flow
         _closeSheet();
@@ -123,23 +125,23 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         : Alignment.topLeft,
                     child: const LanguageSwitcherWidget(),
                   ),
-                  
+
                   const Spacer(flex: 2),
-                  
+
                   // Branding section
                   _buildBrandingSection(context),
-                  
+
                   const Spacer(flex: 3),
-                  
+
                   // Action buttons
                   _buildActionButtons(context),
-                  
+
                   const SizedBox(height: DocsoftSpacing.xl),
                 ],
               ),
             ),
           ),
-          
+
           // Dimmed overlay when sheet is visible
           if (_showSheet)
             Positioned.fill(
@@ -148,21 +150,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 300),
                   opacity: _showSheet ? 1.0 : 0.0,
-                  child: ColoredBox(
-                    color: Colors.black.withValues(alpha: 0.3),
-                  ),
+                  child: ColoredBox(color: Colors.black.withValues(alpha: 0.3)),
                 ),
               ),
             ),
-          
+
           // Animated auth sheet
           DocsoftAuthSheet(
             visible: _showSheet,
             onClose: _closeSheet,
             onOpen: () => _openSheet(loginMode: true),
-            title: _isLoginMode
-                ? '¡Bienvenido de vuelta!'
-                : 'Crear cuenta',
+            title: _isLoginMode ? '¡Bienvenido de vuelta!' : 'Crear cuenta',
             heightPercentage: 0.70,
             child: Form(
               key: _formKey,
@@ -178,29 +176,34 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Medical icon with gradient background
+        // Docsoft symbol with gradient background
         Container(
           width: 120,
           height: 120,
+          padding: const EdgeInsets.all(26), // un poco más de aire
           decoration: BoxDecoration(
             gradient: DocsoftColors.primaryGradient,
-            borderRadius: BorderRadius.circular(32),
+            borderRadius: BorderRadius.circular(28), // ligeramente más suave
             boxShadow: [
               BoxShadow(
-                color: DocsoftColors.primary.withValues(alpha: 0.3),
-                blurRadius: 24,
-                offset: const Offset(0, 12),
+                color: DocsoftColors.primary.withValues(alpha: 0.22),
+                blurRadius: 32,
+                spreadRadius: 2,
+                offset: const Offset(0, 16),
               ),
             ],
           ),
-          child: const Icon(
-            Icons.medical_services_rounded,
-            size: 56,
+          child: Image.asset(
+            'assets/branding/symbol/docsoft_symbol.png',
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
             color: Colors.white,
+            colorBlendMode: BlendMode.srcIn,
           ),
         ),
+
         const SizedBox(height: DocsoftSpacing.lg),
-        
+
         // App name
         Text(
           'Docsoft',
@@ -211,10 +214,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           ),
         ),
         const SizedBox(height: DocsoftSpacing.sm),
-        
+
         // Tagline
         Text(
-          'Salud inteligente, cuidado excepcional',
+          context.locale.appTagline,
           style: DocsoftTextStyles.body.copyWith(
             color: DocsoftColors.textSecondary,
             fontSize: 16,
@@ -260,7 +263,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           validator: context.validator.apply([RequiredValidation()]),
         ),
         const SizedBox(height: DocsoftSpacing.md),
-        
+
         DocsoftInput(
           controller: _passwordController,
           label: context.locale.password,
@@ -282,7 +285,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             PasswordValidation(minLength: 6),
           ]),
         ),
-        
+
         // Remember me & Forgot password (only for login)
         if (_isLoginMode) ...[
           const SizedBox(height: DocsoftSpacing.sm),
@@ -302,7 +305,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         child: Checkbox(
                           value: value,
                           onChanged: (v) => _shouldRemember.value = v ?? false,
-                          materialTapTargetSize: 
+                          materialTapTargetSize:
                               MaterialTapTargetSize.shrinkWrap,
                         ),
                       );
@@ -332,21 +335,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             ],
           ),
         ],
-        
+
         const SizedBox(height: DocsoftSpacing.lg),
-        
+
         // Submit button
         DocsoftPrimaryButton(
           onPressed: state.isLoading ? null : _onSubmit,
-          label: _isLoginMode 
-              ? context.locale.login 
+          label: _isLoginMode
+              ? context.locale.login
               : context.locale.continueAction,
           isLoading: state.isLoading,
           fullWidth: true,
         ),
-        
+
         const SizedBox(height: DocsoftSpacing.lg),
-        
+
         // Toggle mode link
         Center(
           child: GestureDetector(
@@ -358,14 +361,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 ),
                 children: [
                   TextSpan(
-                    text: _isLoginMode 
-                        ? context.locale.dontHaveAccount 
+                    text: _isLoginMode
+                        ? context.locale.dontHaveAccount
                         : context.locale.alreadyHaveAccount,
                   ),
                   const TextSpan(text: ' '),
                   TextSpan(
-                    text: _isLoginMode 
-                        ? context.locale.signUp 
+                    text: _isLoginMode
+                        ? context.locale.signUp
                         : context.locale.signIn,
                     style: DocsoftTextStyles.body.copyWith(
                       color: DocsoftColors.primary,

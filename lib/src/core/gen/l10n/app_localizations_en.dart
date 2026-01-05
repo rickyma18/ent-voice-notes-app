@@ -201,4 +201,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get createNewNote => 'Create New Note';
+
+  @override
+  String get appTagline => 'Smart health, exceptional care';
 }

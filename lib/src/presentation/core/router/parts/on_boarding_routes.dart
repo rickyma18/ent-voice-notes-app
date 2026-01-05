@@ -1,14 +1,10 @@
 part of '../router.dart';
 
+/// Onboarding routes.
+///
+/// Note: Splash route is defined in router.dart as the entry point.
 List<GoRoute> _onboardingRoutes(ref) {
   return [
-    GoRoute(
-      path: Routes.splash,
-      name: RouteNames.splash,
-      pageBuilder: (context, state) {
-        return const NoTransitionPage(child: SplashPage());
-      },
-    ),
     GoRoute(
       path: Routes.onboarding,
       name: RouteNames.onboarding,

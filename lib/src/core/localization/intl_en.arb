@@ -82,5 +82,6 @@
     "medicalNotesTitle": "Docsoft ORL",
     "medicalNotesSubtitle": "Voice-based clinical notes for ENT",
     "viewMedicalNotes": "View Medical Notes",
-    "createNewNote": "Create New Note"
+    "createNewNote": "Create New Note",
+    "appTagline": "Smart health, exceptional care"
 }

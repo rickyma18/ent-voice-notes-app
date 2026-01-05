@@ -76,6 +76,7 @@ dependencies:
   printing: ^5.13.4
   share_plus: ^10.1.4
   google_fonts: ^6.3.3
+  video_player: ^2.10.1
 
 dev_dependencies:
   flutter_test:
@@ -102,6 +103,7 @@ flutter:
     - assets/branding/icon/
     - assets/branding/symbol/
     - assets/branding/logo/
+    - assets/branding/animation/
 flutter_gen:
   output: lib/src/presentation/core/gen
   line_length: 80

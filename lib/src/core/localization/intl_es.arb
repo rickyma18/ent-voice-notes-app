@@ -82,5 +82,6 @@
   "medicalNotesTitle": "Docsoft ORL",
   "medicalNotesSubtitle": "Notas clínicas por voz para ORL",
   "viewMedicalNotes": "Ver notas médicas",
-  "createNewNote": "Crear nueva nota"
+  "createNewNote": "Crear nueva nota",
+  "appTagline": "Salud inteligente, cuidado excepcional"
 }

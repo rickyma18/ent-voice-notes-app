@@ -203,4 +203,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get createNewNote => 'Crear nueva nota';
+
+  @override
+  String get appTagline => 'Salud inteligente, cuidado excepcional';
 }
