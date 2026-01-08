@@ -20,8 +20,8 @@ abstract class DocsoftColors {
   /// Brand tones (use for subtle highlights, charts, waveforms, selection states)
   /// 10% / 20% / 35% alpha variants of primary
   static const Color primaryMuted = Color(0x1A2EC4B6); // 10%
-  static const Color primarySoft = Color(0x332EC4B6);  // 20%
-  static const Color primaryTint = Color(0x592EC4B6);  // 35%
+  static const Color primarySoft = Color(0x332EC4B6); // 20%
+  static const Color primaryTint = Color(0x592EC4B6); // 35%
 
   /// Optional accent for links / emphasis (kept aligned with brand)
   static const Color link = primaryDark;
@@ -30,6 +30,7 @@ abstract class DocsoftColors {
   // Backgrounds & Surfaces
   // ────────────────────────────────────────────────────────────────────────────
   static const Color background = Color(0xFFF8FAFC);
+  static const Color backgroundAlt = Color(0xFFFBF9FA);
   static const Color surface = Color(0xFFFFFFFF);
 
   /// Secondary surfaces (cards-in-cards, sheets, subtle panels)
@@ -98,7 +99,7 @@ abstract class DocsoftColors {
   /// Soft backgrounds for banners/chips
   static const Color successSoft = Color(0x1A22C55E); // 10%
   static const Color warningSoft = Color(0x1AF59E0B); // 10%
-  static const Color errorSoft = Color(0x1AEF4444);   // 10%
+  static const Color errorSoft = Color(0x1AEF4444); // 10%
 
   // ────────────────────────────────────────────────────────────────────────────
   // Inputs
@@ -118,10 +119,7 @@ abstract class DocsoftColors {
   );
 
   static const LinearGradient subtleBackgroundGradient = LinearGradient(
-    colors: [
-      Color(0xFFF8FAFC),
-      Color(0xFFF1F5F9),
-    ],
+    colors: [Color(0xFFF8FAFC), Color(0xFFF1F5F9)],
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
   );

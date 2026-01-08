@@ -15,7 +15,7 @@ import 'src/core/logger/riverpod_log.dart';
 import 'src/features/medical_notes/medical_notes_providers.dart';
 import 'src/presentation/core/application_state/localization_provider/localization_provider.dart';
 import 'src/presentation/core/router/router.dart';
-import 'src/presentation/core/theme/theme.dart';
+import 'ui/theme/docsoft_theme.dart';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // METHOD 1: Environment Variable (RECOMMENDED)
@@ -31,10 +31,7 @@ Future<void> mainWithEnvVariable() async {
   final sharedPrefs = await SharedPreferences.getInstance();
 
   // Get API key from environment variable
-  const apiKey = String.fromEnvironment(
-    'OPENAI_API_KEY',
-    defaultValue: '',
-  );
+  const apiKey = String.fromEnvironment('OPENAI_API_KEY', defaultValue: '');
 
   if (apiKey.isEmpty) {
     throw Exception(
@@ -136,9 +133,8 @@ class MyApp extends ConsumerWidget {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         locale: ref.watch(localizationProvider),
-        theme: context.lightTheme,
-        darkTheme: context.darkTheme,
-        themeMode: ThemeMode.system,
+        theme: DocsoftTheme.lightTheme,
+        themeMode: ThemeMode.light,
         routerConfig: ref.read(goRouterProvider),
       ),
     );

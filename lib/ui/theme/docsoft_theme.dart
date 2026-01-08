@@ -31,7 +31,7 @@ class DocsoftTheme {
     );
 
     return ThemeData(
-      useMaterial3: true,
+      useMaterial3: false,
       colorScheme: colorScheme,
 
       scaffoldBackgroundColor: DocsoftColors.background,
@@ -63,16 +63,17 @@ class DocsoftTheme {
         surfaceTintColor: Colors.transparent,
         elevation: 1,
         margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(
-          borderRadius: DocsoftRadii.card,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: DocsoftRadii.card),
       ),
 
       // Inputs
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: DocsoftColors.inputBackground,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
 
         border: OutlineInputBorder(
           borderRadius: DocsoftRadii.input,
@@ -156,9 +157,7 @@ class DocsoftTheme {
       bottomSheetTheme: const BottomSheetThemeData(
         backgroundColor: DocsoftColors.surface,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: DocsoftRadii.bottomSheet,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: DocsoftRadii.bottomSheet),
       ),
     );
   }

@@ -1,7 +1,13 @@
-part of '../view/login_page.dart';
+import 'package:flutter/material.dart';
 
-class _LoginForm extends StatefulWidget {
-  const _LoginForm({
+import '../../../../../core/extensions/app_localization.dart';
+import '../../../../../core/extensions/validation.dart';
+import '../../../../../core/utility/validation/validation.dart';
+import 'login_form_footer.dart';
+
+class LoginForm extends StatefulWidget {
+  const LoginForm({
+    super.key,
     required this.emailController,
     required this.passwordController,
     required this.shouldRemember,
@@ -12,10 +18,10 @@ class _LoginForm extends StatefulWidget {
   final ValueNotifier<bool> shouldRemember;
 
   @override
-  State<_LoginForm> createState() => _LoginFormState();
+  State<LoginForm> createState() => _LoginFormState();
 }
 
-class _LoginFormState extends State<_LoginForm> {
+class _LoginFormState extends State<LoginForm> {
   bool _isPasswordVisible = false;
 
   void _togglePasswordVisibility() {
@@ -51,7 +57,7 @@ class _LoginFormState extends State<_LoginForm> {
             PasswordValidation(minLength: 6),
           ]),
         ),
-        _FormFooter(shouldRemember: widget.shouldRemember),
+        LoginFormFooter(shouldRemember: widget.shouldRemember),
       ],
     );
   }

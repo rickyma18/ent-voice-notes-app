@@ -39,8 +39,12 @@ class DocsoftSecondaryButton extends StatelessWidget {
                 ],
               );
 
+    // Force the app theme style (prevents unexpected defaults anywhere)
+    final themedStyle = Theme.of(context).textButtonTheme.style;
+
     final widget = TextButton(
       onPressed: isLoading ? null : onPressed,
+      style: themedStyle,
       child: buttonContent,
     );
     

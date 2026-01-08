@@ -1,7 +1,13 @@
-part of '../view/login_page.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
-class _FormFooter extends ConsumerWidget {
-  const _FormFooter({required this.shouldRemember});
+import '../../../../../core/extensions/app_localization.dart';
+import '../../../../core/router/route_names.dart';
+import '../../../../core/theme/theme.dart';
+
+class LoginFormFooter extends ConsumerWidget {
+  const LoginFormFooter({super.key, required this.shouldRemember});
 
   final ValueNotifier<bool> shouldRemember;
 

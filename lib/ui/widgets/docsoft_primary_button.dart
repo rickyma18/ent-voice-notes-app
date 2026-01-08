@@ -21,7 +21,7 @@ class DocsoftPrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget buttonContent = isLoading
+    final content = isLoading
         ? const SizedBox(
             width: 20,
             height: 20,
@@ -42,19 +42,15 @@ class DocsoftPrimaryButton extends StatelessWidget {
             ],
           );
 
-    final widget = icon != null && !isLoading
-        ? ElevatedButton(
-            onPressed: isLoading ? null : onPressed,
-            child: buttonContent,
-          )
-        : ElevatedButton(
-            onPressed: isLoading ? null : onPressed,
-            child: buttonContent,
-          );
+    // 🔒 Force the app theme style (prevents unexpected defaults anywhere)
+    final themedStyle = Theme.of(context).elevatedButtonTheme.style;
 
-    if (fullWidth) {
-      return SizedBox(width: double.infinity, child: widget);
-    }
-    return widget;
+    final button = ElevatedButton(
+      onPressed: isLoading ? null : onPressed,
+      style: themedStyle,
+      child: content,
+    );
+
+    return fullWidth ? SizedBox(width: double.infinity, child: button) : button;
   }
 }
