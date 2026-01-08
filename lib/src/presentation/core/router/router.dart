@@ -156,9 +156,9 @@ GoRouter goRouter(Ref ref) {
       ..._onboardingRoutes(ref),
       ..._authenticationRoutes(ref),
 
-      // Feature routes
-      ..._medicalNotesRoutes(ref),
-      ..._patientsRoutes(ref),
+      // Feature routes moved to shell
+      // ..._medicalNotesRoutes(ref),
+      // ..._patientsRoutes(ref),
 
       // Main shell (home, profile)
       _shellRoutes(ref),

@@ -2,6 +2,8 @@
 
 import 'package:equatable/equatable.dart';
 
+import 'gender.dart';
+
 /// Doctor profile entity
 ///
 /// Represents a doctor's profile in the system.
@@ -12,6 +14,7 @@ class DoctorEntity extends Equatable {
     required this.email,
     this.firstName,
     this.lastName,
+    this.gender,
     this.createdAt,
     this.updatedAt,
   });
@@ -27,6 +30,9 @@ class DoctorEntity extends Equatable {
 
   /// Last name (optional)
   final String? lastName;
+
+  /// Gender (optional, used for greeting)
+  final Gender? gender;
 
   /// Profile creation timestamp
   final DateTime? createdAt;
@@ -50,6 +56,7 @@ class DoctorEntity extends Equatable {
     String? email,
     String? firstName,
     String? lastName,
+    Gender? gender,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -58,6 +65,7 @@ class DoctorEntity extends Equatable {
       email: email ?? this.email,
       firstName: firstName ?? this.firstName,
       lastName: lastName ?? this.lastName,
+      gender: gender ?? this.gender,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -69,6 +77,7 @@ class DoctorEntity extends Equatable {
         email,
         firstName,
         lastName,
+        gender,
         createdAt,
         updatedAt,
       ];

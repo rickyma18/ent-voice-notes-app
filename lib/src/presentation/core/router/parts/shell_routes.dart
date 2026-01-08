@@ -17,6 +17,10 @@ StatefulShellRoute _shellRoutes(ref) {
           ),
         ],
       ),
+      // Patients Branch
+      StatefulShellBranch(routes: _patientsRoutes(ref)),
+      // Medical Notes Branch
+      StatefulShellBranch(routes: _medicalNotesRoutes(ref)),
       StatefulShellBranch(
         routes: [
           GoRoute(

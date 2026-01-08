@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/extensions/app_localization.dart';
+import '../../widgets/docsoft_bottom_nav.dart';
 
 class NavigationShell extends StatefulWidget {
   const NavigationShell({super.key, required this.statefulNavigationShell});
@@ -17,21 +17,15 @@ class _NavigationShellState extends State<NavigationShell> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: widget.statefulNavigationShell,
-      bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: DocsoftBottomNav(
         currentIndex: widget.statefulNavigationShell.currentIndex,
         onTap: (index) {
-          widget.statefulNavigationShell.goBranch(index);
+          widget.statefulNavigationShell.goBranch(
+            index,
+            initialLocation:
+                index == widget.statefulNavigationShell.currentIndex,
+          );
         },
-        items: [
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.home),
-            label: context.locale.home,
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.person),
-            label: context.locale.profile,
-          ),
-        ],
       ),
     );
   }

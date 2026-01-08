@@ -16,6 +16,14 @@ abstract class DocsoftTextStyles {
     letterSpacing: -0.5,
   );
 
+  /// Headline Large: 28px, w700 (Primary greetings / hero text)
+  static TextStyle get headlineLarge => _base.copyWith(
+    fontSize: 28,
+    fontWeight: FontWeight.w700,
+    color: DocsoftColors.textPrimary,
+    letterSpacing: -0.75,
+  );
+
   /// Title: 20px, w600 (SemiBold)
   static TextStyle get title => _base.copyWith(
     fontSize: 20,
@@ -45,7 +53,7 @@ abstract class DocsoftTextStyles {
     fontWeight: FontWeight.w400,
     color: DocsoftColors.textSecondary,
   );
-  
+
   /// Button: 15px, w600 (SemiBold)
   static TextStyle get button => _base.copyWith(
     fontSize: 15,
