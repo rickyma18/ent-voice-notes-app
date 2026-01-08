@@ -1,10 +1,32 @@
+// =============================================================================
+// DEPRECATED: Use DocsoftFilterChips<PatientsFilter> instead
+// =============================================================================
+//
+// This widget has been replaced by the generic DocsoftFilterChips component
+// in lib/ui/components/filter_chips/docsoft_filter_chips.dart
+//
+// Migration:
+// - Import: import 'package:your_app/ui/docsoft_ui.dart';
+// - Import: import '../models/patients_filter.dart';
+// - Replace PatientFilterChips with:
+//     DocsoftFilterChips<PatientsFilter>(
+//       values: PatientsFilter.values,
+//       selected: _selectedFilter,
+//       labelBuilder: (filter) => filter.label,
+//       onSelected: (filter) => ...,
+//     )
+// =============================================================================
+
 import 'package:flutter/material.dart';
 
-import '../../../../../ui/theme/colors.dart';
-import '../../../../../ui/theme/radii.dart';
-import '../../../../../ui/theme/text_styles.dart';
+import '../../../../../ui/docsoft_ui.dart';
+import '../models/patients_filter.dart';
 
-/// Filter chips for patients list
+/// @deprecated Use [DocsoftFilterChips]<[PatientsFilter]> instead.
+///
+/// This widget is kept for backward compatibility.
+/// New code should use DocsoftFilterChips directly.
+@Deprecated('Use DocsoftFilterChips<PatientsFilter> instead')
 class PatientFilterChips extends StatelessWidget {
   const PatientFilterChips({
     super.key,
@@ -19,74 +41,17 @@ class PatientFilterChips extends StatelessWidget {
   /// Callback when a filter chip is selected
   final ValueChanged<int> onFilterSelected;
 
-  /// Optional callback for advanced filter button
+  /// Optional callback for advanced filter button (not supported in new widget)
   final VoidCallback? onAdvancedFilterTap;
-
-  static const List<String> _filters = [
-    'Todos',
-    'Con notas',
-    'Sin notas',
-    'Recientes',
-  ];
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 60,
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
-        scrollDirection: Axis.horizontal,
-        itemCount: _filters.length + 1, // +1 for settings icon
-        separatorBuilder: (context, index) => const SizedBox(width: 10),
-        itemBuilder: (context, index) {
-          if (index == _filters.length) {
-            // Advanced filter icon button at the end
-            return Container(
-              decoration: BoxDecoration(
-                color: DocsoftColors.surface,
-                borderRadius: BorderRadius.circular(DocsoftRadii.sm),
-                border: Border.all(color: DocsoftColors.border),
-              ),
-              child: IconButton(
-                icon: const Icon(
-                  Icons.tune_rounded,
-                  color: DocsoftColors.textSecondary,
-                  size: 20,
-                ),
-                onPressed: onAdvancedFilterTap,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
-              ),
-            );
-          }
-
-          final bool isSelected = selectedIndex == index;
-          return ChoiceChip(
-            label: Text(_filters[index]),
-            labelStyle: DocsoftTextStyles.caption.copyWith(
-              color: isSelected ? Colors.white : DocsoftColors.textSecondary,
-              fontWeight: FontWeight.w500,
-            ),
-            selected: isSelected,
-            onSelected: (bool selected) {
-              if (selected) {
-                onFilterSelected(index);
-              }
-            },
-            backgroundColor: DocsoftColors.surface,
-            selectedColor: DocsoftColors.primary,
-            side: isSelected
-                ? BorderSide.none
-                : const BorderSide(color: DocsoftColors.border),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(DocsoftRadii.sm),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            visualDensity: VisualDensity.compact,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          );
-        },
-      ),
+    // Delegate to DocsoftFilterChips
+    return DocsoftFilterChips<PatientsFilter>(
+      values: PatientsFilter.values,
+      selected: PatientsFilter.fromIndex(selectedIndex),
+      labelBuilder: (filter) => filter.label,
+      onSelected: (filter) => onFilterSelected(filter.toIndex()),
     );
   }
 }

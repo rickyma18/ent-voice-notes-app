@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../../../../../ui/theme/colors.dart';
+import '../../../../../ui/docsoft_ui.dart';
+import '../models/patients_filter.dart';
 import '../widgets/patient_card.dart';
-import '../widgets/patient_filter_chips.dart';
-import '../widgets/patient_search_bar.dart';
+
 import '../widgets/patients_header.dart';
 
 /// Patients page UI component
@@ -41,7 +41,7 @@ class PatientsPage extends StatefulWidget {
   /// Optional callback when search text changes
   final ValueChanged<String>? onSearchChanged;
 
-  /// Optional callback when filter changes
+  /// Optional callback when filter changes (legacy int for backward compat)
   final ValueChanged<int>? onFilterChanged;
 
   /// Whether the page is loading
@@ -52,7 +52,7 @@ class PatientsPage extends StatefulWidget {
 }
 
 class _PatientsPageState extends State<PatientsPage> {
-  int _selectedFilterIndex = 0;
+  PatientsFilter _selectedFilter = PatientsFilter.all;
   final TextEditingController _searchController = TextEditingController();
 
   @override
@@ -69,17 +69,21 @@ class _PatientsPageState extends State<PatientsPage> {
         child: Column(
           children: [
             PatientsHeader(onNewPatient: widget.onNewPatient),
-            PatientSearchBar(
+            DocsoftSearchBar(
+              hintText: 'Buscar paciente por nombre o teléfono',
               controller: _searchController,
               onChanged: widget.onSearchChanged,
             ),
-            PatientFilterChips(
-              selectedIndex: _selectedFilterIndex,
-              onFilterSelected: (index) {
+            DocsoftFilterChips<PatientsFilter>(
+              values: PatientsFilter.values,
+              selected: _selectedFilter,
+              labelBuilder: (filter) => filter.label,
+              onSelected: (filter) {
                 setState(() {
-                  _selectedFilterIndex = index;
+                  _selectedFilter = filter;
                 });
-                widget.onFilterChanged?.call(index);
+                // Call legacy callback with int index for backward compatibility
+                widget.onFilterChanged?.call(filter.toIndex());
               },
             ),
             Expanded(
@@ -109,14 +113,12 @@ class _PatientsPageState extends State<PatientsPage> {
             Icon(
               Icons.people_outline,
               size: 64,
-              color: DocsoftColors.textTertiary.withValues(alpha: 0.5),
+              color: DocsoftColors.textTertiary.withOpacity(0.5),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'No hay pacientes registrados',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
+              style: DocsoftTextStyles.subtitle.copyWith(
                 color: DocsoftColors.textSecondary,
               ),
             ),
@@ -128,9 +130,13 @@ class _PatientsPageState extends State<PatientsPage> {
 
   Widget _buildPatientsList() {
     return ListView.separated(
-      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
+      padding: const EdgeInsets.symmetric(
+        horizontal: DocsoftSpacing.screenPadding,
+        vertical: DocsoftSpacing.sm,
+      ),
       itemCount: widget.patients.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 12),
+      separatorBuilder: (context, index) =>
+          const SizedBox(height: DocsoftSpacing.itemSpacing),
       itemBuilder: (context, index) {
         final patient = widget.patients[index];
         return PatientCard(

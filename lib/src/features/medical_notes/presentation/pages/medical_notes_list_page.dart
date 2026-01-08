@@ -1,3 +1,21 @@
+// =============================================================================
+// DEPRECATED: This page has been replaced by notes_list_page.dart
+// =============================================================================
+//
+// The new NotesListPage provides:
+// - Refactored UI with Docsoft design system tokens
+// - Separated widgets (NotesHeader, NotesSearchBar, NotesFilterChips, NoteCard)
+// - Dedicated NotesListController for state management
+// - Cleaner swipe-to-delete UX (no visible trash icon)
+//
+// This file is kept for reference and backward compatibility.
+// Do not use this class directly - use NotesListPage instead.
+//
+// Migration path:
+// - Replace MedicalNotesListPage with NotesListPage in all routes
+// - Update any direct references to use the new page
+// =============================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +30,9 @@ import '../controllers/medical_notes_controller.dart';
 import '../../domain/entities/medical_note_entity.dart';
 import '../widgets/note_type_selector_bottom_sheet.dart';
 
+/// @deprecated Use [NotesListPage] instead.
+/// This page has been replaced by the refactored version in notes_list_page.dart.
+@Deprecated('Use NotesListPage instead. See notes_list_page.dart for the new implementation.')
 class MedicalNotesListPage extends ConsumerStatefulWidget {
   const MedicalNotesListPage({super.key, this.patient, this.patientId});
 

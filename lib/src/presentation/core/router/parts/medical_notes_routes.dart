@@ -9,11 +9,8 @@ List<RouteBase> _medicalNotesRoutes(ref) {
         // US 4.2: Accept patient context from navigation extra
         final patient = state.extra as PatientEntity?;
 
-        return MaterialPage(
-          child: MedicalNotesListPage(
-            patient: patient,
-          ),
-        );
+        // Use new refactored NotesListPage
+        return MaterialPage(child: NotesListPage(patient: patient));
       },
       routes: [
         GoRoute(
@@ -52,7 +49,9 @@ List<RouteBase> _medicalNotesRoutes(ref) {
                 child: Scaffold(
                   appBar: AppBar(title: const Text('Error')),
                   body: const Center(
-                    child: Text('Error: No doctor ID found. Please log in again.'),
+                    child: Text(
+                      'Error: No doctor ID found. Please log in again.',
+                    ),
                   ),
                 ),
               );
@@ -86,9 +85,7 @@ List<RouteBase> _medicalNotesRoutes(ref) {
               );
             }
 
-            return MaterialPage(
-              child: MedicalNoteDetailPage(note: note),
-            );
+            return MaterialPage(child: MedicalNoteDetailPage(note: note));
           },
         ),
         // Clinical History Wizard route
@@ -130,7 +127,9 @@ List<RouteBase> _medicalNotesRoutes(ref) {
                 child: Scaffold(
                   appBar: AppBar(title: const Text('Error')),
                   body: const Center(
-                    child: Text('Error: No doctor ID found. Please log in again.'),
+                    child: Text(
+                      'Error: No doctor ID found. Please log in again.',
+                    ),
                   ),
                 ),
               );
@@ -184,7 +183,9 @@ List<RouteBase> _medicalNotesRoutes(ref) {
                 child: Scaffold(
                   appBar: AppBar(title: const Text('Error')),
                   body: const Center(
-                    child: Text('Error: No doctor ID found. Please log in again.'),
+                    child: Text(
+                      'Error: No doctor ID found. Please log in again.',
+                    ),
                   ),
                 ),
               );
@@ -219,9 +220,7 @@ List<RouteBase> _medicalNotesRoutes(ref) {
               );
             }
 
-            return MaterialPage(
-              child: DictationAssistPage(patient: patient),
-            );
+            return MaterialPage(child: DictationAssistPage(patient: patient));
           },
         ),
       ],

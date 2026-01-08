@@ -13,3 +13,8 @@ export 'widgets/docsoft_input.dart';
 export 'widgets/docsoft_info_chip.dart';
 export 'widgets/docsoft_snackbar.dart';
 export 'widgets/docsoft_auth_sheet.dart';
+export 'widgets/docsoft_secondary_action_button.dart';
+
+// Components
+export 'components/filter_chips/docsoft_filter_chips.dart';
+export 'components/search/docsoft_search_bar.dart';

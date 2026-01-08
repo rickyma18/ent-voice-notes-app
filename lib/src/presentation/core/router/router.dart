@@ -11,6 +11,7 @@ import '../../../features/medical_notes/presentation/pages/create_medical_note_p
 import '../../../features/medical_notes/presentation/pages/dictation_assist_page.dart';
 import '../../../features/medical_notes/presentation/pages/medical_note_detail_page.dart';
 import '../../../features/medical_notes/presentation/pages/medical_notes_list_page.dart';
+import '../../../features/medical_notes/presentation/pages/notes_list_page.dart';
 import '../../../features/medical_notes/presentation/pages/surgical_note_wizard_page.dart';
 import '../../../features/patients/domain/entities/patient_entity.dart';
 import '../../../features/patients/presentation/pages/create_patient_page.dart';
@@ -25,6 +26,7 @@ import '../../features/authentication/login/view/login_page.dart';
 import '../../features/authentication/registration/view/registration_page.dart';
 import '../../features/home/view/home_page.dart';
 import '../../features/onboarding/view/onboarding_page.dart';
+import '../../features/patients/view/patients_page.dart';
 import '../../features/profile/view/edit_profile_page.dart';
 import '../../features/profile/view/profile_page.dart';
 import '../../features/splash/view/splash_page.dart';
