@@ -11,6 +11,8 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/base/result.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 import '../../../patients/patients_providers.dart';
+import '../../application/legacy_fields_adapter.dart';
+import '../../application/structured_fields_schema_v1.dart';
 import '../../application/vital_signs_parser.dart';
 import '../../domain/entities/attachment_entity.dart';
 import '../../domain/entities/medical_note_entity.dart';
@@ -87,6 +89,9 @@ class _ClinicalHistoryWizardPageState
 
   // Raw transcript from DictationAssistPage (for future AI processing)
   String? _rawTranscript;
+
+  // Cached structured fields from AI (v1 schema)
+  Map<String, dynamic>? _structuredFieldsV1;
 
   // ScaffoldMessenger key for SnackBars inside the AI suggestions BottomSheet
   // This ensures SnackBars appear ABOVE the BottomSheet, not behind it
@@ -516,18 +521,23 @@ class _ClinicalHistoryWizardPageState
 
     try {
       final aiService = ref.read(noteAIServiceProvider);
-      final suggestions = await aiService.suggestStructuredFields(
+
+      // Use V2 structured extraction for better field mapping
+      final structuredV1 = await aiService.suggestStructuredFieldsV2(
         _rawTranscript!,
       );
 
       if (!mounted) return;
 
+      // Cache structured response for later use
+      _structuredFieldsV1 = structuredV1;
+
       setState(() {
         _isGeneratingSuggestions = false;
       });
 
-      // Build sections for the sheet
-      final sections = _buildSuggestionsForSheet(suggestions);
+      // Build sections for the sheet using structured v1 data
+      final sections = _buildSuggestionsFromStructuredV1(structuredV1);
 
       if (sections.isEmpty || sections.every((s) => !s.hasContent)) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -539,9 +549,10 @@ class _ClinicalHistoryWizardPageState
         return;
       }
 
-      // Show suggestions sheet
+      // Show suggestions sheet (pass legacy format for compatibility)
+      final legacySuggestions = LegacyFieldsAdapter.toLegacy(structuredV1);
       if (mounted) {
-        _showSuggestionsSheet(sections, suggestions);
+        _showSuggestionsSheet(sections, legacySuggestions);
       }
     } catch (e) {
       if (mounted) {
@@ -556,6 +567,124 @@ class _ClinicalHistoryWizardPageState
         );
       }
     }
+  }
+
+  /// Builds suggestion sections directly from structured v1 data.
+  ///
+  /// This method maps v1 schema fields directly to UI sections,
+  /// bypassing the regex parsing that was error-prone.
+  List<AISuggestionSection> _buildSuggestionsFromStructuredV1(
+    Map<String, dynamic> v1Data,
+  ) {
+    final structured = StructuredFieldsV1(v1Data);
+
+    return [
+      AISuggestionSection(
+        id: 'motivoConsulta',
+        label: 'Motivo de consulta',
+        suggestion: structured.motivoConsulta ?? '',
+        currentValue: _motivoController.text,
+      ),
+      AISuggestionSection(
+        id: 'heredofamiliares',
+        label: 'Antecedentes heredofamiliares',
+        suggestion: structured.antecedentesHeredofamiliares ?? '',
+        currentValue: _antecedentesHeredofamiliaresController.text,
+      ),
+      AISuggestionSection(
+        id: 'noPatologicos',
+        label: 'Antecedentes NO patologicos',
+        suggestion: structured.antecedentesNoPatologicos ?? '',
+        currentValue: _antecedentesNoPatologicosController.text,
+      ),
+      AISuggestionSection(
+        id: 'patologicos',
+        label: 'Antecedentes patologicos',
+        suggestion: _buildPatologicosWithExtras(structured),
+        currentValue: _antecedentesPatologicosController.text,
+      ),
+      AISuggestionSection(
+        id: 'padecimientoActual',
+        label: 'Padecimiento actual',
+        suggestion: structured.padecimientoActual ?? '',
+        currentValue: _padecimientoActualController.text,
+      ),
+      // ORL sections - direct mapping
+      AISuggestionSection(
+        id: 'otoscopia',
+        label: 'Otoscopia',
+        suggestion: structured.otoscopia ?? '',
+        currentValue: _orlControllers['otoscopia']?.text ?? '',
+      ),
+      AISuggestionSection(
+        id: 'rinoscopia',
+        label: 'Rinoscopia',
+        suggestion: structured.rinoscopia ?? '',
+        currentValue: _orlControllers['rinoscopia']?.text ?? '',
+      ),
+      AISuggestionSection(
+        id: 'orofaringe',
+        label: 'Orofaringe',
+        suggestion: structured.orofaringe ?? '',
+        currentValue: _orlControllers['orofaringe']?.text ?? '',
+      ),
+      AISuggestionSection(
+        id: 'cuello',
+        label: 'Cuello',
+        suggestion: structured.cuello ?? '',
+        currentValue: _orlControllers['cuello']?.text ?? '',
+      ),
+      AISuggestionSection(
+        id: 'laringoscopia',
+        label: 'Laringoscopia',
+        suggestion: structured.laringoscopia ?? '',
+        currentValue: _orlControllers['laringoscopia']?.text ?? '',
+      ),
+      AISuggestionSection(
+        id: 'diagnostico',
+        label: 'Diagnostico',
+        suggestion: _buildDiagnosticoString(structured),
+        currentValue: _diagnosticoController.text,
+      ),
+      AISuggestionSection(
+        id: 'planTratamiento',
+        label: 'Plan de tratamiento',
+        suggestion: structured.planTratamiento ?? '',
+        currentValue: _planController.text,
+      ),
+    ];
+  }
+
+  /// Builds patologicos string including alergias and medicamentos.
+  String _buildPatologicosWithExtras(StructuredFieldsV1 structured) {
+    final parts = <String>[];
+
+    if (structured.antecedentesPatologicos != null) {
+      parts.add(structured.antecedentesPatologicos!);
+    }
+
+    if (structured.alergias.isNotEmpty) {
+      parts.add('Alergias: ${structured.alergias.join(", ")}');
+    }
+
+    if (structured.medicamentosHabituales.isNotEmpty) {
+      parts.add('Medicamentos habituales: ${structured.medicamentosHabituales.join(", ")}');
+    }
+
+    return parts.join('\n');
+  }
+
+  /// Builds diagnostico string with tipo if present.
+  String _buildDiagnosticoString(StructuredFieldsV1 structured) {
+    final texto = structured.diagnosticoTexto;
+    if (texto == null) return '';
+
+    final tipo = structured.diagnosticoTipo;
+    if (tipo != null && tipo != 'definitivo') {
+      return '$texto ($tipo)';
+    }
+
+    return texto;
   }
 
   /// Builds suggestion sections for the sheet using current controller values.
@@ -789,9 +918,10 @@ class _ClinicalHistoryWizardPageState
     for (final section in sections) {
       if (!section.hasContent) continue;
 
+      // Use isEffectivelyEmpty to include placeholders as "empty"
       final shouldApply =
           mode == ApplyMode.replace ||
-          (mode == ApplyMode.onlyEmpty && section.isCurrentEmpty);
+          (mode == ApplyMode.onlyEmpty && section.isEffectivelyEmpty);
 
       if (shouldApply) {
         _setControllerValue(section.id, section.suggestion);
@@ -810,9 +940,10 @@ class _ClinicalHistoryWizardPageState
   void _applySingleSectionWithFeedback(AISuggestionSection section, ApplyMode mode) {
     if (!section.hasContent) return;
 
+    // Use isEffectivelyEmpty to include placeholders as "empty"
     final shouldApply =
         mode == ApplyMode.replace ||
-        (mode == ApplyMode.onlyEmpty && section.isCurrentEmpty);
+        (mode == ApplyMode.onlyEmpty && section.isEffectivelyEmpty);
 
     if (!shouldApply) return;
 
@@ -971,9 +1102,17 @@ class _ClinicalHistoryWizardPageState
 
     try {
       final aiService = ref.read(noteAIServiceProvider);
-      final suggestions = await aiService.suggestStructuredFields(
-        _rawTranscript!,
-      );
+
+      // Use cached structured fields if available, otherwise generate new
+      Map<String, dynamic> structuredV1;
+      if (_structuredFieldsV1 != null) {
+        structuredV1 = _structuredFieldsV1!;
+      } else {
+        structuredV1 = await aiService.suggestStructuredFieldsV2(
+          _rawTranscript!,
+        );
+        _structuredFieldsV1 = structuredV1;
+      }
 
       if (!mounted) return;
 
@@ -981,8 +1120,9 @@ class _ClinicalHistoryWizardPageState
         _isGeneratingSuggestions = false;
       });
 
-      // Build filtered sections for this step
-      final stepSections = _buildSectionsForStep(suggestions, stepIndex);
+      // Build all sections from structured data, then filter for this step
+      final allSections = _buildSuggestionsFromStructuredV1(structuredV1);
+      final stepSections = _filterSectionsForStep(allSections, stepIndex);
 
       if (stepSections.isEmpty || stepSections.every((s) => !s.hasContent)) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -995,8 +1135,9 @@ class _ClinicalHistoryWizardPageState
       }
 
       // Show suggestions sheet with filtered sections
+      final legacySuggestions = LegacyFieldsAdapter.toLegacy(structuredV1);
       if (mounted) {
-        _showSuggestionsSheet(stepSections, suggestions);
+        _showSuggestionsSheet(stepSections, legacySuggestions);
       }
     } catch (e) {
       if (mounted) {

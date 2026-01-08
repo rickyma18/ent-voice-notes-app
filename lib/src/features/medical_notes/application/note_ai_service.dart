@@ -73,6 +73,25 @@ abstract class NoteAIService {
     String rawTranscript,
   );
 
+  /// Genera campos estructurados usando schema v1.
+  ///
+  /// NUEVO: Retorna Map<String, dynamic> con estructura anidada:
+  /// - antecedentes.heredofamiliares, antecedentes.patologicos, etc.
+  /// - exploracion_orl.otoscopia, exploracion_orl.rinoscopia, etc.
+  /// - diagnostico.texto, diagnostico.tipo
+  ///
+  /// Esta versión:
+  /// - NO resume ni redacta, solo EXTRAE
+  /// - Incluye TODAS las claves del schema (null si no hay datos)
+  /// - Soporta arrays (alergias, medicamentos, estudios)
+  /// - Detecta contradicciones en el dictado
+  /// - Incluye retry automático si JSON es inválido
+  ///
+  /// Ver structured_fields_schema_v1.dart para el schema completo.
+  Future<Map<String, dynamic>> suggestStructuredFieldsV2(
+    String rawTranscript,
+  );
+
   /// Genera sugerencia de plan de tratamiento basándose en contexto clínico.
   ///
   /// NO requiere transcripción de dictado. Usa campos ya ingresados.
@@ -118,6 +137,47 @@ class NoteAIServiceStub implements NoteAIService {
       'diagnostico': 'Diagnóstico simulado basado en IA.',
       'planTratamiento': 'IA recomienda: tratamiento simulado.',
       // Los demás campos son opcionales y pueden omitirse.
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> suggestStructuredFieldsV2(
+    String rawTranscript,
+  ) async {
+    await Future.delayed(const Duration(milliseconds: 600));
+
+    return {
+      'motivo_consulta': 'Paciente refiere: $rawTranscript',
+      'padecimiento_actual': null,
+      'antecedentes': {
+        'heredofamiliares': null,
+        'no_patologicos': null,
+        'patologicos': null,
+        'alergias': <String>[],
+        'medicamentos_habituales': <String>[],
+        'quirurgicos': null,
+        'gineco_obstetricos': null,
+      },
+      'exploracion_orl': {
+        'otoscopia': null,
+        'rinoscopia': null,
+        'orofaringe': null,
+        'cuello': null,
+        'laringoscopia': null,
+      },
+      'diagnostico': {
+        'texto': 'Diagnóstico simulado basado en IA.',
+        'tipo': 'presuntivo',
+      },
+      'plan_tratamiento': 'IA recomienda: tratamiento simulado.',
+      'estudios_indicados': <String>[],
+      'notas_adicionales': null,
+      'contradicciones': <String>[],
+      'metadata': {
+        'idioma': 'es',
+        'fuente': 'dictado',
+        'version_schema': '1.0.0',
+      },
     };
   }
 

@@ -10,6 +10,9 @@ import '../../../core/logger/log.dart';
 import 'medical_lexicon_loader.dart';
 import 'medical_transcript_post_processor.dart';
 import 'note_ai_service.dart';
+import 'structured_fields_parser.dart';
+import 'structured_fields_prompt_v2.dart';
+import 'structured_fields_schema_v1.dart';
 
 /// Production implementation of NoteAIService using OpenAI APIs.
 ///
@@ -61,8 +64,9 @@ class NoteAIServiceImpl implements NoteAIService {
   /// Backoff delays in seconds for each retry attempt
   static const List<int> _retryDelaySeconds = [3, 8];
 
-  /// Allowed field names that the AI can generate.
+  /// Allowed field names that the AI can generate (LEGACY - v1 format).
   /// Any fields not in this list will be filtered out.
+  /// @deprecated Use suggestStructuredFieldsV2 for new code.
   static const _allowedFields = {
     'motivoConsulta',
     'antecedentes',
@@ -308,6 +312,113 @@ class NoteAIServiceImpl implements NoteAIService {
       throw NoteAIException(
         'Error al generar campos estructurados: ${e.toString()}',
       );
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> suggestStructuredFieldsV2(
+    String rawTranscript,
+  ) async {
+    try {
+      Log.info('🤖 [V2] Generating structured fields from transcript');
+
+      if (rawTranscript.trim().isEmpty) {
+        throw NoteAIException(
+          'La transcripción está vacía. No se puede generar la nota.',
+        );
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // AUDIT: Preserve original transcript for clinical safety review
+      // ─────────────────────────────────────────────────────────────────────────
+      Log.info('📝 [AUDIT][V2] LENGTH=${rawTranscript.length}');
+      Log.info('📝 [AUDIT][V2] HASH=${rawTranscript.hashCode}');
+      if (!kReleaseMode) {
+        final preview = rawTranscript.length > 150
+            ? '${rawTranscript.substring(0, 150)}...'
+            : rawTranscript;
+        Log.info('📝 [AUDIT][V2][DEBUG] PREVIEW="$preview"');
+      }
+
+      // Build prompts using v2 extraction-only prompt
+      final userPrompt = StructuredFieldsPromptV2.buildUserPrompt(rawTranscript);
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // CALL GPT-4 API WITH STRUCTURED EXTRACTION
+      // ─────────────────────────────────────────────────────────────────────────
+      final response = await _openAIClient.generateStructuredFieldsV2(
+        systemPrompt: StructuredFieldsPromptV2.systemPrompt,
+        userPrompt: userPrompt,
+        temperature: LLMTemperatureSettings.extraction,
+      );
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // PARSE AND VALIDATE RESPONSE
+      // ─────────────────────────────────────────────────────────────────────────
+      var parsed = StructuredFieldsParser.tryParse(response);
+
+      if (parsed == null) {
+        Log.warning('⚠️ [V2] Initial parse failed, attempting repair retry');
+        parsed = await _attemptRepairRetry(response);
+      }
+
+      if (parsed == null) {
+        Log.error('❌ [V2] All parse attempts failed, falling back to empty schema');
+        parsed = getEmptySchemaV1();
+      }
+
+      // Validate structure
+      final validationErrors = StructuredFieldsParser.validate(parsed);
+      if (validationErrors.isNotEmpty) {
+        Log.warning('⚠️ [V2] Validation warnings: ${validationErrors.join(", ")}');
+      }
+
+      Log.info(
+        '🤖 [V2] Generated structured fields: ${parsed.keys.length} root keys',
+      );
+
+      return parsed;
+    } on NoteAIException {
+      rethrow;
+    } catch (e) {
+      Log.error('🤖 [V2] Error generating structured fields: $e');
+      throw NoteAIException(
+        'Error al generar campos estructurados: ${e.toString()}',
+      );
+    }
+  }
+
+  /// Attempts to repair invalid JSON by sending it back to GPT with repair prompt.
+  ///
+  /// Returns parsed result or null if repair also fails.
+  Future<Map<String, dynamic>?> _attemptRepairRetry(String invalidJson) async {
+    try {
+      Log.info('🔧 [V2] Attempting JSON repair retry');
+
+      final errors = <String>['JSON parsing failed or missing required structure'];
+      final repairPrompt = StructuredFieldsPromptV2.buildRepairPrompt(
+        invalidJson,
+        errors,
+      );
+
+      final response = await _openAIClient.generateStructuredFieldsV2(
+        systemPrompt: 'Eres un corrector de JSON. Corrige el JSON para que cumpla el schema.',
+        userPrompt: repairPrompt,
+        temperature: LLMTemperatureSettings.repair,
+      );
+
+      final parsed = StructuredFieldsParser.tryParse(response);
+
+      if (parsed != null) {
+        Log.info('✅ [V2] Repair retry successful');
+        return parsed;
+      }
+
+      Log.warning('⚠️ [V2] Repair retry also failed');
+      return null;
+    } catch (e) {
+      Log.error('❌ [V2] Repair retry error: $e');
+      return null;
     }
   }
 
@@ -622,6 +733,8 @@ class OpenAIClient {
   ///
   /// STRATEGY C: The prompt now includes STT correction instructions,
   /// so GPT-4 corrects transcription errors AND structures in one call.
+  ///
+  /// @deprecated Use generateStructuredFieldsV2 for new code.
   Future<String> generateStructuredFields(String prompt) async {
     try {
       final requestBody = {
@@ -642,6 +755,81 @@ class OpenAIClient {
         'temperature': 0.3, // Lower temperature for more deterministic output
         'max_tokens': 2000,
         'response_format': {'type': 'json_object'}, // Enforce JSON output
+      };
+
+      final response = await _dio.post(
+        _chatEndpoint,
+        data: requestBody,
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $apiKey',
+            'Content-Type': 'application/json',
+          },
+          validateStatus: (status) => status! < 500,
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final content = response.data['choices'][0]['message']['content'];
+        return content.toString();
+      } else if (response.statusCode == 401) {
+        throw NoteAIException(
+          'Error de autenticación con OpenAI. Verifica tu API key.',
+        );
+      } else if (response.statusCode == 429) {
+        throw NoteAIException(
+          'Límite de solicitudes excedido. Intenta más tarde.',
+        );
+      } else {
+        final errorMsg =
+            response.data?['error']?['message'] ?? 'Error desconocido';
+        throw NoteAIException(
+          'Error de OpenAI: $errorMsg',
+        );
+      }
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout) {
+        throw NoteAIException(
+          'Tiempo de espera agotado. Verifica tu conexión a internet.',
+        );
+      } else if (e.type == DioExceptionType.connectionError) {
+        throw NoteAIException(
+          'No se pudo conectar con OpenAI. Verifica tu conexión a internet.',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  /// Generates structured medical note fields using GPT-4 with schema v1.
+  ///
+  /// [systemPrompt] - System instructions for the model.
+  /// [userPrompt] - User prompt with transcript and schema.
+  /// [temperature] - Temperature setting (0.0-1.0). Lower = more deterministic.
+  ///
+  /// Returns the raw JSON string from the model.
+  Future<String> generateStructuredFieldsV2({
+    required String systemPrompt,
+    required String userPrompt,
+    double temperature = 0.1,
+  }) async {
+    try {
+      final requestBody = {
+        'model': _gptModel,
+        'messages': [
+          {
+            'role': 'system',
+            'content': systemPrompt,
+          },
+          {
+            'role': 'user',
+            'content': userPrompt,
+          },
+        ],
+        'temperature': temperature,
+        'max_tokens': 3000, // Increased for larger structured output
+        'response_format': {'type': 'json_object'},
       };
 
       final response = await _dio.post(

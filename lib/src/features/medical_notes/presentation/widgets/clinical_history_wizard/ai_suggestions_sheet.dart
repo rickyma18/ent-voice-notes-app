@@ -17,9 +17,91 @@ class AISuggestionSection {
   final String currentValue;
 
   bool get hasContent => suggestion.trim().isNotEmpty;
+
+  /// Whether applying the suggestion would overwrite real clinical data.
+  ///
+  /// Returns false if currentValue is empty OR is just a placeholder/negation.
+  /// This allows "Aplicar solo a campos vacíos" to work with placeholders.
   bool get wouldOverwrite =>
-      currentValue.trim().isNotEmpty && suggestion.trim().isNotEmpty;
+      !isEffectivelyEmpty && suggestion.trim().isNotEmpty;
+
+  /// Whether the current value is literally empty (no text at all).
   bool get isCurrentEmpty => currentValue.trim().isEmpty;
+
+  /// Whether the current value is "effectively empty" for AI suggestion purposes.
+  ///
+  /// A field is effectively empty if:
+  /// 1. It's literally empty, OR
+  /// 2. It contains only a short placeholder/negation pattern
+  ///
+  /// This allows the doctor to use quick placeholders like "Niega DM" and still
+  /// have AI suggestions apply via "Aplicar solo a campos vacíos".
+  ///
+  /// Conservative criteria:
+  /// - Max 25 characters (longer text is likely real clinical data)
+  /// - Matches known placeholder patterns
+  bool get isEffectivelyEmpty {
+    final trimmed = currentValue.trim();
+    if (trimmed.isEmpty) return true;
+
+    // Longer content is likely real clinical data, not a placeholder
+    if (trimmed.length > 25) return false;
+
+    return _isPlaceholderContent(trimmed.toLowerCase());
+  }
+
+  /// Whether the field has a placeholder that will be treated as empty.
+  ///
+  /// Used for UI indicator: shows "Placeholder" badge instead of "Campo vacío".
+  bool get hasPlaceholder => isEffectivelyEmpty && !isCurrentEmpty;
+
+  /// Checks if text matches known placeholder patterns.
+  ///
+  /// VERY CONSERVATIVE - only matches clear, explicit placeholders.
+  /// Uses whitelist approach to avoid false positives with real clinical data.
+  ///
+  /// Key distinction:
+  /// - "Niega DM" → abbreviation placeholder ✅
+  /// - "Niega fiebre" → real clinical finding ❌
+  static bool _isPlaceholderContent(String text) {
+    // Exact phrase matches - clearly placeholders
+    const exactMatches = {
+      'sin datos',
+      'sin antecedentes',
+      'no refiere',
+      'interrogado y negado',
+      'n/a',
+      'na',
+      '-',
+      '--',
+      '---',
+      'ninguno',
+      'nada',
+      'nada relevante',
+      'sin relevancia',
+    };
+    if (exactMatches.contains(text)) return true;
+
+    // Whitelist: negation + medical ABBREVIATION only
+    // These are quick placeholders, NOT clinical findings
+    // "niega dm" ✅ placeholder | "niega fiebre" ❌ clinical data
+    const abbreviationPlaceholders = {
+      // Diabetes
+      'niega dm', 'sin dm', 'no dm',
+      'niega dm2', 'sin dm2', 'no dm2',
+      // Hipertensión
+      'niega has', 'sin has', 'no has',
+      'niega hta', 'sin hta', 'no hta',
+      // Antecedentes (abreviaturas)
+      'niega app', 'sin app', 'no app',
+      'niega apnp', 'sin apnp', 'no apnp',
+      'niega ahf', 'sin ahf', 'no ahf',
+      // Otros comunes
+      'niega alergias', 'sin alergias', 'no alergias',
+      'niega qx', 'sin qx', 'no qx',
+    };
+    return abbreviationPlaceholders.contains(text);
+  }
 }
 
 /// Apply mode for suggestions.
@@ -152,10 +234,14 @@ class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final effectiveSections = _effectiveSections;
+    // Count fields that are effectively empty (includes placeholders)
     final emptyCount =
-        effectiveSections.where((s) => s.isCurrentEmpty && s.hasContent).length;
+        effectiveSections.where((s) => s.isEffectivelyEmpty && s.hasContent).length;
     final overwriteCount =
         effectiveSections.where((s) => s.wouldOverwrite).length;
+    // Count how many have placeholders (for informational purposes)
+    final placeholderCount =
+        effectiveSections.where((s) => s.hasPlaceholder && s.hasContent).length;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.85,
@@ -210,7 +296,9 @@ class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '$emptyCount campos vacios, $overwriteCount con contenido',
+                            placeholderCount > 0
+                                ? '$emptyCount aplicables ($placeholderCount con placeholder), $overwriteCount con datos'
+                                : '$emptyCount campos vacios, $overwriteCount con contenido',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                             ),
@@ -428,6 +516,29 @@ class _SuggestionCard extends StatelessWidget {
                       ],
                     ),
                   )
+                else if (section.hasPlaceholder)
+                  // Field has placeholder text that will be replaced
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.edit_note, size: 14, color: Colors.blue),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Placeholder',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: Colors.blue,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
                 else if (section.isCurrentEmpty)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -522,8 +633,8 @@ class _SuggestionCard extends StatelessWidget {
                   label: const Text('Editar'),
                 ),
                 const SizedBox(width: 8),
-                // Apply/Replace button
-                if (section.isCurrentEmpty)
+                // Apply/Replace button - use isEffectivelyEmpty for safe apply
+                if (section.isEffectivelyEmpty)
                   TextButton.icon(
                     onPressed: () => onApply(ApplyMode.onlyEmpty),
                     icon: const Icon(Icons.add, size: 18),
