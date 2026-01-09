@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../../../ui/docsoft_ui.dart';
+import '../../../../ui/docsoft_ui.dart';
 
 /// List item for profile sections (settings, actions, etc.).
 /// Supports optional subtitle, trailing text, chevron, and destructive state.

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../ui/theme/colors.dart';
+import '../../ui/theme/colors.dart';
 
 class DocsoftBottomNav extends StatelessWidget {
   final int currentIndex;

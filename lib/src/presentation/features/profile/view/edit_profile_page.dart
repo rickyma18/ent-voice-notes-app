@@ -1,261 +1,191 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import '../../../../ui/docsoft_ui.dart';
 
-import '../../../../core/extensions/app_localization.dart';
-import '../providers/current_doctor_profile_provider.dart';
-
-/// Legacy profile edit page.
+/// Edit Profile Page - Dumb UI
 ///
-/// @Deprecated('Will be replaced by DocSoft Profile Edit page.')
-///
-/// This page is kept for backwards compatibility but will be replaced
-/// with a DocSoft-styled version in a future update.
-@Deprecated('Legacy profile edit page. Will be replaced by DocSoft Profile Edit.')
-class EditProfilePage extends ConsumerStatefulWidget {
-  const EditProfilePage({super.key});
+/// A stateless presentation component for editing user profile.
+/// All logic is handled externally via callbacks.
+class EditProfilePage extends StatelessWidget {
+  const EditProfilePage({
+    super.key,
+    required this.firstNameController,
+    required this.lastNameController,
+    required this.emailController,
+    required this.initials,
+    this.photoUrl,
+    required this.onBack,
+    required this.onSave,
+    required this.onChangePhoto,
+    this.isLoading = false,
+  });
 
-  @override
-  ConsumerState<EditProfilePage> createState() => _EditProfilePageState();
-}
+  /// Controller for first name input
+  final TextEditingController firstNameController;
 
-class _EditProfilePageState extends ConsumerState<EditProfilePage> {
-  final _formKey = GlobalKey<FormState>();
-  final _firstNameController = TextEditingController();
-  final _lastNameController = TextEditingController();
-  final _emailController = TextEditingController();
+  /// Controller for last name input
+  final TextEditingController lastNameController;
 
-  bool _isInitialized = false;
-  String? _doctorId;
+  /// Controller for email input (read-only)
+  final TextEditingController emailController;
 
-  @override
-  void dispose() {
-    _firstNameController.dispose();
-    _lastNameController.dispose();
-    _emailController.dispose();
-    super.dispose();
-  }
+  /// Initials to display in avatar when no photo
+  final String initials;
 
-  void _initializeFields(String? firstName, String? lastName, String email, String id) {
-    if (!_isInitialized) {
-      _firstNameController.text = firstName ?? '';
-      _lastNameController.text = lastName ?? '';
-      _emailController.text = email;
-      _doctorId = id;
-      _isInitialized = true;
-    }
-  }
+  /// Optional photo URL for avatar
+  final String? photoUrl;
 
-  Future<void> _saveProfile() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_doctorId == null) return;
+  /// Callback when back button is pressed
+  final VoidCallback onBack;
 
-    final success = await ref.read(updateDoctorProfileProvider.notifier).updateProfile(
-          doctorId: _doctorId!,
-          firstName: _firstNameController.text.trim(),
-          lastName: _lastNameController.text.trim(),
-          email: _emailController.text.trim(),
-        );
+  /// Callback when save button is pressed
+  final VoidCallback onSave;
 
-    if (!mounted) return;
+  /// Callback when avatar is tapped to change photo
+  final VoidCallback onChangePhoto;
 
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Perfil actualizado correctamente'),
-          backgroundColor: Theme.of(context).colorScheme.primary,
-        ),
-      );
-      context.pop();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Error al actualizar el perfil'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-    }
-  }
+  /// Whether save action is in progress
+  final bool isLoading;
+
+  // Layout constants
+  static const double _headerHeight = 220.0;
+  static const double _avatarSize = 120.0;
+  static const double _overlap = 50.0;
 
   @override
   Widget build(BuildContext context) {
-    final profileAsync = ref.watch(currentDoctorProfileProvider);
-    final updateState = ref.watch(updateDoctorProfileProvider);
-    final theme = Theme.of(context);
-    final isLoading = updateState.isLoading;
-
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Editar perfil'),
-        actions: [
-          TextButton(
-            onPressed: isLoading ? null : _saveProfile,
-            child: isLoading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Guardar'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new,
+            color: DocsoftColors.onPrimary,
           ),
-        ],
-      ),
-      body: profileAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Text('Error: $error'),
+          onPressed: onBack,
         ),
-        data: (doctor) {
-          if (doctor == null) {
-            return const Center(
-              child: Text('No hay perfil disponible'),
-            );
-          }
+        title: Text(
+          "Editar perfil",
+          style: DocsoftTextStyles.appBarTitle.copyWith(
+            color: DocsoftColors.onPrimary,
+          ),
+        ),
+        centerTitle: true,
+      ),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            // Header with overlapping avatar
+            Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                // 1. Gradient Header (title in AppBar, not here)
+                const DocsoftProfileHeader(height: _headerHeight),
 
-          _initializeFields(
-            doctor.firstName,
-            doctor.lastName,
-            doctor.email,
-            doctor.id,
-          );
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  const SizedBox(height: 16),
-
-                  // Avatar
-                  CircleAvatar(
-                    radius: 48,
-                    backgroundColor: theme.colorScheme.primaryContainer,
-                    child: Text(
-                      _getInitials(
-                        _firstNameController.text,
-                        _lastNameController.text,
-                      ),
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        color: theme.colorScheme.onPrimaryContainer,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                // 2. Avatar positioned to overlap header
+                Positioned(
+                  bottom: -(_avatarSize / 2),
+                  child: DocsoftEditableAvatar(
+                    initials: initials,
+                    imageUrl: photoUrl,
+                    size: _avatarSize,
+                    onTap: onChangePhoto,
                   ),
+                ),
+              ],
+            ),
 
-                  const SizedBox(height: 32),
+            // Space to compensate for avatar overflow
+            SizedBox(height: (_avatarSize / 2) + DocsoftSpacing.lg),
 
-                  // First Name Field
-                  TextFormField(
-                    controller: _firstNameController,
-                    decoration: InputDecoration(
-                      labelText: context.locale.firstName,
-                      prefixIcon: const Icon(Icons.person_outline),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+            // 3. Form Card
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: DocsoftSpacing.screenPadding,
+              ),
+              child: DocsoftCard(
+                padding: const EdgeInsets.all(DocsoftSpacing.lg),
+                child: Column(
+                  children: [
+                    // First Name
+                    DocsoftInput(
+                      controller: firstNameController,
+                      label: "Nombre",
+                      prefixIcon: const Icon(
+                        Icons.person_outline_rounded,
+                        color: DocsoftColors.primary,
                       ),
                     ),
-                    textInputAction: TextInputAction.next,
-                    onChanged: (_) => setState(() {}),
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return context.locale.isRequired;
-                      }
-                      return null;
-                    },
-                  ),
 
-                  const SizedBox(height: 16),
+                    const SizedBox(height: DocsoftSpacing.lg),
 
-                  // Last Name Field
-                  TextFormField(
-                    controller: _lastNameController,
-                    decoration: InputDecoration(
-                      labelText: context.locale.lastName,
-                      prefixIcon: const Icon(Icons.person_outline),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                    // Last Name
+                    DocsoftInput(
+                      controller: lastNameController,
+                      label: "Apellido",
+                      prefixIcon: const Icon(
+                        Icons.person_outline_rounded,
+                        color: DocsoftColors.primary,
                       ),
                     ),
-                    textInputAction: TextInputAction.next,
-                    onChanged: (_) => setState(() {}),
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return context.locale.isRequired;
-                      }
-                      return null;
-                    },
-                  ),
 
-                  const SizedBox(height: 16),
+                    const SizedBox(height: DocsoftSpacing.lg),
 
-                  // Email Field (read-only)
-                  TextFormField(
-                    controller: _emailController,
-                    decoration: InputDecoration(
-                      labelText: context.locale.email,
-                      prefixIcon: const Icon(Icons.email_outlined),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      filled: true,
-                      fillColor: theme.colorScheme.surfaceContainerHighest,
-                    ),
-                    readOnly: true,
-                    style: TextStyle(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  // Helper text for email
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text(
-                      'El correo electrónico no puede ser modificado',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                    // Email (disabled)
+                    DocsoftInput(
+                      controller: emailController,
+                      label: "Correo electrónico",
+                      enabled: false,
+                      prefixIcon: const Icon(
+                        Icons.email_outlined,
+                        color: DocsoftColors.disabledForeground,
                       ),
                     ),
-                  ),
-
-                  const SizedBox(height: 32),
-
-                  // Save Button
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: isLoading ? null : _saveProfile,
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      child: isLoading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('Guardar cambios'),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          );
-        },
+
+            // Helper text for email
+            Padding(
+              padding: EdgeInsets.only(
+                left: DocsoftSpacing.screenPadding + DocsoftSpacing.md,
+                top: DocsoftSpacing.sm,
+                right: DocsoftSpacing.screenPadding,
+              ),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  "El correo electrónico no puede ser modificado por seguridad.",
+                  style: DocsoftTextStyles.caption.copyWith(
+                    color: DocsoftColors.textTertiary,
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: DocsoftSpacing.xl),
+
+            // 4. Save Button
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: DocsoftSpacing.screenPadding,
+              ),
+              child: DocsoftPrimaryButton(
+                label: "Guardar cambios",
+                onPressed: isLoading ? null : onSave,
+                isLoading: isLoading,
+                fullWidth: true,
+              ),
+            ),
+
+            // Bottom padding for scroll
+            const SizedBox(height: DocsoftSpacing.xl),
+          ],
+        ),
       ),
     );
-  }
-
-  String _getInitials(String firstName, String lastName) {
-    final first = firstName.trim().isNotEmpty ? firstName.trim()[0].toUpperCase() : '';
-    final last = lastName.trim().isNotEmpty ? lastName.trim()[0].toUpperCase() : '';
-    if (first.isEmpty && last.isEmpty) return '?';
-    return '$first$last';
   }
 }

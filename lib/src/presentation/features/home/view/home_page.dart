@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../../ui/theme/colors.dart';
-import '../../../../../ui/theme/radii.dart';
-import '../../../../../ui/theme/text_styles.dart';
+import '../../../../ui/theme/colors.dart';
+import '../../../../ui/theme/radii.dart';
+import '../../../../ui/theme/text_styles.dart';
 import '../../../../features/doctors/domain/entities/doctor_entity.dart';
 import '../../../../features/doctors/domain/entities/gender.dart';
 import '../../../core/application_state/auth_state_provider/auth_state_provider.dart';
@@ -67,11 +67,8 @@ class HomePage extends ConsumerWidget {
             HomeHeader(
               greeting: greeting,
               brand: 'DocSoft',
-              onProfileTap: () => _showProfileActionsSheet(
-                context,
-                ref,
-                greeting,
-              ),
+              onProfileTap: () =>
+                  _showProfileActionsSheet(context, ref, greeting),
             ),
 
             const SizedBox(height: 28),
@@ -222,13 +219,8 @@ class HomePage extends ConsumerWidget {
       builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: DocsoftColors.surface,
-          shape: const RoundedRectangleBorder(
-            borderRadius: DocsoftRadii.card,
-          ),
-          title: Text(
-            'Cerrar sesión',
-            style: DocsoftTextStyles.title,
-          ),
+          shape: const RoundedRectangleBorder(borderRadius: DocsoftRadii.card),
+          title: Text('Cerrar sesión', style: DocsoftTextStyles.title),
           content: Text(
             '¿Estás seguro de que deseas cerrar sesión?',
             style: DocsoftTextStyles.body.copyWith(
@@ -348,11 +340,7 @@ class _ProfileActionTile extends StatelessWidget {
                       : DocsoftColors.surfaceAlt,
                   borderRadius: BorderRadius.circular(DocsoftRadii.sm),
                 ),
-                child: Icon(
-                  icon,
-                  size: 20,
-                  color: color,
-                ),
+                child: Icon(icon, size: 20, color: color),
               ),
               const SizedBox(width: 14),
               Expanded(

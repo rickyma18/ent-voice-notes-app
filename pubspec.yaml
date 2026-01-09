@@ -105,7 +105,9 @@ flutter:
     - assets/branding/symbol/
     - assets/branding/logo/
     - assets/branding/animation/
+    - assets/branding/states/
     - .env
+    
 flutter_gen:
   output: lib/src/presentation/core/gen
   line_length: 80

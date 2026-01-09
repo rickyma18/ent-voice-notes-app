@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../../../../ui/docsoft_ui.dart';
+import '../../../../ui/docsoft_ui.dart';
 import '../../../../core/base/result.dart';
 import '../../../../presentation/core/application_state/logout_provider/logout_provider.dart';
 import '../../../../presentation/core/router/route_names.dart';
@@ -346,7 +346,7 @@ class _ProfilePageWrapperState extends ConsumerState<ProfilePageWrapper> {
             Text('Escríbenos a:', style: DocsoftTextStyles.body),
             const SizedBox(height: DocsoftSpacing.sm),
             SelectableText(
-              'soporte@docsoft.app',
+              'admin@whistletime.com.mx',
               style: DocsoftTextStyles.subtitle.copyWith(
                 color: DocsoftColors.primary,
                 fontWeight: FontWeight.bold,

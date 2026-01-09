@@ -118,13 +118,12 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               error.toString(),
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 24),
             FilledButton.icon(
-              onPressed: () =>
-                  ref.invalidate(currentDoctorProfileProvider),
+              onPressed: () => ref.invalidate(currentDoctorProfileProvider),
               icon: const Icon(Icons.refresh),
               label: const Text('Reintentar'),
             ),
@@ -155,8 +154,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             Text(
               'Inicia sesión para ver tu perfil',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),
@@ -313,9 +312,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: BorderSide(
-              color: theme.colorScheme.outlineVariant,
-            ),
+            side: BorderSide(color: theme.colorScheme.outlineVariant),
           ),
           child: Column(children: children),
         ),
@@ -342,9 +339,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       ),
       title: Text(
         title,
-        style: theme.textTheme.bodyLarge?.copyWith(
-          color: titleColor,
-        ),
+        style: theme.textTheme.bodyLarge?.copyWith(color: titleColor),
       ),
       subtitle: subtitle != null
           ? Text(
@@ -354,7 +349,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               ),
             )
           : null,
-      trailing: trailing ??
+      trailing:
+          trailing ??
           (onTap != null
               ? Icon(
                   Icons.chevron_right,
@@ -379,7 +375,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             Text('Escríbenos a:'),
             SizedBox(height: 8),
             SelectableText(
-              'soporte@docsoft.app',
+              'admin@whistletime.com.mx',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
           ],

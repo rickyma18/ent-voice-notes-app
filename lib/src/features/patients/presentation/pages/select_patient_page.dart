@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../../ui/docsoft_ui.dart';
+import '../../../../ui/docsoft_ui.dart';
 import '../../../../presentation/core/router/route_names.dart';
 import '../../../../presentation/features/patients/widgets/patient_card.dart';
 import '../../../medical_notes/domain/entities/medical_note_entity.dart';
@@ -95,7 +95,7 @@ class _SelectPatientPageState extends ConsumerState<SelectPatientPage> {
                   const SizedBox(width: DocsoftSpacing.sm),
                   Text(
                     'Seleccionar paciente',
-                    style: DocsoftTextStyles.headline,
+                    style: DocsoftTextStyles.appBarTitle,
                   ),
                 ],
               ),

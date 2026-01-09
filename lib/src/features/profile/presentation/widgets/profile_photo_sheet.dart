@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../../../ui/docsoft_ui.dart';
+import '../../../../ui/docsoft_ui.dart';
 
 /// Bottom sheet for profile photo actions.
 /// Displays options to take photo, choose from gallery, or remove photo.

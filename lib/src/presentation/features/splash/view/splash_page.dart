@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 
-import '../../../../../ui/theme/colors.dart';
+import '../../../../ui/theme/colors.dart';
 import '../../../../core/logger/log.dart';
 import '../../../core/application_state/startup_coordinator/startup_coordinator_provider.dart';
 

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../../../../ui/theme/colors.dart';
-import '../../../../../ui/theme/radii.dart';
-import '../../../../../ui/theme/text_styles.dart';
+import '../../../../ui/theme/colors.dart';
+import '../../../../ui/theme/radii.dart';
+import '../../../../ui/theme/text_styles.dart';
 
 /// Header widget displaying greeting and brand name with DocSoft symbol
 class HomeHeader extends StatelessWidget {
@@ -26,10 +26,7 @@ class HomeHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                greeting,
-                style: DocsoftTextStyles.headlineLarge,
-              ),
+              Text(greeting, style: DocsoftTextStyles.headlineLarge),
               const SizedBox(height: 2),
               Text(
                 brand,

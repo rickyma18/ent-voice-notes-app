@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
-import '../../../../../ui/docsoft_ui.dart';
+import '../../../../ui/docsoft_ui.dart';
 
 /// Section title for profile page sections (Cuenta, Aplicación, Sesión).
 class ProfileSectionTitle extends StatelessWidget {
-  const ProfileSectionTitle({
-    super.key,
-    required this.title,
-  });
+  const ProfileSectionTitle({super.key, required this.title});
 
   /// Section title text
   final String title;

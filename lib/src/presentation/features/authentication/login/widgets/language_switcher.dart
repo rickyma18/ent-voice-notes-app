@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../../../ui/docsoft_ui.dart';
+import '../../../../../ui/docsoft_ui.dart';
 import '../../../../../core/extensions/app_localization.dart';
 import '../../../../../core/gen/l10n/app_localizations.dart';
 import '../../../../core/application_state/localization_provider/localization_provider.dart';
@@ -46,10 +46,7 @@ class LanguageSwitcherWidget extends ConsumerWidget {
       decoration: BoxDecoration(
         color: DocsoftColors.surface,
         borderRadius: BorderRadius.circular(DocsoftRadii.full),
-        border: Border.all(
-          color: DocsoftColors.border,
-          width: 1,
-        ),
+        border: Border.all(color: DocsoftColors.border, width: 1),
         boxShadow: [
           BoxShadow(
             color: DocsoftColors.textPrimary.withValues(alpha: 0.04),

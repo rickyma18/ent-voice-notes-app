@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../../../../ui/docsoft_ui.dart';
+import '../../../../../ui/docsoft_ui.dart';
 import '../../models/note_list_item_ui_model.dart';
 
 /// Card widget displaying a single note in the list.
@@ -9,11 +9,7 @@ import '../../models/note_list_item_ui_model.dart';
 /// - Tap to view details
 /// - No visible delete icon (cleaner UX)
 class NoteCard extends StatelessWidget {
-  const NoteCard({
-    super.key,
-    required this.note,
-    required this.onTap,
-  });
+  const NoteCard({super.key, required this.note, required this.onTap});
 
   final NoteListItemUiModel note;
   final VoidCallback onTap;
@@ -157,10 +153,7 @@ class DismissibleNoteCard extends StatelessWidget {
           color: DocsoftColors.error,
         ),
       ),
-      child: NoteCard(
-        note: note,
-        onTap: onTap,
-      ),
+      child: NoteCard(note: note, onTap: onTap),
     );
   }
 }

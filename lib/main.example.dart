@@ -15,7 +15,7 @@ import 'src/core/logger/riverpod_log.dart';
 import 'src/features/medical_notes/medical_notes_providers.dart';
 import 'src/presentation/core/application_state/localization_provider/localization_provider.dart';
 import 'src/presentation/core/router/router.dart';
-import 'ui/theme/docsoft_theme.dart';
+import 'src/ui/theme/docsoft_theme.dart';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // METHOD 1: Environment Variable (RECOMMENDED)

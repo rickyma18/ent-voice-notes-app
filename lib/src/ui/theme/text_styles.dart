@@ -60,4 +60,12 @@ abstract class DocsoftTextStyles {
     fontWeight: FontWeight.w600,
     letterSpacing: 0.5,
   );
+
+  /// App Bar Title: 18px, w600 (SemiBold) - for transparent/lightweight app bars
+  static TextStyle get appBarTitle => _base.copyWith(
+    fontSize: 18,
+    fontWeight: FontWeight.w600,
+    color: DocsoftColors.textPrimary,
+    letterSpacing: 0.5,
+  );
 }

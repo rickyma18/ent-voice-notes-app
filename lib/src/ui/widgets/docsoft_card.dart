@@ -5,6 +5,7 @@ import '../theme/spacing.dart';
 
 /// Docsoft Card
 /// A standardized card with surface color, consistent radius, and subtle shadow.
+/// Optionally supports a subtle border for section grouping.
 class DocsoftCard extends StatelessWidget {
   const DocsoftCard({
     super.key,
@@ -13,6 +14,9 @@ class DocsoftCard extends StatelessWidget {
     this.margin,
     this.onTap,
     this.color = DocsoftColors.surface,
+    this.showBorder = false,
+    this.borderColor,
+    this.borderWidth = 0.5,
   });
 
   final Widget child;
@@ -21,6 +25,15 @@ class DocsoftCard extends StatelessWidget {
   final VoidCallback? onTap;
   final Color color;
 
+  /// Whether to show a subtle border around the card
+  final bool showBorder;
+
+  /// Border color (defaults to DocsoftColors.border)
+  final Color? borderColor;
+
+  /// Border width (defaults to 0.5)
+  final double borderWidth;
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -28,6 +41,12 @@ class DocsoftCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         borderRadius: DocsoftRadii.card,
+        border: showBorder
+            ? Border.all(
+                color: borderColor ?? DocsoftColors.border,
+                width: borderWidth,
+              )
+            : null,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.05),
@@ -41,10 +60,7 @@ class DocsoftCard extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: DocsoftRadii.card,
-          child: Padding(
-            padding: padding,
-            child: child,
-          ),
+          child: Padding(padding: padding, child: child),
         ),
       ),
     );

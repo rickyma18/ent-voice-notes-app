@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../../../../ui/docsoft_ui.dart';
+import '../../../../ui/docsoft_ui.dart';
 import '../models/profile_ui_model.dart';
-import '../widgets/profile_header.dart';
 import '../widgets/profile_list_item.dart';
 import '../widgets/profile_photo_sheet.dart';
 import '../widgets/profile_section_title.dart';
@@ -15,7 +14,7 @@ class ProfilePage extends StatelessWidget {
     super.key,
     required this.profile,
     this.appVersion = 'v1.0.0',
-    this.supportEmail = 'soporte@docsoft.app',
+    this.supportEmail = 'admin@whistletime.com.mx',
     this.isUploadingPhoto = false,
     this.onEditProfile,
     this.onSupport,
@@ -79,12 +78,12 @@ class ProfilePage extends StatelessWidget {
       backgroundColor: DocsoftColors.background,
       body: Stack(
         children: [
-          // Fixed header background
+          // Fixed header background - using DocsoftProfileHeader from UI kit
           const Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: ProfileHeader(),
+            child: DocsoftProfileHeader(title: 'Perfil', showTitle: true),
           ),
 
           // Scrollable content
@@ -113,9 +112,7 @@ class ProfilePage extends StatelessWidget {
                                   Positioned.fill(
                                     child: Container(
                                       decoration: BoxDecoration(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.5,
-                                        ),
+                                        color: DocsoftColors.scrim,
                                         shape: BoxShape.circle,
                                       ),
                                       child: const Center(
@@ -154,14 +151,18 @@ class ProfilePage extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const ProfileSectionTitle(title: 'Cuenta'),
-                            _ProfileCard(
-                              children: [
-                                ProfileListItem(
-                                  icon: Icons.edit_outlined,
-                                  title: 'Editar perfil',
-                                  onTap: onEditProfile,
-                                ),
-                              ],
+                            DocsoftCard(
+                              showBorder: true,
+                              padding: EdgeInsets.zero,
+                              child: Column(
+                                children: [
+                                  ProfileListItem(
+                                    icon: Icons.edit_outlined,
+                                    title: 'Editar perfil',
+                                    onTap: onEditProfile,
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
@@ -177,26 +178,30 @@ class ProfilePage extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const ProfileSectionTitle(title: 'Aplicación'),
-                            _ProfileCard(
-                              children: [
-                                ProfileListItem(
-                                  icon: Icons.help_outline,
-                                  title: 'Soporte',
-                                  subtitle: supportEmail,
-                                  onTap: onSupport,
-                                ),
-                                const Divider(
-                                  height: 1,
-                                  thickness: 0.5,
-                                  color: DocsoftColors.divider,
-                                ),
-                                ProfileListItem(
-                                  icon: Icons.info_outline,
-                                  title: 'Versión',
-                                  trailingText: appVersion,
-                                  showChevron: false,
-                                ),
-                              ],
+                            DocsoftCard(
+                              showBorder: true,
+                              padding: EdgeInsets.zero,
+                              child: Column(
+                                children: [
+                                  ProfileListItem(
+                                    icon: Icons.help_outline,
+                                    title: 'Soporte',
+                                    subtitle: supportEmail,
+                                    onTap: onSupport,
+                                  ),
+                                  const Divider(
+                                    height: 1,
+                                    thickness: 0.5,
+                                    color: DocsoftColors.divider,
+                                  ),
+                                  ProfileListItem(
+                                    icon: Icons.info_outline,
+                                    title: 'Versión',
+                                    trailingText: appVersion,
+                                    showChevron: false,
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
@@ -212,26 +217,30 @@ class ProfilePage extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const ProfileSectionTitle(title: 'Sesión'),
-                            _ProfileCard(
-                              children: [
-                                ProfileListItem(
-                                  icon: Icons.logout_rounded,
-                                  title: 'Cerrar sesión',
-                                  isDestructive: true,
-                                  onTap: onLogout,
-                                ),
-                                const Divider(
-                                  height: 1,
-                                  thickness: 0.5,
-                                  color: DocsoftColors.divider,
-                                ),
-                                ProfileListItem(
-                                  icon: Icons.delete_forever_outlined,
-                                  title: 'Eliminar cuenta',
-                                  isDestructive: true,
-                                  onTap: onDeleteAccount,
-                                ),
-                              ],
+                            DocsoftCard(
+                              showBorder: true,
+                              padding: EdgeInsets.zero,
+                              child: Column(
+                                children: [
+                                  ProfileListItem(
+                                    icon: Icons.logout_rounded,
+                                    title: 'Cerrar sesión',
+                                    isDestructive: true,
+                                    onTap: onLogout,
+                                  ),
+                                  const Divider(
+                                    height: 1,
+                                    thickness: 0.5,
+                                    color: DocsoftColors.divider,
+                                  ),
+                                  ProfileListItem(
+                                    icon: Icons.delete_forever_outlined,
+                                    title: 'Eliminar cuenta',
+                                    isDestructive: true,
+                                    onTap: onDeleteAccount,
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
@@ -247,37 +256,6 @@ class ProfilePage extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// Profile section card with subtle border and shadow.
-/// Uses DocSoft tokens for consistent styling.
-class _ProfileCard extends StatelessWidget {
-  const _ProfileCard({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: DocsoftColors.surface,
-        borderRadius: DocsoftRadii.card,
-        border: Border.all(
-          color: DocsoftColors.border,
-          width: 0.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(children: children),
     );
   }
 }

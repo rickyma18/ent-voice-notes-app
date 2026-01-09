@@ -19,7 +19,7 @@
 
 import 'package:flutter/material.dart';
 
-import '../../../../../ui/docsoft_ui.dart';
+import '../../../../ui/docsoft_ui.dart';
 import '../models/patients_filter.dart';
 
 /// @deprecated Use [DocsoftFilterChips]<[PatientsFilter]> instead.

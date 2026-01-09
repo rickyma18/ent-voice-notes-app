@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../../../../ui/theme/colors.dart';
-import '../../../../../ui/theme/radii.dart';
-import '../../../../../ui/theme/text_styles.dart';
+import '../../../../ui/theme/colors.dart';
+import '../../../../ui/theme/radii.dart';
+import '../../../../ui/theme/text_styles.dart';
 
 /// Primary action card for creating voice notes
 class PrimaryVoiceNoteCard extends StatelessWidget {

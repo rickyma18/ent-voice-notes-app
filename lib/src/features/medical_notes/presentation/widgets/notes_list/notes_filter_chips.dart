@@ -17,7 +17,7 @@
 // =============================================================================
 
 import 'package:flutter/material.dart';
-import '../../../../../../ui/docsoft_ui.dart';
+import '../../../../../ui/docsoft_ui.dart';
 
 /// Filter options for notes list.
 /// This enum is NOT deprecated and should continue to be used.

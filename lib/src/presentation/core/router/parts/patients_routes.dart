@@ -16,7 +16,7 @@ List<RouteBase> _patientsRoutes(ref) {
             final patient = state.extra as PatientEntity?;
 
             return MaterialPage(
-              child: CreatePatientPage(existingPatient: patient),
+              child: NewPatientPageWrapper(existingPatient: patient),
             );
           },
         ),

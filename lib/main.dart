@@ -11,7 +11,7 @@ import 'src/core/logger/riverpod_log.dart';
 import 'src/features/medical_notes/medical_notes_providers.dart';
 import 'src/presentation/core/application_state/localization_provider/localization_provider.dart';
 import 'src/presentation/core/router/router.dart';
-import 'ui/docsoft_ui.dart';
+import 'src/ui/docsoft_ui.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 Future<void> main() async {

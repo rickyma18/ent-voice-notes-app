@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../../../../ui/theme/colors.dart';
-import '../../../../../ui/theme/radii.dart';
-import '../../../../../ui/theme/text_styles.dart';
+import '../../../../ui/theme/colors.dart';
+import '../../../../ui/theme/radii.dart';
+import '../../../../ui/theme/text_styles.dart';
 
 /// Secondary action card for quick actions (patients, history)
 class SecondaryActionCard extends StatelessWidget {
@@ -47,11 +47,7 @@ class SecondaryActionCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(DocsoftRadii.md),
                 ),
                 padding: const EdgeInsets.all(10),
-                child: Icon(
-                  icon,
-                  color: DocsoftColors.primary,
-                  size: 22,
-                ),
+                child: Icon(icon, color: DocsoftColors.primary, size: 22),
               ),
               const SizedBox(height: 12),
               Text(

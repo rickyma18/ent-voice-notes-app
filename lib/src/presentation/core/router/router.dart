@@ -14,7 +14,7 @@ import '../../../features/medical_notes/presentation/pages/medical_notes_list_pa
 import '../../../features/medical_notes/presentation/pages/notes_list_page.dart';
 import '../../../features/medical_notes/presentation/pages/surgical_note_wizard_page.dart';
 import '../../../features/patients/domain/entities/patient_entity.dart';
-import '../../../features/patients/presentation/pages/create_patient_page.dart';
+import '../../../features/patients/presentation/pages/new_patient_page_wrapper.dart';
 import '../../../features/patients/presentation/pages/patient_detail_page.dart';
 import '../../../features/patients/presentation/pages/patients_list_page.dart';
 import '../../../features/patients/presentation/pages/select_patient_page.dart';
@@ -27,7 +27,7 @@ import '../../features/authentication/registration/view/registration_page.dart';
 import '../../features/home/view/home_page.dart';
 import '../../features/onboarding/view/onboarding_page.dart';
 import '../../features/patients/view/patients_page.dart';
-import '../../features/profile/view/edit_profile_page.dart';
+import '../../features/profile/view/edit_profile_page_wrapper.dart';
 // ignore: unused_import
 import '../../features/profile/view/profile_page.dart'; // Legacy - deprecated
 import '../../../features/profile/presentation/pages/profile_page_wrapper.dart';

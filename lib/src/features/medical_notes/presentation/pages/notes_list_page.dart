@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../../ui/docsoft_ui.dart';
+import '../../../../ui/docsoft_ui.dart';
 import '../../../../presentation/core/router/route_names.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 import '../../domain/entities/medical_note_entity.dart';

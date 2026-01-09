@@ -35,8 +35,7 @@ StatefulShellRoute _shellRoutes(ref) {
                 path: Routes.editProfile,
                 name: RouteNames.editProfile,
                 pageBuilder: (context, state) {
-                  // TODO: Replace with DocSoft EditProfilePage when available
-                  return const MaterialPage(child: EditProfilePage());
+                  return const MaterialPage(child: EditProfilePageWrapper());
                 },
               ),
             ],

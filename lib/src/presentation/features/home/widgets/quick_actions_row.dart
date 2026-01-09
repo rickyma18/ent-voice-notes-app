@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../../../ui/theme/colors.dart';
-import '../../../../../ui/theme/text_styles.dart';
+import '../../../../ui/theme/colors.dart';
+import '../../../../ui/theme/text_styles.dart';
 import 'secondary_action_card.dart';
 
 /// Row of quick action cards
