@@ -63,91 +63,91 @@ class NewPatientPage extends StatelessWidget {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // Header + Overlapping Card
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                // 1. Illustrated Header
-                DocsoftIllustratedHeader(
-                  title: 'Nuevo\npaciente',
-                  height: _headerHeight,
-                  onBack: onBack,
-                  decorationAssetPath: decorationAssetPath,
-                  decorationOpacity: 0.5,
-                ),
+            // Header + Overlapping Card (wrapped in SizedBox for hit-testing)
+            SizedBox(
+              height: _headerHeight + _getCardContentHeight() - _cardOverlap,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // 1. Illustrated Header
+                  DocsoftIllustratedHeader(
+                    title: 'Nuevo\npaciente',
+                    height: _headerHeight,
+                    onBack: onBack,
+                    decorationAssetPath: decorationAssetPath,
+                    decorationOpacity: 0.5,
+                  ),
 
-                // 2. Form Card (floating with overlap)
-                Positioned(
-                  top: _headerHeight - _cardOverlap,
-                  left: DocsoftSpacing.screenPadding,
-                  right: DocsoftSpacing.screenPadding,
-                  child: DocsoftCard(
-                    padding: const EdgeInsets.all(DocsoftSpacing.lg),
-                    child: Column(
-                      children: [
-                        // Full Name
-                        DocsoftInput(
-                          controller: nameController,
-                          label: 'Nombre completo',
-                          hint: 'Ingresa el nombre del paciente',
-                          prefixIcon: const Icon(
-                            Icons.person_outline_rounded,
-                            color: DocsoftColors.primary,
+                  // 2. Form Card (floating with overlap)
+                  Positioned(
+                    top: _headerHeight - _cardOverlap,
+                    left: DocsoftSpacing.screenPadding,
+                    right: DocsoftSpacing.screenPadding,
+                    child: DocsoftCard(
+                      padding: const EdgeInsets.all(DocsoftSpacing.lg),
+                      child: Column(
+                        children: [
+                          // Full Name
+                          DocsoftInput(
+                            controller: nameController,
+                            label: 'Nombre completo',
+                            hint: 'Ingresa el nombre del paciente',
+                            prefixIcon: const Icon(
+                              Icons.person_outline_rounded,
+                              color: DocsoftColors.primary,
+                            ),
+                            textInputAction: TextInputAction.next,
                           ),
-                          textInputAction: TextInputAction.next,
-                        ),
 
-                        const SizedBox(height: DocsoftSpacing.lg),
+                          const SizedBox(height: DocsoftSpacing.lg),
 
-                        // Age
-                        DocsoftInput(
-                          controller: ageController,
-                          label: 'Edad',
-                          hint: 'Ej: 35',
-                          keyboardType: TextInputType.number,
-                          prefixIcon: const Icon(
-                            Icons.cake_outlined,
-                            color: DocsoftColors.primary,
+                          // Age
+                          DocsoftInput(
+                            controller: ageController,
+                            label: 'Edad',
+                            hint: 'Ej: 35',
+                            keyboardType: TextInputType.number,
+                            prefixIcon: const Icon(
+                              Icons.cake_outlined,
+                              color: DocsoftColors.primary,
+                            ),
+                            textInputAction: TextInputAction.next,
                           ),
-                          textInputAction: TextInputAction.next,
-                        ),
 
-                        const SizedBox(height: DocsoftSpacing.lg),
+                          const SizedBox(height: DocsoftSpacing.lg),
 
-                        // Gender (selector)
-                        DocsoftSelectInput(
-                          label: 'Sexo',
-                          value: selectedGender,
-                          hint: 'Selecciona el sexo',
-                          leadingIcon: Icons.wc_outlined,
-                          onTap: onSelectGender,
-                        ),
-
-                        const SizedBox(height: DocsoftSpacing.lg),
-
-                        // Phone (optional)
-                        DocsoftInput(
-                          controller: phoneController,
-                          label: 'Teléfono (opcional)',
-                          hint: 'Ej: +52 555 123 4567',
-                          keyboardType: TextInputType.phone,
-                          prefixIcon: const Icon(
-                            Icons.phone_outlined,
-                            color: DocsoftColors.primary,
+                          // Gender (selector)
+                          DocsoftSelectInput(
+                            label: 'Sexo',
+                            value: selectedGender,
+                            hint: 'Selecciona el sexo',
+                            leadingIcon: Icons.wc_outlined,
+                            onTap: onSelectGender,
                           ),
-                          textInputAction: TextInputAction.done,
-                        ),
-                      ],
+
+                          const SizedBox(height: DocsoftSpacing.lg),
+
+                          // Phone (optional)
+                          DocsoftInput(
+                            controller: phoneController,
+                            label: 'Teléfono (opcional)',
+                            hint: 'Ej: +52 555 123 4567',
+                            keyboardType: TextInputType.phone,
+                            prefixIcon: const Icon(
+                              Icons.phone_outlined,
+                              color: DocsoftColors.primary,
+                            ),
+                            textInputAction: TextInputAction.done,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
 
-            // Space for the overlapping card
-            SizedBox(height: _getCardHeight(context)),
-
-            // ✅ Aire extra real antes del banner (se nota mucho)
+            // Spacing before banner
             const SizedBox(height: _spaceBetweenCardAndBanner),
 
             // 3. Info Banner
@@ -187,19 +187,14 @@ class NewPatientPage extends StatelessWidget {
     );
   }
 
-  /// Calculate the card height to properly offset the content below the Stack.
-  /// This accounts for the overlap and card content.
-  double _getCardHeight(BuildContext context) {
-    // Approximate card height: 4 inputs + spacing
+  /// Calculate the card content height for hit-testing bounds.
+  static double _getCardContentHeight() {
+    // Approximate card height: 4 inputs + spacing + padding
     const inputHeight = 70.0;
     const numberOfInputs = 4;
     const totalSpacing = DocsoftSpacing.lg * 3; // 3 gaps
     const cardPadding = DocsoftSpacing.lg * 2; // top + bottom
 
-    const cardContentHeight =
-        (inputHeight * numberOfInputs) + totalSpacing + cardPadding;
-
-    // Total offset = card content - overlap
-    return cardContentHeight - _cardOverlap;
+    return (inputHeight * numberOfInputs) + totalSpacing + cardPadding;
   }
 }

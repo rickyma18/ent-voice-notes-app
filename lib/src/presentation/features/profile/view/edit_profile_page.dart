@@ -58,12 +58,9 @@ class EditProfilePage extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new,
-            color: DocsoftColors.onPrimary,
-          ),
-          onPressed: onBack,
+        leading: Padding(
+          padding: const EdgeInsets.all(DocsoftSpacing.sm),
+          child: DocsoftBackButton(onTap: onBack),
         ),
         title: Text(
           "Editar perfil",

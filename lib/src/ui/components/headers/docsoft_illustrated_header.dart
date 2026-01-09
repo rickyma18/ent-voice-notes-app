@@ -101,22 +101,7 @@ class DocsoftIllustratedHeader extends StatelessWidget {
                   const SizedBox(height: DocsoftSpacing.sm),
 
                   // Back button
-                  if (onBack != null)
-                    GestureDetector(
-                      onTap: onBack,
-                      child: Container(
-                        padding: const EdgeInsets.all(DocsoftSpacing.sm),
-                        decoration: BoxDecoration(
-                          color: DocsoftColors.overlayOnPrimary,
-                          borderRadius: BorderRadius.circular(DocsoftRadii.md),
-                        ),
-                        child: const Icon(
-                          Icons.arrow_back_ios_new,
-                          color: DocsoftColors.onPrimary,
-                          size: 20,
-                        ),
-                      ),
-                    ),
+                  if (onBack != null) DocsoftBackButton(onTap: onBack!),
 
                   const SizedBox(height: DocsoftSpacing.md),
 

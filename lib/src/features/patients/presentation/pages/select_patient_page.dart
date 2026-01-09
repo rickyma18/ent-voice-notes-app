@@ -87,10 +87,10 @@ class _SelectPatientPageState extends ConsumerState<SelectPatientPage> {
               child: Row(
                 children: [
                   // Back button
-                  IconButton(
-                    onPressed: () => context.pop(),
-                    icon: const Icon(Icons.arrow_back_rounded),
-                    color: DocsoftColors.textPrimary,
+                  DocsoftBackButton(
+                    onTap: () => context.pop(),
+                    backgroundColor: DocsoftColors.primaryMuted,
+                    iconColor: DocsoftColors.primary,
                   ),
                   const SizedBox(width: DocsoftSpacing.sm),
                   Text(
