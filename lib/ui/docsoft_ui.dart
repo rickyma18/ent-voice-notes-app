@@ -16,5 +16,6 @@ export 'widgets/docsoft_auth_sheet.dart';
 export 'widgets/docsoft_secondary_action_button.dart';
 
 // Components
+export 'components/avatar/docsoft_editable_avatar.dart';
 export 'components/filter_chips/docsoft_filter_chips.dart';
 export 'components/search/docsoft_search_bar.dart';

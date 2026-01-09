@@ -11,6 +11,7 @@ class DoctorModel extends DoctorEntity {
     required super.email,
     super.firstName,
     super.lastName,
+    super.photoUrl,
     super.createdAt,
     super.updatedAt,
   });
@@ -23,6 +24,7 @@ class DoctorModel extends DoctorEntity {
       email: json['email'] as String,
       firstName: json['first_name'] as String?,
       lastName: json['last_name'] as String?,
+      photoUrl: json['photo_url'] as String?,
       createdAt: FirestoreTimestampParser.tryParse(json['created_at']),
       updatedAt: FirestoreTimestampParser.tryParse(json['updated_at']),
     );
@@ -35,6 +37,7 @@ class DoctorModel extends DoctorEntity {
       'email': email,
       'first_name': firstName,
       'last_name': lastName,
+      'photo_url': photoUrl,
       'created_at': createdAt != null ? Timestamp.fromDate(createdAt!) : null,
       'updated_at': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
     };
@@ -47,6 +50,7 @@ class DoctorModel extends DoctorEntity {
       email: entity.email,
       firstName: entity.firstName,
       lastName: entity.lastName,
+      photoUrl: entity.photoUrl,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     );
@@ -59,6 +63,7 @@ class DoctorModel extends DoctorEntity {
       email: email,
       firstName: firstName,
       lastName: lastName,
+      photoUrl: photoUrl,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );

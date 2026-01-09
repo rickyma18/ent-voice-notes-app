@@ -5,6 +5,13 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/extensions/app_localization.dart';
 import '../providers/current_doctor_profile_provider.dart';
 
+/// Legacy profile edit page.
+///
+/// @Deprecated('Will be replaced by DocSoft Profile Edit page.')
+///
+/// This page is kept for backwards compatibility but will be replaced
+/// with a DocSoft-styled version in a future update.
+@Deprecated('Legacy profile edit page. Will be replaced by DocSoft Profile Edit.')
 class EditProfilePage extends ConsumerStatefulWidget {
   const EditProfilePage({super.key});
 

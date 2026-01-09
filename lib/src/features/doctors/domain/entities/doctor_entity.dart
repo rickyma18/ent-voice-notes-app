@@ -15,6 +15,7 @@ class DoctorEntity extends Equatable {
     this.firstName,
     this.lastName,
     this.gender,
+    this.photoUrl,
     this.createdAt,
     this.updatedAt,
   });
@@ -33,6 +34,9 @@ class DoctorEntity extends Equatable {
 
   /// Gender (optional, used for greeting)
   final Gender? gender;
+
+  /// Profile photo URL from Firebase Storage (optional)
+  final String? photoUrl;
 
   /// Profile creation timestamp
   final DateTime? createdAt;
@@ -57,6 +61,7 @@ class DoctorEntity extends Equatable {
     String? firstName,
     String? lastName,
     Gender? gender,
+    String? photoUrl,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -66,8 +71,23 @@ class DoctorEntity extends Equatable {
       firstName: firstName ?? this.firstName,
       lastName: lastName ?? this.lastName,
       gender: gender ?? this.gender,
+      photoUrl: photoUrl ?? this.photoUrl,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  /// Copy with allowing explicit null for photoUrl
+  DoctorEntity copyWithPhotoUrl(String? photoUrl) {
+    return DoctorEntity(
+      id: id,
+      email: email,
+      firstName: firstName,
+      lastName: lastName,
+      gender: gender,
+      photoUrl: photoUrl,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
     );
   }
 
@@ -78,6 +98,7 @@ class DoctorEntity extends Equatable {
         firstName,
         lastName,
         gender,
+        photoUrl,
         createdAt,
         updatedAt,
       ];

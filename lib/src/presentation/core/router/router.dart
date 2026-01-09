@@ -28,7 +28,9 @@ import '../../features/home/view/home_page.dart';
 import '../../features/onboarding/view/onboarding_page.dart';
 import '../../features/patients/view/patients_page.dart';
 import '../../features/profile/view/edit_profile_page.dart';
-import '../../features/profile/view/profile_page.dart';
+// ignore: unused_import
+import '../../features/profile/view/profile_page.dart'; // Legacy - deprecated
+import '../../../features/profile/presentation/pages/profile_page_wrapper.dart';
 import '../../features/splash/view/splash_page.dart';
 import '../application_state/current_doctor_provider/current_doctor_provider.dart';
 import '../application_state/startup_coordinator/startup_coordinator_provider.dart';

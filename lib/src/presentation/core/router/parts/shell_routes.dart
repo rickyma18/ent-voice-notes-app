@@ -27,13 +27,15 @@ StatefulShellRoute _shellRoutes(ref) {
             path: Routes.profile,
             name: RouteNames.profile,
             pageBuilder: (context, state) {
-              return const MaterialPage(child: ProfilePage());
+              // Using new DocSoft ProfilePageWrapper instead of legacy ProfilePage
+              return const MaterialPage(child: ProfilePageWrapper());
             },
             routes: [
               GoRoute(
                 path: Routes.editProfile,
                 name: RouteNames.editProfile,
                 pageBuilder: (context, state) {
+                  // TODO: Replace with DocSoft EditProfilePage when available
                   return const MaterialPage(child: EditProfilePage());
                 },
               ),

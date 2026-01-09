@@ -7,6 +7,13 @@ import '../../../core/application_state/logout_provider/logout_provider.dart';
 import '../../../core/router/route_names.dart';
 import '../providers/current_doctor_profile_provider.dart';
 
+/// Legacy profile page.
+///
+/// @Deprecated('Use ProfilePageWrapper from lib/src/features/profile instead.')
+///
+/// This page is kept for backwards compatibility but will be removed
+/// in a future version. Use the new DocSoft-styled ProfilePageWrapper.
+@Deprecated('Legacy profile page. Use ProfilePageWrapper instead.')
 class ProfilePage extends ConsumerStatefulWidget {
   const ProfilePage({super.key});
 

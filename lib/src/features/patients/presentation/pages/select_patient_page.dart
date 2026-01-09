@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../../ui/docsoft_ui.dart';
 import '../../../../presentation/core/router/route_names.dart';
+import '../../../../presentation/features/patients/widgets/patient_card.dart';
 import '../../../medical_notes/domain/entities/medical_note_entity.dart';
 import '../../../medical_notes/presentation/controllers/medical_notes_controller.dart';
 import '../../../medical_notes/presentation/widgets/note_type_selector_bottom_sheet.dart';
@@ -12,264 +14,158 @@ import '../../domain/entities/patient_entity.dart';
 import '../controllers/patients_controller.dart';
 
 /// US-D1: Page for selecting a patient to view their medical notes
-class SelectPatientPage extends ConsumerWidget {
+/// Uses Docsoft UI components for consistency with PatientsPage.
+class SelectPatientPage extends ConsumerStatefulWidget {
   const SelectPatientPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final patientsAsync = ref.watch(patientsControllerProvider);
-    final medicalNotesAsync = ref.watch(medicalNotesControllerProvider);
-    final theme = Theme.of(context);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Seleccionar paciente'),
-      ),
-      body: patientsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stackTrace) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.error_outline,
-                  size: 64,
-                  color: theme.colorScheme.error,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Error al cargar pacientes',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: theme.colorScheme.error,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  error.toString(),
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 24),
-                FilledButton.icon(
-                  onPressed: () {
-                    ref.read(patientsControllerProvider.notifier).refresh();
-                  },
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Reintentar'),
-                ),
-              ],
-            ),
-          ),
-        ),
-        data: (patients) {
-          if (patients.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.people_outline,
-                      size: 64,
-                      color: theme.colorScheme.onSurface.withOpacity(0.5),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No hay pacientes registrados',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: theme.colorScheme.onSurface.withOpacity(0.7),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Crea un paciente primero para poder crear notas médicas',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurface.withOpacity(0.6),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    FilledButton.icon(
-                      onPressed: () {
-                        context.pushNamed(RouteNames.patientsCreate);
-                      },
-                      icon: const Icon(Icons.person_add),
-                      label: const Text('Crear paciente'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          // Get all medical notes (data or empty list)
-          final notes =
-              medicalNotesAsync.value ?? const <MedicalNoteEntity>[];
-
-          // Build a map: patientId -> List<MedicalNoteEntity>
-          final notesByPatient = <String, List<MedicalNoteEntity>>{};
-          for (final note in notes) {
-            notesByPatient.putIfAbsent(note.patientId, () => []).add(note);
-          }
-
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: patients.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              final patient = patients[index];
-              final patientNotes = notesByPatient[patient.id] ?? const [];
-              final notesCount = patientNotes.length;
-
-              return _SelectPatientCard(
-                patient: patient,
-                notesCount: notesCount,
-                onViewNotes: () {
-                  // Navigate to medical notes list with patient context
-                  context.pushNamed(
-                    RouteNames.medicalNotesList,
-                    extra: patient,
-                  );
-                },
-                onCreateNote: () {
-                  // Show note type selector for unified entry point
-                  showNoteTypeSelectorBottomSheet(context, patient);
-                },
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
+  ConsumerState<SelectPatientPage> createState() => _SelectPatientPageState();
 }
 
-/// Card widget for selecting a patient
-class _SelectPatientCard extends StatelessWidget {
-  const _SelectPatientCard({
-    required this.patient,
-    required this.notesCount,
-    required this.onViewNotes,
-    required this.onCreateNote,
-  });
+class _SelectPatientPageState extends ConsumerState<SelectPatientPage> {
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
 
-  final PatientEntity patient;
-  final int notesCount;
-  final VoidCallback onViewNotes;
-  final VoidCallback onCreateNote;
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// Convert PatientEntity to PatientDisplayData for PatientCard
+  PatientDisplayData _toDisplayData(PatientEntity p, int notesCount) {
+    final parts = p.fullName.trim().split(' ');
+    final initials = parts.length >= 2
+        ? '${parts.first[0]}${parts.last[0]}'.toUpperCase()
+        : (parts.isNotEmpty ? parts.first[0].toUpperCase() : '?');
+
+    return PatientDisplayData(
+      id: p.id,
+      initials: initials,
+      name: p.fullName,
+      age: p.age,
+      sex: p.sex,
+      notesCount: notesCount,
+    );
+  }
+
+  /// Filter patients by search query (name match)
+  List<PatientEntity> _filterPatients(List<PatientEntity> patients) {
+    if (_searchQuery.isEmpty) return patients;
+    final query = _searchQuery.toLowerCase();
+    return patients
+        .where((p) => p.fullName.toLowerCase().contains(query))
+        .toList();
+  }
+
+  void _handleViewNotes(PatientEntity patient) {
+    context.pushNamed(RouteNames.medicalNotesList, extra: patient);
+  }
+
+  void _handleCreateNote(PatientEntity patient) {
+    showNoteTypeSelectorBottomSheet(context, patient);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final patientsAsync = ref.watch(patientsControllerProvider);
+    final medicalNotesAsync = ref.watch(medicalNotesControllerProvider);
 
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+    return Scaffold(
+      backgroundColor: DocsoftColors.background,
+      body: SafeArea(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Patient info
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor: theme.colorScheme.primaryContainer,
-                  child: Text(
-                    _getInitials(patient.fullName),
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: theme.colorScheme.onPrimaryContainer,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        patient.fullName,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${patient.age} años · ${patient.sex.toUpperCase()}',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurface.withOpacity(0.7),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // Notes count badge
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: notesCount > 0
-                    ? theme.colorScheme.primaryContainer
-                    : theme.colorScheme.surfaceVariant,
-                borderRadius: BorderRadius.circular(12),
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                DocsoftSpacing.screenPadding,
+                DocsoftSpacing.screenPadding,
+                DocsoftSpacing.screenPadding,
+                DocsoftSpacing.sm,
               ),
               child: Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.description_outlined,
-                    size: 14,
-                    color: notesCount > 0
-                        ? theme.colorScheme.onPrimaryContainer
-                        : theme.colorScheme.onSurface.withOpacity(0.6),
+                  // Back button
+                  IconButton(
+                    onPressed: () => context.pop(),
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    color: DocsoftColors.textPrimary,
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: DocsoftSpacing.sm),
                   Text(
-                    'Notas registradas: $notesCount',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: notesCount > 0
-                          ? theme.colorScheme.onPrimaryContainer
-                          : theme.colorScheme.onSurface.withOpacity(0.6),
-                      fontWeight: FontWeight.w600,
-                    ),
+                    'Seleccionar paciente',
+                    style: DocsoftTextStyles.headline,
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
 
-            // Action buttons
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.tonalIcon(
-                    onPressed: onViewNotes,
-                    icon: const Icon(Icons.list_alt),
-                    label: const Text('Ver notas'),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
+            // Search bar
+            DocsoftSearchBar(
+              hintText: 'Buscar paciente por nombre',
+              controller: _searchController,
+              onChanged: (query) {
+                setState(() {
+                  _searchQuery = query;
+                });
+              },
+            ),
+
+            // Content
+            Expanded(
+              child: patientsAsync.when(
+                loading: () => const Center(
+                  child: CircularProgressIndicator(
+                    color: DocsoftColors.primary,
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: onCreateNote,
-                    icon: const Icon(Icons.note_add),
-                    label: const Text('Crear nota'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                error: (error, _) => _buildErrorState(error),
+                data: (patients) {
+                  final filteredPatients = _filterPatients(patients);
+
+                  if (patients.isEmpty) {
+                    return _buildEmptyState();
+                  }
+
+                  if (filteredPatients.isEmpty) {
+                    return _buildNoResultsState();
+                  }
+
+                  // Get all medical notes (data or empty list)
+                  final notes =
+                      medicalNotesAsync.value ?? const <MedicalNoteEntity>[];
+
+                  // Build a map: patientId -> note count
+                  final notesByPatient = <String, int>{};
+                  for (final note in notes) {
+                    notesByPatient[note.patientId] =
+                        (notesByPatient[note.patientId] ?? 0) + 1;
+                  }
+
+                  return ListView.separated(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: DocsoftSpacing.screenPadding,
+                      vertical: DocsoftSpacing.sm,
                     ),
-                  ),
-                ),
-              ],
+                    itemCount: filteredPatients.length,
+                    separatorBuilder: (_, __) =>
+                        const SizedBox(height: DocsoftSpacing.itemSpacing),
+                    itemBuilder: (context, index) {
+                      final patient = filteredPatients[index];
+                      final notesCount = notesByPatient[patient.id] ?? 0;
+                      final displayData = _toDisplayData(patient, notesCount);
+
+                      return PatientCard(
+                        patient: displayData,
+                        onTap: () => _handleCreateNote(patient),
+                        onNewNote: () => _handleCreateNote(patient),
+                        onViewNotes: () => _handleViewNotes(patient),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
           ],
         ),
@@ -277,12 +173,109 @@ class _SelectPatientCard extends StatelessWidget {
     );
   }
 
-  /// Get initials from full name
-  String _getInitials(String fullName) {
-    final parts = fullName.trim().split(' ');
-    if (parts.isEmpty) return '?';
-    if (parts.length == 1) return parts[0][0].toUpperCase();
+  Widget _buildErrorState(Object error) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(DocsoftSpacing.screenPadding),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.error_outline_rounded,
+              size: 64,
+              color: DocsoftColors.error,
+            ),
+            const SizedBox(height: DocsoftSpacing.md),
+            Text(
+              'Error al cargar pacientes',
+              style: DocsoftTextStyles.title,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: DocsoftSpacing.sm),
+            Text(
+              error.toString(),
+              style: DocsoftTextStyles.caption,
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: DocsoftSpacing.lg),
+            DocsoftPrimaryButton(
+              onPressed: () {
+                ref.read(patientsControllerProvider.notifier).refresh();
+              },
+              label: 'Reintentar',
+              icon: Icons.refresh_rounded,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-    return '${parts[0][0]}${parts[parts.length - 1][0]}'.toUpperCase();
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(DocsoftSpacing.screenPadding),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.people_outline,
+              size: 64,
+              color: DocsoftColors.textTertiary.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: DocsoftSpacing.md),
+            Text(
+              'No hay pacientes registrados',
+              style: DocsoftTextStyles.subtitle.copyWith(
+                color: DocsoftColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: DocsoftSpacing.sm),
+            Text(
+              'Crea un paciente primero para poder crear notas médicas',
+              style: DocsoftTextStyles.caption,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: DocsoftSpacing.lg),
+            DocsoftPrimaryButton(
+              onPressed: () {
+                context.pushNamed(RouteNames.patientsCreate);
+              },
+              label: 'Crear paciente',
+              icon: Icons.person_add_rounded,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoResultsState() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.search_off_rounded,
+            size: 64,
+            color: DocsoftColors.textTertiary.withValues(alpha: 0.5),
+          ),
+          const SizedBox(height: DocsoftSpacing.md),
+          Text(
+            'Sin resultados',
+            style: DocsoftTextStyles.subtitle.copyWith(
+              color: DocsoftColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: DocsoftSpacing.xs),
+          Text(
+            'No se encontraron pacientes con ese nombre',
+            style: DocsoftTextStyles.caption,
+          ),
+        ],
+      ),
+    );
   }
 }
