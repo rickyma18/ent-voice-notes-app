@@ -72,13 +72,11 @@ final class DoctorsRemoteDatasourceImpl implements DoctorsRemoteDatasource {
 
   @override
   Future<void> updateDoctor(DoctorModel doctor) async {
-    final data = doctor.toJson();
+    // Use toJsonForUpdate() to exclude null values and preserve existing data
+    final data = doctor.toJsonForUpdate();
 
     // Remove id from data since it's the document ID
     data.remove('id');
-
-    // Remove created_at to avoid overwriting
-    data.remove('created_at');
 
     // Update only updated_at
     data['updated_at'] = FieldValue.serverTimestamp();

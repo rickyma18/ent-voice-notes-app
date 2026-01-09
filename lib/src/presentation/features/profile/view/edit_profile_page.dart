@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/utility/validation/validation.dart';
 import '../../../../ui/docsoft_ui.dart';
 
 /// Edit Profile Page - Dumb UI
@@ -114,6 +115,9 @@ class EditProfilePage extends StatelessWidget {
                         Icons.person_outline_rounded,
                         color: DocsoftColors.primary,
                       ),
+                      textInputAction: TextInputAction.next,
+                      textCapitalization: TextCapitalization.words,
+                      inputFormatters: InputFormatters.name,
                     ),
 
                     const SizedBox(height: DocsoftSpacing.lg),
@@ -126,6 +130,9 @@ class EditProfilePage extends StatelessWidget {
                         Icons.person_outline_rounded,
                         color: DocsoftColors.primary,
                       ),
+                      textInputAction: TextInputAction.next,
+                      textCapitalization: TextCapitalization.words,
+                      inputFormatters: InputFormatters.name,
                     ),
 
                     const SizedBox(height: DocsoftSpacing.lg),

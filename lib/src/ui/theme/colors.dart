@@ -102,6 +102,17 @@ abstract class DocsoftColors {
   static const Color errorSoft = Color(0x1AEF4444); // 10%
 
   // ────────────────────────────────────────────────────────────────────────────
+  // Gender / Biological Sex (for patient forms)
+  // ────────────────────────────────────────────────────────────────────────────
+  /// Soft blue tint for male options
+  static const Color maleTint = Color(0xFF3B82F6); // Blue-500
+  static const Color maleSoft = Color(0x1A3B82F6); // 10% blue
+
+  /// Soft pink tint for female options
+  static const Color femaleTint = Color(0xFFEC4899); // Pink-500
+  static const Color femaleSoft = Color(0x1AEC4899); // 10% pink
+
+  // ────────────────────────────────────────────────────────────────────────────
   // Inputs
   // ────────────────────────────────────────────────────────────────────────────
   static const Color inputBackground = surface;

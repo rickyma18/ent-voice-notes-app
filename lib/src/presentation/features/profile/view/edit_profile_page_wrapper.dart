@@ -1,8 +1,15 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:medical_notes_app/src/ui/docsoft_ui.dart';
 
+import '../../../../core/base/result.dart';
+import '../../../../features/doctors/doctors_providers.dart';
+import '../../../../features/doctors/domain/usecases/delete_doctor_photo_use_case.dart';
+import '../../../../features/doctors/domain/usecases/update_doctor_photo_use_case.dart';
 import '../providers/current_doctor_profile_provider.dart';
 import 'edit_profile_page.dart';
 
@@ -26,9 +33,12 @@ class _EditProfilePageWrapperState
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _imagePicker = ImagePicker();
 
   bool _isInitialized = false;
   String? _doctorId;
+  String? _currentPhotoUrl;
+  bool _isUploadingPhoto = false;
 
   @override
   void dispose() {
@@ -43,12 +53,14 @@ class _EditProfilePageWrapperState
     required String? lastName,
     required String email,
     required String id,
+    required String? photoUrl,
   }) {
     if (!_isInitialized) {
       _firstNameController.text = firstName ?? '';
       _lastNameController.text = lastName ?? '';
       _emailController.text = email;
       _doctorId = id;
+      _currentPhotoUrl = photoUrl;
       _isInitialized = true;
     }
   }
@@ -77,20 +89,10 @@ class _EditProfilePageWrapperState
     if (!mounted) return;
 
     if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Perfil actualizado correctamente'),
-          backgroundColor: DocsoftColors.success,
-        ),
-      );
+      _showSuccessSnackbar('Perfil actualizado correctamente');
       context.pop();
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Error al actualizar el perfil'),
-          backgroundColor: DocsoftColors.error,
-        ),
-      );
+      _showErrorSnackbar('Error al actualizar el perfil');
     }
   }
 
@@ -99,8 +101,132 @@ class _EditProfilePageWrapperState
   }
 
   void _handleChangePhoto() {
-    // TODO: Implement photo change logic
-    // This will be connected to photo picker/camera functionality
+    if (_doctorId == null) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: DocsoftColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: DocsoftRadii.bottomSheet,
+      ),
+      builder: (context) => DocsoftPhotoSheet(
+        hasPhoto: _currentPhotoUrl != null,
+        onTakePhoto: _handleTakePhoto,
+        onChooseFromGallery: _handleChooseFromGallery,
+        onRemovePhoto: _handleRemovePhoto,
+      ),
+    );
+  }
+
+  Future<void> _handleTakePhoto() async {
+    try {
+      final pickedFile = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 85,
+      );
+
+      if (pickedFile == null) return;
+
+      await _uploadPhoto(File(pickedFile.path));
+    } catch (e) {
+      _showErrorSnackbar('Error al acceder a la cámara: $e');
+    }
+  }
+
+  Future<void> _handleChooseFromGallery() async {
+    try {
+      final pickedFile = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 85,
+      );
+
+      if (pickedFile == null) return;
+
+      await _uploadPhoto(File(pickedFile.path));
+    } catch (e) {
+      _showErrorSnackbar('Error al acceder a la galería: $e');
+    }
+  }
+
+  Future<void> _uploadPhoto(File imageFile) async {
+    if (_doctorId == null) return;
+
+    setState(() => _isUploadingPhoto = true);
+
+    try {
+      final useCase = ref.read(updateDoctorPhotoUseCaseProvider);
+      final result = await useCase.call(
+        UpdateDoctorPhotoParams(
+          doctorId: _doctorId!,
+          imageFile: imageFile,
+          currentPhotoUrl: _currentPhotoUrl,
+        ),
+      );
+
+      switch (result) {
+        case Success(data: final updatedDoctor):
+          setState(() => _currentPhotoUrl = updatedDoctor.photoUrl);
+          ref.invalidate(currentDoctorProfileProvider);
+          _showSuccessSnackbar('Foto actualizada correctamente');
+        case Error(error: final failure):
+          _showErrorSnackbar(failure.message);
+      }
+    } catch (e) {
+      _showErrorSnackbar('Error al subir la foto: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isUploadingPhoto = false);
+      }
+    }
+  }
+
+  Future<void> _handleRemovePhoto() async {
+    if (_doctorId == null || _currentPhotoUrl == null) return;
+
+    setState(() => _isUploadingPhoto = true);
+
+    try {
+      final useCase = ref.read(deleteDoctorPhotoUseCaseProvider);
+      final result = await useCase.call(
+        DeleteDoctorPhotoParams(
+          doctorId: _doctorId!,
+          currentPhotoUrl: _currentPhotoUrl!,
+        ),
+      );
+
+      switch (result) {
+        case Success():
+          setState(() => _currentPhotoUrl = null);
+          ref.invalidate(currentDoctorProfileProvider);
+          _showSuccessSnackbar('Foto eliminada correctamente');
+        case Error(error: final failure):
+          _showErrorSnackbar(failure.message);
+      }
+    } catch (e) {
+      _showErrorSnackbar('Error al eliminar la foto: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isUploadingPhoto = false);
+      }
+    }
+  }
+
+  void _showErrorSnackbar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: DocsoftColors.error),
+    );
+  }
+
+  void _showSuccessSnackbar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: DocsoftColors.success),
+    );
   }
 
   @override
@@ -129,6 +255,7 @@ class _EditProfilePageWrapperState
           lastName: doctor.lastName,
           email: doctor.email,
           id: doctor.id,
+          photoUrl: doctor.photoUrl,
         );
 
         return EditProfilePage(
@@ -136,11 +263,11 @@ class _EditProfilePageWrapperState
           lastNameController: _lastNameController,
           emailController: _emailController,
           initials: _getInitials(),
-          photoUrl: doctor.photoUrl,
+          photoUrl: _currentPhotoUrl,
           onBack: _handleBack,
           onSave: _handleSave,
           onChangePhoto: _handleChangePhoto,
-          isLoading: isLoading,
+          isLoading: isLoading || _isUploadingPhoto,
         );
       },
     );

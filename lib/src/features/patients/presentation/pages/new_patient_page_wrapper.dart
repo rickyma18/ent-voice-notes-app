@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/base/result.dart';
 import '../../../../presentation/core/application_state/current_doctor_provider/current_doctor_provider.dart';
 import '../../../../ui/docsoft_ui.dart';
+import '../../domain/entities/biological_sex.dart';
 import '../../domain/entities/patient_entity.dart';
 import '../../patients_providers.dart';
 import '../controllers/patients_controller.dart';
@@ -60,28 +61,30 @@ class _NewPatientPageWrapperState extends ConsumerState<NewPatientPageWrapper> {
     super.dispose();
   }
 
-  /// Convert sex code (M/F/Otro) to display string
+  /// Convert sex code (M/F) to display string.
+  ///
+  /// For legacy/invalid values, returns empty string to force selection.
   String _sexCodeToDisplay(String code) {
-    switch (code) {
-      case 'M':
-        return 'Masculino';
-      case 'F':
-        return 'Femenino';
-      default:
-        return 'Otro';
-    }
+    final sex = BiologicalSex.tryFromCode(code);
+    return sex?.displayName ?? '';
   }
 
-  /// Convert display string to sex code
+  /// Convert display string to sex code.
+  ///
+  /// Throws assertion if display is not valid - this should never happen
+  /// since UI only allows valid selections.
   String _displayToSexCode(String display) {
-    switch (display) {
-      case 'Masculino':
-        return 'M';
-      case 'Femenino':
-        return 'F';
-      default:
-        return 'Otro';
+    for (final sex in BiologicalSex.values) {
+      if (sex.displayName == display) {
+        return sex.code;
+      }
     }
+    // This shouldn't happen since UI only allows valid selections
+    throw ArgumentError.value(
+      display,
+      'display',
+      'Invalid sex display value. Only "Masculino" or "Femenino" allowed.',
+    );
   }
 
   void _handleBack() {
@@ -164,7 +167,7 @@ class _NewPatientPageWrapperState extends ConsumerState<NewPatientPageWrapper> {
     result.when(
       success: (_) {
         ref.read(patientsControllerProvider.notifier).refresh();
-        _showSuccess('Paciente guardado correctamente');
+        _showSuccessSnackbar('Paciente guardado correctamente');
         if (mounted) context.pop();
       },
       error: (failure) => _showError('Error: ${failure.message}'),
@@ -187,7 +190,7 @@ class _NewPatientPageWrapperState extends ConsumerState<NewPatientPageWrapper> {
 
     result.when(
       success: (_) {
-        _showSuccess('Paciente actualizado correctamente');
+        _showSuccessSnackbar('Paciente actualizado correctamente');
         if (mounted) context.pop();
       },
       error: (failure) => _showError('Error: ${failure.message}'),
@@ -201,7 +204,7 @@ class _NewPatientPageWrapperState extends ConsumerState<NewPatientPageWrapper> {
     );
   }
 
-  void _showSuccess(String message) {
+  void _showSuccessSnackbar(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: DocsoftColors.success),
@@ -218,6 +221,7 @@ class _NewPatientPageWrapperState extends ConsumerState<NewPatientPageWrapper> {
       onBack: _handleBack,
       onSave: _handleSave,
       onSelectGender: _handleSelectGender,
+      isEditing: _isEditMode,
       isSaving: _isSaving,
     );
   }
@@ -242,6 +246,8 @@ class _GenderSelectionSheet extends StatelessWidget {
       ),
       padding: const EdgeInsets.only(
         top: DocsoftSpacing.lg,
+        left: DocsoftSpacing.lg,
+        right: DocsoftSpacing.lg,
         bottom: DocsoftSpacing.xl,
       ),
       child: Column(
@@ -265,56 +271,30 @@ class _GenderSelectionSheet extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: DocsoftSpacing.md),
+          const SizedBox(height: DocsoftSpacing.lg),
 
-          // Options
-          _GenderOption(
+          // Male option
+          DocsoftSelectableTile(
             label: 'Masculino',
+            icon: Icons.male_rounded,
             isSelected: selectedGender == 'Masculino',
+            tintColor: DocsoftColors.maleTint,
+            softColor: DocsoftColors.maleSoft,
             onTap: () => onSelect('Masculino'),
           ),
-          _GenderOption(
+          const SizedBox(height: DocsoftSpacing.itemSpacing),
+
+          // Female option
+          DocsoftSelectableTile(
             label: 'Femenino',
+            icon: Icons.female_rounded,
             isSelected: selectedGender == 'Femenino',
+            tintColor: DocsoftColors.femaleTint,
+            softColor: DocsoftColors.femaleSoft,
             onTap: () => onSelect('Femenino'),
-          ),
-          _GenderOption(
-            label: 'Otro',
-            isSelected: selectedGender == 'Otro',
-            onTap: () => onSelect('Otro'),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _GenderOption extends StatelessWidget {
-  const _GenderOption({
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(
-        isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-        color: isSelected ? DocsoftColors.primary : DocsoftColors.textTertiary,
-      ),
-      title: Text(
-        label,
-        style: DocsoftTextStyles.subtitle.copyWith(
-          color: isSelected ? DocsoftColors.primary : DocsoftColors.textPrimary,
-          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-        ),
-      ),
-      onTap: onTap,
     );
   }
 }

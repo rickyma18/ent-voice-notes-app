@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/utility/validation/validation.dart';
 import '../../../../ui/docsoft_ui.dart';
 
 /// New Patient Page - Dumb UI
@@ -16,6 +17,7 @@ class NewPatientPage extends StatelessWidget {
     required this.onBack,
     required this.onSave,
     required this.onSelectGender,
+    this.isEditing = false,
     this.isSaving = false,
     this.decorationAssetPath =
         'assets/branding/states/docsoft_patient_profile.png',
@@ -41,6 +43,9 @@ class NewPatientPage extends StatelessWidget {
 
   /// Callback when gender selector is tapped
   final VoidCallback onSelectGender;
+
+  /// Whether the page is in edit mode (true) or create mode (false)
+  final bool isEditing;
 
   /// Whether save action is in progress
   final bool isSaving;
@@ -71,7 +76,7 @@ class NewPatientPage extends StatelessWidget {
                 children: [
                   // 1. Illustrated Header
                   DocsoftIllustratedHeader(
-                    title: 'Nuevo\npaciente',
+                    title: isEditing ? 'Editar\npaciente' : 'Nuevo\npaciente',
                     height: _headerHeight,
                     onBack: onBack,
                     decorationAssetPath: decorationAssetPath,
@@ -97,6 +102,8 @@ class NewPatientPage extends StatelessWidget {
                               color: DocsoftColors.primary,
                             ),
                             textInputAction: TextInputAction.next,
+                            textCapitalization: TextCapitalization.words,
+                            inputFormatters: InputFormatters.name,
                           ),
 
                           const SizedBox(height: DocsoftSpacing.lg),
@@ -112,6 +119,7 @@ class NewPatientPage extends StatelessWidget {
                               color: DocsoftColors.primary,
                             ),
                             textInputAction: TextInputAction.next,
+                            inputFormatters: InputFormatters.age,
                           ),
 
                           const SizedBox(height: DocsoftSpacing.lg),
@@ -138,6 +146,7 @@ class NewPatientPage extends StatelessWidget {
                               color: DocsoftColors.primary,
                             ),
                             textInputAction: TextInputAction.done,
+                            inputFormatters: InputFormatters.phone,
                           ),
                         ],
                       ),
@@ -170,7 +179,7 @@ class NewPatientPage extends StatelessWidget {
                 horizontal: DocsoftSpacing.screenPadding,
               ),
               child: DocsoftPrimaryButton(
-                label: 'Guardar paciente',
+                label: isEditing ? 'Guardar cambios' : 'Guardar paciente',
                 onPressed: isSaving ? null : onSave,
                 isLoading: isSaving,
                 fullWidth: true,

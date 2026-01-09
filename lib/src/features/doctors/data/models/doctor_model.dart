@@ -30,7 +30,7 @@ class DoctorModel extends DoctorEntity {
     );
   }
 
-  /// To Firestore document
+  /// To Firestore document (includes all fields, even null)
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -40,6 +40,19 @@ class DoctorModel extends DoctorEntity {
       'photo_url': photoUrl,
       'created_at': createdAt != null ? Timestamp.fromDate(createdAt!) : null,
       'updated_at': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
+    };
+  }
+
+  /// To Firestore document for partial updates.
+  /// Excludes null values to avoid overwriting existing data with null.
+  /// Use this when updating only specific fields (e.g., name/email without photo).
+  Map<String, dynamic> toJsonForUpdate() {
+    return {
+      'id': id,
+      'email': email,
+      if (firstName != null) 'first_name': firstName,
+      if (lastName != null) 'last_name': lastName,
+      if (photoUrl != null) 'photo_url': photoUrl,
     };
   }
 

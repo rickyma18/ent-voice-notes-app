@@ -1,4 +1,5 @@
 import '../../../../core/utility/firestore_timestamp_parser.dart';
+import '../../domain/entities/biological_sex.dart';
 import '../../domain/entities/patient_entity.dart';
 
 class PatientModel extends PatientEntity {
@@ -40,7 +41,20 @@ class PatientModel extends PatientEntity {
     };
   }
 
+  /// Creates a PatientModel from a PatientEntity.
+  ///
+  /// Validates that sex is 'M' or 'F' before creating the model.
+  /// Throws [ArgumentError] if sex is invalid.
   factory PatientModel.fromEntity(PatientEntity entity) {
+    // Validate sex field strictly
+    if (!BiologicalSex.isValidCode(entity.sex)) {
+      throw ArgumentError.value(
+        entity.sex,
+        'sex',
+        'Sexo inválido. Solo se permite Masculino (M) o Femenino (F).',
+      );
+    }
+
     return PatientModel(
       id: entity.id,
       fullName: entity.fullName,

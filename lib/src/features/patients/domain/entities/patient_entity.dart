@@ -2,6 +2,8 @@
 
 import 'package:equatable/equatable.dart';
 
+import 'biological_sex.dart';
+
 /// Entidad de dominio para Pacientes
 ///
 /// Representa un paciente registrado en el sistema.
@@ -27,7 +29,7 @@ class PatientEntity extends Equatable {
   /// Edad del paciente en años
   final int age;
 
-  /// Sexo del paciente: 'M' (Masculino), 'F' (Femenino), 'Otro'
+  /// Sexo del paciente: 'M' (Masculino), 'F' (Femenino)
   final String sex;
 
   /// Número de teléfono del paciente (opcional)
@@ -65,31 +67,33 @@ class PatientEntity extends Equatable {
     );
   }
 
-  /// Retorna el sexo en formato legible
+  /// Retorna el sexo en formato legible.
+  ///
+  /// Returns 'No especificado' for legacy/invalid values, encouraging correction.
   String get sexDisplay {
-    switch (sex.toUpperCase()) {
-      case 'M':
-        return 'Masculino';
-      case 'F':
-        return 'Femenino';
-      default:
-        return 'Otro';
-    }
+    final biologicalSex = BiologicalSex.tryFromCode(sex);
+    return biologicalSex?.displayName ?? 'No especificado';
   }
+
+  /// Whether this patient has a valid biological sex value.
+  ///
+  /// Use this to detect legacy data that needs correction.
+  bool get hasValidSex => BiologicalSex.isValidCode(sex);
 
   @override
   List<Object?> get props => [
-        id,
-        fullName,
-        age,
-        sex,
-        phone,
-        createdAt,
-        updatedAt,
-        doctorId,
-      ];
+    id,
+    fullName,
+    age,
+    sex,
+    phone,
+    createdAt,
+    updatedAt,
+    doctorId,
+  ];
 
   @override
-  String toString() => 'PatientEntity(id: $id, fullName: $fullName, '
+  String toString() =>
+      'PatientEntity(id: $id, fullName: $fullName, '
       'age: $age, sex: $sex)';
 }

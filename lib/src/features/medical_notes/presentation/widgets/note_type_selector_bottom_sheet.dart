@@ -4,13 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../presentation/core/router/route_names.dart';
+import '../../../../ui/docsoft_ui.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 
 /// Shows a bottom sheet for selecting the type of medical note to create.
 ///
 /// This is the unified entry point for creating notes, ensuring:
-/// - Clinical History notes always go to the wizard (RouteNames.clinicalHistoryWizard)
-/// - Surgical Notes go to the standard create page (RouteNames.medicalNotesCreate)
+/// - Dictation Assist is the recommended option (RouteNames.dictationAssist)
+/// - Clinical History notes go to the wizard (RouteNames.clinicalHistoryWizard)
+/// - Surgical Notes go to the wizard (RouteNames.surgicalNoteWizard)
 ///
 /// Usage:
 /// ```dart
@@ -22,6 +24,11 @@ Future<void> showNoteTypeSelectorBottomSheet(
 ) {
   return showModalBottomSheet(
     context: context,
+    isScrollControlled: true,
+    backgroundColor: DocsoftColors.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: DocsoftRadii.bottomSheet,
+    ),
     builder: (context) => _NoteTypeSelectorContent(patient: patient),
   );
 }
@@ -33,107 +40,104 @@ class _NoteTypeSelectorContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
 
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Crear nueva nota',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            DocsoftSpacing.lg,
+            DocsoftSpacing.lg,
+            DocsoftSpacing.lg,
+            bottomPadding + DocsoftSpacing.lg,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Drag handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: DocsoftSpacing.md),
+                  decoration: BoxDecoration(
+                    color: DocsoftColors.border,
+                    borderRadius: BorderRadius.circular(DocsoftRadii.full),
+                  ),
+                ),
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Paciente: ${patient.fullName}',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
 
-            // Clinical History (Wizard) - Primary option
-            FilledButton.icon(
-              onPressed: () {
-                Navigator.pop(context);
-                context.pushNamed(
-                  RouteNames.clinicalHistoryWizard,
-                  extra: patient,
-                );
-              },
-              icon: const Icon(Icons.assignment),
-              label: const Text('Historia Clinica'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
+              // Title
+              Text(
+                '¿Cómo quieres crear la nota?',
+                style: DocsoftTextStyles.title,
+                textAlign: TextAlign.center,
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Formulario guiado paso a paso',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: DocsoftSpacing.sm),
 
-            // Surgical Note - Secondary option (now uses wizard)
-            OutlinedButton.icon(
-              onPressed: () {
-                Navigator.pop(context);
-                context.pushNamed(
-                  RouteNames.surgicalNoteWizard,
-                  extra: patient,
-                );
-              },
-              icon: const Icon(Icons.local_hospital),
-              label: const Text('Nota Quirurgica'),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
+              // Subtitle with patient name
+              Text(
+                'Paciente: ${patient.fullName}',
+                style: DocsoftTextStyles.caption.copyWith(
+                  color: DocsoftColors.textSecondary,
+                ),
+                textAlign: TextAlign.center,
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Formulario guiado para procedimientos y cirugias',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: DocsoftSpacing.xl),
 
-            // Dictation Assist - Tertiary option
-            OutlinedButton.icon(
-              onPressed: () {
-                Navigator.pop(context);
-                context.pushNamed(
-                  RouteNames.dictationAssist,
-                  extra: patient,
-                );
-              },
-              icon: const Icon(Icons.mic),
-              label: const Text('Dictar primero (asistente)'),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
+              // Option 1: Dictation (Recommended)
+              DocsoftActionTile(
+                icon: Icons.mic_rounded,
+                title: '⚡ Dictar Nota (Recomendado)',
+                description:
+                    'La forma más rápida. Graba libremente y la IA transcribirá la nota.',
+                isHighlighted: true,
+                semanticLabel: 'Dictar nota, opción recomendada',
+                onTap: () {
+                  Navigator.pop(context);
+                  context.pushNamed(
+                    RouteNames.dictationAssist,
+                    extra: patient,
+                  );
+                },
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Graba y transcribe antes de elegir tipo de nota',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+              const SizedBox(height: DocsoftSpacing.itemSpacing),
+
+              // Option 2: Clinical History
+              DocsoftActionTile(
+                icon: Icons.assignment_outlined,
+                title: 'Historia clínica',
+                description:
+                    'Formulario guiado para documentar consultas paso a paso.',
+                semanticLabel: 'Historia clínica',
+                onTap: () {
+                  Navigator.pop(context);
+                  context.pushNamed(
+                    RouteNames.clinicalHistoryWizard,
+                    extra: patient,
+                  );
+                },
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-          ],
+              const SizedBox(height: DocsoftSpacing.itemSpacing),
+
+              // Option 3: Surgical Note
+              DocsoftActionTile(
+                icon: Icons.content_cut_rounded,
+                title: 'Nota quirúrgica',
+                description:
+                    'Plantilla especializada para procedimientos y cirugías.',
+                semanticLabel: 'Nota quirúrgica',
+                onTap: () {
+                  Navigator.pop(context);
+                  context.pushNamed(
+                    RouteNames.surgicalNoteWizard,
+                    extra: patient,
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );

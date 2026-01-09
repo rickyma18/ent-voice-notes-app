@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../../../ui/docsoft_ui.dart';
 import '../models/profile_ui_model.dart';
 import '../widgets/profile_list_item.dart';
-import '../widgets/profile_photo_sheet.dart';
 import '../widgets/profile_section_title.dart';
 
 /// Profile page displaying user info and settings.
@@ -62,8 +61,11 @@ class ProfilePage extends StatelessWidget {
     if (isUploadingPhoto) return;
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => ProfilePhotoSheet(
+      backgroundColor: DocsoftColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: DocsoftRadii.bottomSheet,
+      ),
+      builder: (context) => DocsoftPhotoSheet(
         hasPhoto: profile.imageUrl != null && profile.imageUrl!.isNotEmpty,
         onTakePhoto: onTakePhoto,
         onChooseFromGallery: onChooseFromGallery,

@@ -137,7 +137,10 @@ class _NotesListPageState extends ConsumerState<NotesListPage> {
       body: SafeArea(
         child: Column(
           children: [
-            NotesHeader(onNewNote: _handleNewNote),
+            NotesHeader(
+              onNewNote: _handleNewNote,
+              patientName: widget.patient?.fullName,
+            ),
             DocsoftSearchBar(
               hintText: 'Buscar por título o paciente',
               controller: _searchController,
