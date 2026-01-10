@@ -200,6 +200,11 @@ class _PatientsListPageState extends ConsumerState<PatientsListPage> {
             break;
         }
 
+        // Apply alphabetical sort for all filters except 'Recientes'
+        if (_selectedFilterIndex != 3) {
+          _sortAlphabetically(filteredPatients);
+        }
+
         return RefreshIndicator(
           onRefresh: () async {
             // Refresh both patients and notes
@@ -275,6 +280,13 @@ class _PatientsListPageState extends ConsumerState<PatientsListPage> {
     if (parts.length == 1) return parts[0][0].toUpperCase();
 
     return '${parts[0][0]}${parts[parts.length - 1][0]}'.toUpperCase();
+  }
+
+  /// Sorts patients alphabetically by name (A-Z, case-insensitive)
+  void _sortAlphabetically(List<PatientDisplayData> patients) {
+    patients.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
   }
 }
 

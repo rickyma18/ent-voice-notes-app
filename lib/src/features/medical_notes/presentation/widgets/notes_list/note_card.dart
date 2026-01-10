@@ -26,18 +26,9 @@ class NoteCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: DocsoftColors.surface,
-        borderRadius: DocsoftRadii.card,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            offset: const Offset(0, 4),
-            blurRadius: 12,
-          ),
-        ],
-      ),
+    return DocsoftCard(
+      padding: EdgeInsets.zero,
+      onTap: onTap,
       child: ClipRRect(
         borderRadius: DocsoftRadii.card,
         child: IntrinsicHeight(
@@ -57,59 +48,53 @@ class NoteCard extends StatelessWidget {
               ),
               // Content
               Expanded(
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: onTap,
-                    child: Padding(
-                      padding: const EdgeInsets.all(DocsoftSpacing.cardPadding),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                child: Padding(
+                  padding: const EdgeInsets.all(DocsoftSpacing.cardPadding),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Title
+                      Text(
+                        note.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: DocsoftTextStyles.subtitle.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: DocsoftSpacing.xs + 2),
+                      // Patient name
+                      Text(
+                        'Paciente: ${note.patientName}',
+                        style: DocsoftTextStyles.body.copyWith(
+                          color: DocsoftColors.textSecondary,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: DocsoftSpacing.xs),
+                      // Date and status row
+                      Row(
                         children: [
-                          // Title
                           Text(
-                            note.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: DocsoftTextStyles.subtitle.copyWith(
+                            'Fecha: ${note.date}',
+                            style: DocsoftTextStyles.caption,
+                          ),
+                          const Text(
+                            ' \u00b7 ',
+                            style: TextStyle(
+                              color: DocsoftColors.textTertiary,
+                            ),
+                          ),
+                          Text(
+                            note.status.label,
+                            style: DocsoftTextStyles.caption.copyWith(
+                              color: _getStatusColor(),
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          const SizedBox(height: DocsoftSpacing.xs + 2),
-                          // Patient name
-                          Text(
-                            'Paciente: ${note.patientName}',
-                            style: DocsoftTextStyles.body.copyWith(
-                              color: DocsoftColors.textSecondary,
-                              fontSize: 14,
-                            ),
-                          ),
-                          const SizedBox(height: DocsoftSpacing.xs),
-                          // Date and status row
-                          Row(
-                            children: [
-                              Text(
-                                'Fecha: ${note.date}',
-                                style: DocsoftTextStyles.caption,
-                              ),
-                              const Text(
-                                ' \u00b7 ',
-                                style: TextStyle(
-                                  color: DocsoftColors.textTertiary,
-                                ),
-                              ),
-                              Text(
-                                note.status.label,
-                                style: DocsoftTextStyles.caption.copyWith(
-                                  color: _getStatusColor(),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
                         ],
                       ),
-                    ),
+                    ],
                   ),
                 ),
               ),
@@ -142,7 +127,7 @@ class DismissibleNoteCard extends StatelessWidget {
       direction: DismissDirection.endToStart,
       confirmDismiss: (_) => onDelete(),
       background: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           color: DocsoftColors.errorSoft,
           borderRadius: DocsoftRadii.card,
         ),

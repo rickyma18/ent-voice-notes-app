@@ -1,24 +1,31 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/di/session_repository_providers.dart';
+
 class ResetRepositoryUseCase {
   const ResetRepositoryUseCase();
 
-  /// Invalidates all repository dependencies in the dependency injection container
+  /// Invalidates all session-scoped repository providers.
   ///
-  /// This method will invalidate all repository providers, forcing them to be
-  /// recreated on next access. This is useful for clearing cached data and
-  /// ensuring fresh repository instances.
+  /// This method invalidates all repository providers that hold
+  /// session-specific business data, forcing them to be recreated on next
+  /// access. This ensures
+  /// fresh repository instances with no cached data from previous sessions.
   ///
-  /// This is particularly important when switching between businesses, as we need
-  /// to ensure fresh copies of repositories for the newly selected business.
-  /// Without invalidation, repositories would retain data from the previous
-  /// business since they are kept alive by the dependency injection container.
+  /// Used during:
+  /// - Logout
+  /// - Account switching
+  /// - Session teardown
+  ///
+  /// The list of providers to invalidate is defined in
+  /// [sessionRepositoryProviders],
+  /// which is an explicit whitelist. This approach is:
+  /// - Type-safe: Compile-time errors if a provider is renamed/removed
+  /// - Efficient: Only invalidates necessary providers
+  /// - Maintainable: Single source of truth for session-scoped repositories
   void call(Ref ref) {
-    // Invalidate all repository providers
-    ref.container.getAllProviderElements().forEach((element) {
-      if (element.provider.name!.contains('Repository')) {
-        ref.invalidate(element.provider);
-      }
-    });
+    for (final provider in sessionRepositoryProviders) {
+      ref.invalidate(provider);
+    }
   }
 }

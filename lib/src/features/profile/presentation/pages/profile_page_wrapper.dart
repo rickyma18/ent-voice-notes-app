@@ -180,39 +180,7 @@ class _ProfilePageWrapperState extends ConsumerState<ProfilePageWrapper> {
   }
 
   Future<void> _showLogoutConfirmation() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: DocsoftColors.surface,
-        shape: const RoundedRectangleBorder(borderRadius: DocsoftRadii.card),
-        title: Text('Cerrar sesión', style: DocsoftTextStyles.title),
-        content: Text(
-          '¿Estás seguro de que deseas cerrar sesión?',
-          style: DocsoftTextStyles.body,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(
-              'Cancelar',
-              style: DocsoftTextStyles.button.copyWith(
-                color: DocsoftColors.textSecondary,
-              ),
-            ),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: DocsoftColors.error),
-            child: Text(
-              'Cerrar sesión',
-              style: DocsoftTextStyles.button.copyWith(
-                color: DocsoftColors.onError,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    final confirmed = await DocsoftDialogs.showLogoutDialog(context);
 
     if (confirmed == true && mounted) {
       await ref.read(logoutProvider.notifier).call();
@@ -220,83 +188,7 @@ class _ProfilePageWrapperState extends ConsumerState<ProfilePageWrapper> {
   }
 
   Future<void> _showDeleteAccountConfirmation(String doctorId) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: DocsoftColors.surface,
-        shape: const RoundedRectangleBorder(borderRadius: DocsoftRadii.card),
-        title: Row(
-          children: [
-            const Icon(
-              Icons.warning_amber_rounded,
-              color: DocsoftColors.error,
-              size: 28,
-            ),
-            const SizedBox(width: DocsoftSpacing.sm),
-            Text(
-              'Eliminar cuenta',
-              style: DocsoftTextStyles.title.copyWith(
-                color: DocsoftColors.error,
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Esta acción es irreversible.',
-              style: DocsoftTextStyles.subtitle.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: DocsoftSpacing.sm),
-            Text(
-              'Se eliminará permanentemente:',
-              style: DocsoftTextStyles.body,
-            ),
-            const SizedBox(height: DocsoftSpacing.xs),
-            Text(
-              '• Tu perfil y datos personales\n'
-              '• Tu cuenta de acceso\n'
-              '• Todos los datos asociados',
-              style: DocsoftTextStyles.body.copyWith(
-                color: DocsoftColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: DocsoftSpacing.md),
-            Text(
-              '¿Estás seguro de continuar?',
-              style: DocsoftTextStyles.body.copyWith(
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(
-              'Cancelar',
-              style: DocsoftTextStyles.button.copyWith(
-                color: DocsoftColors.textSecondary,
-              ),
-            ),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: DocsoftColors.error),
-            child: Text(
-              'Eliminar cuenta',
-              style: DocsoftTextStyles.button.copyWith(
-                color: DocsoftColors.onError,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    final confirmed = await DocsoftDialogs.showDeleteAccountDialog(context);
 
     if (confirmed == true && mounted) {
       await _deleteAccount(doctorId);

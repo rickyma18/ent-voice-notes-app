@@ -55,22 +55,7 @@ class EditProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: Padding(
-          padding: const EdgeInsets.all(DocsoftSpacing.sm),
-          child: DocsoftBackButton(onTap: onBack),
-        ),
-        title: Text(
-          "Editar perfil",
-          style: DocsoftTextStyles.appBarTitle.copyWith(
-            color: DocsoftColors.onPrimary,
-          ),
-        ),
-        centerTitle: true,
-      ),
+      backgroundColor: DocsoftColors.background,
       body: SingleChildScrollView(
         child: Column(
           children: [
@@ -79,8 +64,12 @@ class EditProfilePage extends StatelessWidget {
               clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
-                // 1. Gradient Header (title in AppBar, not here)
-                const DocsoftProfileHeader(height: _headerHeight),
+                // 1. Illustrated Header with back button
+                DocsoftIllustratedHeader(
+                  title: 'Editar perfil',
+                  height: _headerHeight,
+                  onBack: onBack,
+                ),
 
                 // 2. Avatar positioned to overlap header
                 Positioned(

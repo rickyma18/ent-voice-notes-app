@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../ui/theme/colors.dart';
-import '../../../../ui/theme/radii.dart';
-import '../../../../ui/theme/text_styles.dart';
+import '../../../../ui/docsoft_ui.dart';
 
 /// Model for patient display data
 class PatientDisplayData {
@@ -53,149 +51,129 @@ class PatientCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: DocsoftRadii.card,
-        child: Ink(
-          decoration: BoxDecoration(
-            color: DocsoftColors.surface,
-            borderRadius: DocsoftRadii.card,
-            border: Border.all(color: DocsoftColors.border),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+    return DocsoftCard(
+      onTap: onTap,
+      showBorder: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Top Row: Avatar, Name/Metadata, Arrow Icon
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Avatar
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: DocsoftColors.primarySoft,
+                  borderRadius: BorderRadius.circular(DocsoftRadii.md),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  patient.initials,
+                  style: DocsoftTextStyles.subtitle.copyWith(
+                    color: DocsoftColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      patient.name,
+                      style: DocsoftTextStyles.title.copyWith(
+                        fontSize: 17,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.cake_rounded,
+                          size: 14,
+                          color: DocsoftColors.textTertiary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${patient.age} años',
+                          style: DocsoftTextStyles.caption,
+                        ),
+                        const SizedBox(width: 12),
+                        Icon(
+                          patient.sex == 'M'
+                              ? Icons.male_rounded
+                              : Icons.female_rounded,
+                          size: 14,
+                          color: DocsoftColors.textTertiary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Sexo: ${patient.sex}',
+                          style: DocsoftTextStyles.caption,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: DocsoftColors.textTertiary,
               ),
             ],
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Top Row: Avatar, Name/Metadata, Arrow Icon
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Avatar
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: DocsoftColors.primarySoft,
-                        borderRadius: BorderRadius.circular(DocsoftRadii.md),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        patient.initials,
-                        style: DocsoftTextStyles.subtitle.copyWith(
-                          color: DocsoftColors.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            patient.name,
-                            style: DocsoftTextStyles.title.copyWith(
-                              fontSize: 17,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.cake_rounded,
-                                size: 14,
-                                color: DocsoftColors.textTertiary,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${patient.age} años',
-                                style: DocsoftTextStyles.caption,
-                              ),
-                              const SizedBox(width: 12),
-                              Icon(
-                                patient.sex == 'M'
-                                    ? Icons.male_rounded
-                                    : Icons.female_rounded,
-                                size: 14,
-                                color: DocsoftColors.textTertiary,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Sexo: ${patient.sex}',
-                                style: DocsoftTextStyles.caption,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      color: DocsoftColors.textTertiary,
-                    ),
-                  ],
-                ),
 
-                // Middle Section: Last Motive
-                if (patient.lastMotive != null &&
-                    patient.lastMotive!.isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  Text(
-                    'Último motivo: ${patient.lastMotive}',
-                    style: DocsoftTextStyles.caption.copyWith(
-                      color: DocsoftColors.textSecondary,
-                      height: 1.4,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-
-                const SizedBox(height: 14),
-
-                // Bottom Row: Actions
-                Row(
-                  children: [
-                    // Notes Count Chip
-                    _NotesCountChip(notesCount: patient.notesCount),
-                    const Spacer(),
-                    // New Note Action Button
-                    TextButton.icon(
-                      onPressed: onNewNote,
-                      style: TextButton.styleFrom(
-                        foregroundColor: DocsoftColors.primary,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        backgroundColor: Colors.transparent,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      icon: const Icon(Icons.mic_none_rounded, size: 18),
-                      label: Text(
-                        'Nueva nota',
-                        style: DocsoftTextStyles.button.copyWith(
-                          color: DocsoftColors.primary,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+          // Middle Section: Last Motive
+          if (patient.lastMotive != null &&
+              patient.lastMotive!.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Text(
+              'Último motivo: ${patient.lastMotive}',
+              style: DocsoftTextStyles.caption.copyWith(
+                color: DocsoftColors.textSecondary,
+                height: 1.4,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
+          ],
+
+          const SizedBox(height: 14),
+
+          // Bottom Row: Actions
+          Row(
+            children: [
+              // Notes Count Chip
+              _NotesCountChip(notesCount: patient.notesCount),
+              const Spacer(),
+              // New Note Action Button
+              TextButton.icon(
+                onPressed: onNewNote,
+                style: TextButton.styleFrom(
+                  foregroundColor: DocsoftColors.primary,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  backgroundColor: Colors.transparent,
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.mic_none_rounded, size: 18),
+                label: Text(
+                  'Nueva nota',
+                  style: DocsoftTextStyles.button.copyWith(
+                    color: DocsoftColors.primary,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ),
+        ],
       ),
     );
   }

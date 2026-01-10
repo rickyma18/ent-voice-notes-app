@@ -325,10 +325,14 @@ class _NotesList extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.note_alt_outlined,
-              size: 64,
-              color: DocsoftColors.textTertiary,
+            Opacity(
+              opacity: 0.5,
+              child: Image.asset(
+                'assets/branding/states/docsoft_medical_records.png',
+                width: 80,
+                height: 80,
+                fit: BoxFit.contain,
+              ),
             ),
             const SizedBox(height: DocsoftSpacing.md),
             Text(

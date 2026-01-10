@@ -132,6 +132,13 @@ class _SelectPatientPageState extends ConsumerState<SelectPatientPage> {
                     return _buildNoResultsState();
                   }
 
+                  // Sort alphabetically by name (A-Z, case-insensitive)
+                  final sortedPatients = [...filteredPatients]..sort(
+                      (a, b) => a.fullName
+                          .toLowerCase()
+                          .compareTo(b.fullName.toLowerCase()),
+                    );
+
                   // Get all medical notes (data or empty list)
                   final notes =
                       medicalNotesAsync.value ?? const <MedicalNoteEntity>[];
@@ -148,11 +155,11 @@ class _SelectPatientPageState extends ConsumerState<SelectPatientPage> {
                       horizontal: DocsoftSpacing.screenPadding,
                       vertical: DocsoftSpacing.sm,
                     ),
-                    itemCount: filteredPatients.length,
+                    itemCount: sortedPatients.length,
                     separatorBuilder: (_, __) =>
                         const SizedBox(height: DocsoftSpacing.itemSpacing),
                     itemBuilder: (context, index) {
-                      final patient = filteredPatients[index];
+                      final patient = sortedPatients[index];
                       final notesCount = notesByPatient[patient.id] ?? 0;
                       final displayData = _toDisplayData(patient, notesCount);
 
@@ -220,10 +227,14 @@ class _SelectPatientPageState extends ConsumerState<SelectPatientPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.people_outline,
-              size: 64,
-              color: DocsoftColors.textTertiary.withValues(alpha: 0.5),
+            Opacity(
+              opacity: 0.5,
+              child: Image.asset(
+                'assets/branding/states/docsoft_patient_profile.png',
+                width: 80,
+                height: 80,
+                fit: BoxFit.contain,
+              ),
             ),
             const SizedBox(height: DocsoftSpacing.md),
             Text(

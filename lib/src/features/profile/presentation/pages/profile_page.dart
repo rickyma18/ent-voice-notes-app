@@ -57,6 +57,8 @@ class ProfilePage extends StatelessWidget {
   /// Callback when "Remove photo" is selected from photo sheet
   final VoidCallback? onRemovePhoto;
 
+  static const double _headerHeight = 180;
+
   void _showPhotoOptions(BuildContext context) {
     if (isUploadingPhoto) return;
     showModalBottomSheet(
@@ -80,12 +82,17 @@ class ProfilePage extends StatelessWidget {
       backgroundColor: DocsoftColors.background,
       body: Stack(
         children: [
-          // Fixed header background - using DocsoftProfileHeader from UI kit
-          const Positioned(
+          // Header (same shape & style as patient screens, no asset)
+          Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: DocsoftProfileHeader(title: 'Perfil', showTitle: true),
+            child: DocsoftIllustratedHeader(
+              title: 'Perfil',
+              height: _headerHeight,
+              // Align title baseline with NotesHeader
+              titleTopOffset: DocsoftSpacing.sm,
+            ),
           ),
 
           // Scrollable content
@@ -113,7 +120,7 @@ class ProfilePage extends StatelessWidget {
                                 if (isUploadingPhoto)
                                   Positioned.fill(
                                     child: Container(
-                                      decoration: BoxDecoration(
+                                      decoration: const BoxDecoration(
                                         color: DocsoftColors.scrim,
                                         shape: BoxShape.circle,
                                       ),

@@ -110,10 +110,14 @@ class _PatientsPageState extends State<PatientsPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.people_outline,
-              size: 64,
-              color: DocsoftColors.textTertiary.withOpacity(0.5),
+            Opacity(
+              opacity: 0.5,
+              child: Image.asset(
+                'assets/branding/states/docsoft_patient_profile.png',
+                width: 80,
+                height: 80,
+                fit: BoxFit.contain,
+              ),
             ),
             const SizedBox(height: 16),
             Text(

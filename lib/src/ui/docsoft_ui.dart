@@ -19,7 +19,10 @@ export 'widgets/docsoft_info_banner.dart';
 export 'widgets/docsoft_back_button.dart';
 export 'widgets/docsoft_action_tile.dart';
 export 'widgets/docsoft_photo_sheet.dart';
+export 'widgets/docsoft_profile_sheet.dart';
 export 'widgets/docsoft_selectable_tile.dart';
+export 'widgets/docsoft_dialog.dart';
+export 'widgets/docsoft_dialogs.dart';
 
 // Components
 export 'components/avatar/docsoft_editable_avatar.dart';

@@ -7,7 +7,6 @@ export 'controllers/medical_notes_controller.dart';
 // Pages
 export 'pages/create_medical_note_page.dart';
 export 'pages/medical_note_detail_page.dart';
-export 'pages/medical_notes_list_page.dart';
 
 // Widgets
 export 'widgets/medical_note_card.dart';

@@ -43,30 +43,49 @@ class HomeHeader extends StatelessWidget {
         Semantics(
           button: true,
           label: 'Menú de perfil',
-          child: Material(
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(DocsoftRadii.md),
-            child: InkWell(
-              onTap: onProfileTap,
-              borderRadius: BorderRadius.circular(DocsoftRadii.md),
-              splashColor: DocsoftColors.primarySoft,
-              highlightColor: DocsoftColors.primaryMuted,
-              child: Ink(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: DocsoftColors.primaryMuted,
+          child: Tooltip(
+            message: 'Perfil',
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(DocsoftRadii.md),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(DocsoftRadii.md),
+                child: InkWell(
+                  onTap: onProfileTap,
                   borderRadius: BorderRadius.circular(DocsoftRadii.md),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: Image.asset(
-                    'assets/branding/symbol/docsoft_symbol.png',
-                    width: 24,
-                    height: 24,
-                    fit: BoxFit.contain,
-                    color: DocsoftColors.primary,
-                    colorBlendMode: BlendMode.srcIn,
+                  splashColor: DocsoftColors.primarySoft,
+                  highlightColor: DocsoftColors.primaryMuted,
+                  child: Ink(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: DocsoftColors.primaryMuted,
+                      borderRadius: BorderRadius.circular(DocsoftRadii.md),
+                      border: Border.all(
+                        color: DocsoftColors.border,
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Image.asset(
+                        'assets/branding/symbol/docsoft_symbol.png',
+                        width: 24,
+                        height: 24,
+                        fit: BoxFit.contain,
+                        color: DocsoftColors.primary,
+                        colorBlendMode: BlendMode.srcIn,
+                      ),
+                    ),
                   ),
                 ),
               ),

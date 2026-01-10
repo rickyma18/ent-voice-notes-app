@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../ui/theme/colors.dart';
-import '../../../../ui/theme/radii.dart';
-import '../../../../ui/theme/text_styles.dart';
+import '../../../../ui/docsoft_ui.dart';
 import '../../../../features/doctors/domain/entities/doctor_entity.dart';
 import '../../../../features/doctors/domain/entities/gender.dart';
 import '../../../core/application_state/auth_state_provider/auth_state_provider.dart';
@@ -102,111 +100,14 @@ class HomePage extends ConsumerWidget {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: DocsoftColors.surface,
-      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: DocsoftRadii.bottomSheet,
       ),
       builder: (sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 12, bottom: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Handle bar
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: DocsoftColors.border,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // User info header
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Row(
-                    children: [
-                      // Avatar placeholder
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: DocsoftColors.primaryMuted,
-                          borderRadius: BorderRadius.circular(DocsoftRadii.md),
-                        ),
-                        child: Center(
-                          child: Image.asset(
-                            'assets/branding/symbol/docsoft_symbol.png',
-                            width: 28,
-                            height: 28,
-                            color: DocsoftColors.primary,
-                            colorBlendMode: BlendMode.srcIn,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              greeting,
-                              style: DocsoftTextStyles.subtitle.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'DocSoft',
-                              style: DocsoftTextStyles.caption.copyWith(
-                                color: DocsoftColors.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                const Divider(height: 1),
-
-                const SizedBox(height: 8),
-
-                // Edit profile option
-                _ProfileActionTile(
-                  icon: Icons.person_outline,
-                  label: 'Editar perfil',
-                  onTap: () {
-                    Navigator.of(sheetContext).pop();
-                    context.pushNamed(RouteNames.editProfile);
-                  },
-                ),
-
-                // Logout option
-                _ProfileActionTile(
-                  icon: Icons.logout_outlined,
-                  label: 'Cerrar sesión',
-                  iconColor: DocsoftColors.error,
-                  onTap: () {
-                    Navigator.of(sheetContext).pop();
-                    _confirmLogout(context, ref);
-                  },
-                ),
-              ],
-            ),
-          ),
+        return DocsoftProfileSheet(
+          greeting: greeting,
+          onEditProfile: () => context.pushNamed(RouteNames.editProfile),
+          onLogout: () => _confirmLogout(context, ref),
         );
       },
     );
@@ -302,65 +203,5 @@ class HomePage extends ConsumerWidget {
 
   void _navigateToViewNotes(BuildContext context) {
     context.goNamed(RouteNames.medicalNotesList);
-  }
-}
-
-/// Single action tile for profile sheet
-class _ProfileActionTile extends StatelessWidget {
-  const _ProfileActionTile({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.iconColor,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final Color? iconColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = iconColor ?? DocsoftColors.textPrimary;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: iconColor != null
-                      ? iconColor!.withValues(alpha: 0.1)
-                      : DocsoftColors.surfaceAlt,
-                  borderRadius: BorderRadius.circular(DocsoftRadii.sm),
-                ),
-                child: Icon(icon, size: 20, color: color),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  label,
-                  style: DocsoftTextStyles.body.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-              const Icon(
-                Icons.chevron_right,
-                size: 20,
-                color: DocsoftColors.textTertiary,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }

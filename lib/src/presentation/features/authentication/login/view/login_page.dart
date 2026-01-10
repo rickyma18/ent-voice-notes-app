@@ -8,6 +8,7 @@ import '../../../../../core/extensions/validation.dart';
 import '../../../../../core/utility/validation/validation.dart';
 import '../../../../core/router/route_names.dart';
 import '../../../../features/authentication/login/riverpod/login_provider.dart';
+import '../../registration/riverpod/register_provider.dart';
 import '../widgets/language_switcher.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
@@ -21,6 +22,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _shouldRemember = ValueNotifier<bool>(false);
 
   // Auth sheet state
@@ -32,14 +35,27 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   void initState() {
     super.initState();
 
+    // Listen for login state changes
     ref.listenManual(loginProvider, (previous, next) {
       switch (next) {
         case AsyncData(:final value) when value != null:
           context.goNamed(RouteNames.home);
         case AsyncError(:final error):
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(error.toString())));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error.toString())),
+          );
+      }
+    });
+
+    // Listen for registration state changes
+    ref.listenManual(registerProvider, (previous, next) {
+      switch (next) {
+        case AsyncData(:final value) when value != null:
+          context.goNamed(RouteNames.home);
+        case AsyncError(:final error):
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error.toString())),
+          );
       }
     });
   }
@@ -48,6 +64,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _shouldRemember.dispose();
     super.dispose();
   }
@@ -67,6 +85,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     _formKey.currentState?.reset();
     _emailController.clear();
     _passwordController.clear();
+    _firstNameController.clear();
+    _lastNameController.clear();
   }
 
   void _toggleMode() {
@@ -77,6 +97,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     _formKey.currentState?.reset();
     _emailController.clear();
     _passwordController.clear();
+    _firstNameController.clear();
+    _lastNameController.clear();
   }
 
   void _togglePasswordVisibility() {
@@ -86,24 +108,31 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   void _onSubmit() {
     if (_formKey.currentState!.validate()) {
       if (_isLoginMode) {
-        ref
-            .read(loginProvider.notifier)
-            .login(
+        ref.read(loginProvider.notifier).login(
               email: _emailController.text,
               password: _passwordController.text,
               shouldRemember: _shouldRemember.value,
             );
       } else {
-        // Navigate to registration page for full registration flow
-        _closeSheet();
-        context.pushNamed(RouteNames.registration);
+        // Register directly using registerProvider
+        ref.read(registerProvider.notifier).register(
+              firstName: _firstNameController.text.trim(),
+              lastName: _lastNameController.text.trim(),
+              email: _emailController.text.trim(),
+              password: _passwordController.text,
+            );
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(loginProvider);
+    final loginState = ref.watch(loginProvider);
+    final registerState = ref.watch(registerProvider);
+
+    // Combine loading states based on current mode
+    final isLoading =
+        _isLoginMode ? loginState.isLoading : registerState.isLoading;
 
     return Scaffold(
       backgroundColor: DocsoftColors.background,
@@ -161,10 +190,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             onClose: _closeSheet,
             onOpen: () => _openSheet(loginMode: true),
             title: _isLoginMode ? '¡Bienvenido de vuelta!' : 'Crear cuenta',
-            heightPercentage: 0.70,
+            heightPercentage: _isLoginMode ? 0.70 : 0.82,
             child: Form(
               key: _formKey,
-              child: _buildFormContent(context, state),
+              child: _buildFormContent(context, isLoading),
             ),
           ),
         ],
@@ -247,12 +276,41 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 
-  Widget _buildFormContent(BuildContext context, AsyncValue state) {
+  Widget _buildFormContent(BuildContext context, bool isLoading) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Form fields
+        // Name fields (only for registration)
+        if (!_isLoginMode) ...[
+          DocsoftInput(
+            controller: _firstNameController,
+            label: 'Nombre',
+            hint: 'Juan',
+            keyboardType: TextInputType.name,
+            textInputAction: TextInputAction.next,
+            textCapitalization: TextCapitalization.words,
+            prefixIcon: const Icon(Icons.person_outline, size: 20),
+            inputFormatters: InputFormatters.name,
+            validator: context.validator.apply([RequiredValidation()]),
+          ),
+          const SizedBox(height: DocsoftSpacing.md),
+
+          DocsoftInput(
+            controller: _lastNameController,
+            label: 'Apellido',
+            hint: 'Pérez',
+            keyboardType: TextInputType.name,
+            textInputAction: TextInputAction.next,
+            textCapitalization: TextCapitalization.words,
+            prefixIcon: const Icon(Icons.person_outline, size: 20),
+            inputFormatters: InputFormatters.name,
+            validator: context.validator.apply([RequiredValidation()]),
+          ),
+          const SizedBox(height: DocsoftSpacing.md),
+        ],
+
+        // Email field
         DocsoftInput(
           controller: _emailController,
           label: context.locale.email,
@@ -264,6 +322,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         ),
         const SizedBox(height: DocsoftSpacing.md),
 
+        // Password field
         DocsoftInput(
           controller: _passwordController,
           label: context.locale.password,
@@ -340,11 +399,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
         // Submit button
         DocsoftPrimaryButton(
-          onPressed: state.isLoading ? null : _onSubmit,
+          onPressed: isLoading ? null : _onSubmit,
           label: _isLoginMode
               ? context.locale.login
-              : context.locale.continueAction,
-          isLoading: state.isLoading,
+              : 'Crear cuenta',
+          isLoading: isLoading,
           fullWidth: true,
         ),
 

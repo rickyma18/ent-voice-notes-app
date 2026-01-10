@@ -15,6 +15,7 @@ class DocsoftIllustratedHeader extends StatelessWidget {
     this.decorationOpacity = 0.1,
     this.decorationAlignment = Alignment.topRight,
     this.decorationSize = 180.0,
+    this.titleTopOffset = 0.0,
   });
 
   /// Header title (can be multiline)
@@ -37,6 +38,13 @@ class DocsoftIllustratedHeader extends StatelessWidget {
 
   /// Size of the decoration image
   final double decorationSize;
+
+  /// Optional vertical offset for the title.
+  ///
+  /// Useful for aligning the header title baseline with other headers
+  /// that don't use SafeArea (e.g., NotesHeader).
+  /// Positive values push the title down; negative values push it up.
+  final double titleTopOffset;
 
   @override
   Widget build(BuildContext context) {
@@ -91,26 +99,32 @@ class DocsoftIllustratedHeader extends StatelessWidget {
 
           // Content (SafeArea + back button + title)
           SafeArea(
+            bottom: false,
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: DocsoftSpacing.screenPadding,
+              padding: EdgeInsets.fromLTRB(
+                DocsoftSpacing.screenPadding,
+                DocsoftSpacing.screenPadding + titleTopOffset,
+                DocsoftSpacing.screenPadding,
+                0,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  const SizedBox(height: DocsoftSpacing.sm),
+                  if (onBack != null)
+                    Padding(
+                      padding: const EdgeInsets.only(right: DocsoftSpacing.sm),
+                      child: DocsoftBackButton(onTap: onBack!),
+                    ),
 
-                  // Back button
-                  if (onBack != null) DocsoftBackButton(onTap: onBack!),
-
-                  const SizedBox(height: DocsoftSpacing.md),
-
-                  // Title
-                  Text(
-                    title,
-                    style: DocsoftTextStyles.headline.copyWith(
-                      color: DocsoftColors.onPrimary,
-                      fontWeight: FontWeight.bold,
+                  Expanded(
+                    child: Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: DocsoftTextStyles.headline.copyWith(
+                        color: DocsoftColors.onPrimary,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ],
