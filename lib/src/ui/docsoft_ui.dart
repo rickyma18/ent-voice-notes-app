@@ -31,6 +31,7 @@ export 'widgets/docsoft_attachment_sheet.dart';
 export 'widgets/docsoft_dictation_banner.dart';
 export 'widgets/docsoft_wizard_progress.dart';
 export 'widgets/docsoft_status_chip.dart';
+export 'widgets/docsoft_segmented_control.dart';
 
 // Components
 export 'components/avatar/docsoft_editable_avatar.dart';

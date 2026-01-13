@@ -106,6 +106,10 @@ class _ClinicalHistoryWizardPageState
   // This ensures SnackBars appear on the actual Scaffold, not inside the sheet
   ScaffoldMessengerState? _parentMessenger;
 
+  // Cached suggestions for re-opening
+  List<AISuggestionSection>? _lastSuggestionSections;
+  Map<String, String>? _lastLegacySuggestions;
+
   /// Returns the active ScaffoldMessenger for showing SnackBars.
   /// Priority: sheet messenger (if open) > parent messenger > context fallback
   ScaffoldMessengerState get _activeMessenger =>
@@ -573,6 +577,11 @@ class _ClinicalHistoryWizardPageState
 
       // Show suggestions sheet (pass legacy format for compatibility)
       final legacySuggestions = LegacyFieldsAdapter.toLegacy(structuredV1);
+
+      // Cache for reopening
+      _lastSuggestionSections = sections;
+      _lastLegacySuggestions = legacySuggestions;
+
       if (mounted) {
         _showSuggestionsSheet(sections, legacySuggestions);
       }
@@ -901,32 +910,18 @@ class _ClinicalHistoryWizardPageState
     // Create a fresh key for this sheet's ScaffoldMessenger
     _sheetMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
-    showModalBottomSheet(
+    // Show AI suggestions as a proper bottom sheet (from below)
+    AISuggestionsSheet.show(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        // Wrap with ScaffoldMessenger + Scaffold so SnackBars can be shown.
-        // IMPORTANT: ScaffoldMessenger REQUIRES a Scaffold descendant to
-        // render SnackBars. Without it, showSnackBar() silently fails.
-        return ScaffoldMessenger(
-          key: _sheetMessengerKey,
-          child: Scaffold(
-            backgroundColor: Colors.transparent,
-            body: AISuggestionsSheet(
-              sections: sections,
-              onApply: (editedSections, mode) {
-                // DO NOT close the sheet - allow applying multiple suggestions
-                _applySuggestions(editedSections, mode);
-              },
-              onApplySection: (editedSection, mode) {
-                // DO NOT close the sheet - allow applying multiple suggestions
-                _applySingleSectionWithFeedback(editedSection, mode);
-              },
-              onCancel: () => Navigator.pop(ctx),
-            ),
-          ),
-        );
+      sections: sections,
+      messengerKey: _sheetMessengerKey,
+      onApply: (editedSections, mode) {
+        // DO NOT close the sheet - allow applying multiple suggestions
+        _applySuggestions(editedSections, mode);
+      },
+      onApplySection: (editedSection, mode) {
+        // DO NOT close the sheet - allow applying multiple suggestions
+        _applySingleSectionWithFeedback(editedSection, mode);
       },
     ).whenComplete(() {
       // Clear references when sheet is closed
@@ -1165,6 +1160,11 @@ class _ClinicalHistoryWizardPageState
 
       // Show suggestions sheet with filtered sections
       final legacySuggestions = LegacyFieldsAdapter.toLegacy(structuredV1);
+
+      // Cache for reopening
+      _lastSuggestionSections = stepSections;
+      _lastLegacySuggestions = legacySuggestions;
+
       if (mounted) {
         _showSuggestionsSheet(stepSections, legacySuggestions);
       }
@@ -1304,27 +1304,16 @@ class _ClinicalHistoryWizardPageState
     // Create a fresh key for this sheet's ScaffoldMessenger
     _sheetMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
-    showModalBottomSheet(
+    // Show AI suggestions as a proper bottom sheet (from below)
+    AISuggestionsSheet.show(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return ScaffoldMessenger(
-          key: _sheetMessengerKey,
-          child: Scaffold(
-            backgroundColor: Colors.transparent,
-            body: AISuggestionsSheet(
-              sections: sections,
-              onApply: (editedSections, mode) {
-                _applySuggestions(editedSections, mode);
-              },
-              onApplySection: (editedSection, mode) {
-                _applySingleSectionWithFeedback(editedSection, mode);
-              },
-              onCancel: () => Navigator.pop(ctx),
-            ),
-          ),
-        );
+      sections: sections,
+      messengerKey: _sheetMessengerKey,
+      onApply: (editedSections, mode) {
+        _applySuggestions(editedSections, mode);
+      },
+      onApplySection: (editedSection, mode) {
+        _applySingleSectionWithFeedback(editedSection, mode);
       },
     ).whenComplete(() {
       _sheetMessengerKey = null;
@@ -2102,27 +2091,50 @@ class _ClinicalHistoryWizardPageState
                 DocsoftSpacing.screenPadding,
                 DocsoftSpacing.sm,
               ),
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  DocsoftBackButton(
-                    onTap: () => Navigator.of(context).maybePop(),
-                    backgroundColor: DocsoftColors.primaryMuted,
-                    iconColor: DocsoftColors.primary,
+                  Row(
+                    children: [
+                      DocsoftBackButton(
+                        onTap: () => Navigator.of(context).maybePop(),
+                        backgroundColor: DocsoftColors.primaryMuted,
+                        iconColor: DocsoftColors.primary,
+                      ),
+                      const SizedBox(width: DocsoftSpacing.sm),
+                      Expanded(
+                        child: Text(
+                          widget.isEditMode
+                              ? 'Editar historia clínica'
+                              : 'Nueva historia clínica',
+                          style: DocsoftTextStyles.appBarTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      // Show static icon only if NO suggestions are active
+                      if (!_hasActiveSuggestions)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            left: DocsoftSpacing.sm,
+                          ),
+                          child: Icon(
+                            Icons.auto_awesome_outlined,
+                            color: DocsoftColors.textTertiary,
+                            size: 20,
+                          ),
+                        ),
+                    ],
                   ),
-                  const SizedBox(width: DocsoftSpacing.sm),
-                  Text(
-                    widget.isEditMode
-                        ? 'Editar historia clínica'
-                        : 'Nueva historia clínica',
-                    style: DocsoftTextStyles.appBarTitle,
-                  ),
-                  const Spacer(),
-                  // Sparkle icon (subtle AI indicator)
-                  Icon(
-                    Icons.auto_awesome_outlined,
-                    color: DocsoftColors.textTertiary,
-                    size: 20,
-                  ),
+                  // Second Row for Chip
+                  if (_hasActiveSuggestions) ...[
+                    const SizedBox(height: DocsoftSpacing.xs),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [_buildAIChip()],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -2231,6 +2243,33 @@ class _ClinicalHistoryWizardPageState
       ),
     );
   }
+
+  bool get _hasActiveSuggestions =>
+      _suggestionsGenerated &&
+      _lastSuggestionSections != null &&
+      _lastSuggestionSections!.any((s) => s.hasContent);
+
+  Widget _buildAIChip() {
+    final count =
+        _lastSuggestionSections?.where((s) => s.hasContent).length ?? 0;
+
+    return DocsoftStatusChip(
+      label: 'Sugerencias ($count)',
+      icon: Icons.auto_awesome,
+      variant: DocsoftStatusChipVariant.success,
+      onTap: _reopenSuggestionsSheet,
+    );
+  }
+
+  void _reopenSuggestionsSheet() {
+    if (_lastSuggestionSections != null && _lastLegacySuggestions != null) {
+      _showSuggestionsSheet(_lastSuggestionSections!, _lastLegacySuggestions!);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helper for scrollable steps
+  // ---------------------------------------------------------------------------
 
   /// Scrollable wrapper for wizard steps.
   ///

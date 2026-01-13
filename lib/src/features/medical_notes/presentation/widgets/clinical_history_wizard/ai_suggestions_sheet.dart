@@ -2,6 +2,8 @@
 
 import 'package:flutter/material.dart';
 
+import '../../../../../ui/docsoft_ui.dart';
+
 /// A section in the AI suggestions sheet.
 class AISuggestionSection {
   const AISuggestionSection({
@@ -110,15 +112,22 @@ enum ApplyMode {
   replace,
 }
 
+/// Filter mode for viewing suggestions.
+enum _FilterMode {
+  all,
+  review,
+}
+
 /// Bottom sheet that displays AI-generated suggestions and allows the doctor
 /// to review and apply them to wizard fields.
 ///
-/// Features:
-/// - Shows preview of each suggestion with overwrite indicator
-/// - Apply only to empty fields (default, safe)
-/// - Replace all with confirmation
-/// - Per-section apply with mode selection
-/// - Edit individual suggestions before applying
+/// Stitch design with:
+/// - Clean header with title and close button
+/// - Segmented control for filtering (Todas / Revisar)
+/// - Cards with VALOR ACTUAL and SUGERENCIA IA sections
+/// - Sticky footer with primary and secondary actions
+///
+/// Use [AISuggestionsSheet.show] to display as a proper bottom sheet.
 class AISuggestionsSheet extends StatefulWidget {
   const AISuggestionsSheet({
     super.key,
@@ -126,22 +135,72 @@ class AISuggestionsSheet extends StatefulWidget {
     required this.onApply,
     required this.onApplySection,
     required this.onCancel,
+    required this.scrollController,
     this.closeOnApply = false,
   });
 
   final List<AISuggestionSection> sections;
+
   /// Called when user applies suggestions (either empty-only or replace-all).
   /// Receives the edited sections list and the apply mode.
   final void Function(List<AISuggestionSection> editedSections, ApplyMode mode)
       onApply;
+
   /// Called when user applies a single section.
   final void Function(AISuggestionSection editedSection, ApplyMode mode)
       onApplySection;
   final VoidCallback onCancel;
 
+  /// ScrollController from the DraggableScrollableSheet
+  final ScrollController scrollController;
+
   /// If true, the sheet will close after applying suggestions.
   /// If false (default), the sheet stays open to allow applying multiple suggestions.
   final bool closeOnApply;
+
+  /// Shows the AI Suggestions sheet as a proper bottom sheet from below.
+  ///
+  /// This is the recommended way to display the sheet.
+  /// Handles all the wrapping (DraggableScrollableSheet, Scaffold for SnackBars).
+  static Future<void> show({
+    required BuildContext context,
+    required List<AISuggestionSection> sections,
+    required void Function(List<AISuggestionSection> editedSections, ApplyMode mode) onApply,
+    required void Function(AISuggestionSection editedSection, ApplyMode mode) onApplySection,
+    GlobalKey<ScaffoldMessengerState>? messengerKey,
+  }) {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
+      builder: (sheetContext) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (_, scrollController) {
+            // Wrap with ScaffoldMessenger + Scaffold so SnackBars can be shown
+            return ScaffoldMessenger(
+              key: messengerKey,
+              child: Scaffold(
+                backgroundColor: Colors.transparent,
+                body: AISuggestionsSheet(
+                  sections: sections,
+                  scrollController: scrollController,
+                  onApply: onApply,
+                  onApplySection: onApplySection,
+                  onCancel: () => Navigator.pop(sheetContext),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
   @override
   State<AISuggestionsSheet> createState() => _AISuggestionsSheetState();
@@ -149,13 +208,23 @@ class AISuggestionsSheet extends StatefulWidget {
 
 class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
   /// Mutable map of edited suggestions keyed by section ID.
-  /// Only contains entries for suggestions that have been edited.
   late Map<String, String> _editedSuggestions;
+
+  /// Current filter mode
+  _FilterMode _filterMode = _FilterMode.all;
+
+  /// Set of selected section IDs for batch apply
+  late Set<String> _selectedSections;
 
   @override
   void initState() {
     super.initState();
     _editedSuggestions = {};
+    // Pre-select all "safe" sections (effectively empty)
+    _selectedSections = widget.sections
+        .where((s) => s.hasContent && s.isEffectivelyEmpty)
+        .map((s) => s.id)
+        .toSet();
   }
 
   /// Gets the current suggestion text for a section (edited or original).
@@ -178,6 +247,15 @@ class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
   /// Gets all sections with any edits applied.
   List<AISuggestionSection> get _effectiveSections {
     return widget.sections.map(_getEffectiveSection).toList();
+  }
+
+  /// Gets filtered sections based on current filter mode.
+  List<AISuggestionSection> get _filteredSections {
+    final effective = _effectiveSections.where((s) => s.hasContent).toList();
+    if (_filterMode == _FilterMode.review) {
+      return effective.where((s) => s.wouldOverwrite).toList();
+    }
+    return effective;
   }
 
   /// Handles editing a suggestion.
@@ -205,8 +283,8 @@ class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
     });
   }
 
-  /// Handles apply (empty-only mode).
-  void _handleApplyOnlyEmpty() {
+  /// Handles apply for safe sections only.
+  void _handleApplySafe() {
     final editedSections = _buildEditedSections();
     widget.onApply(editedSections, ApplyMode.onlyEmpty);
   }
@@ -225,6 +303,17 @@ class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
     widget.onApplySection(editedSection, mode);
   }
 
+  /// Toggles selection for a section.
+  void _toggleSelection(String sectionId) {
+    setState(() {
+      if (_selectedSections.contains(sectionId)) {
+        _selectedSections.remove(sectionId);
+      } else {
+        _selectedSections.add(sectionId);
+      }
+    });
+  }
+
   /// Builds a NEW list with edited suggestions applied (no mutation).
   List<AISuggestionSection> _buildEditedSections() {
     return widget.sections.map(_getEffectiveSection).toList(growable: false);
@@ -232,118 +321,138 @@ class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final effectiveSections = _effectiveSections;
-    // Count fields that are effectively empty (includes placeholders)
-    final emptyCount =
+    final totalCount = effectiveSections.where((s) => s.hasContent).length;
+    final safeCount =
         effectiveSections.where((s) => s.isEffectivelyEmpty && s.hasContent).length;
-    final overwriteCount =
+    final reviewCount =
         effectiveSections.where((s) => s.wouldOverwrite).length;
-    // Count how many have placeholders (for informational purposes)
-    final placeholderCount =
-        effectiveSections.where((s) => s.hasPlaceholder && s.hasContent).length;
 
-    return DraggableScrollableSheet(
-      initialChildSize: 0.85,
-      minChildSize: 0.5,
-      maxChildSize: 0.95,
-      expand: false,
-      builder: (context, scrollController) {
-        return Container(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+    return Container(
+      decoration: BoxDecoration(
+        color: DocsoftColors.surface,
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(DocsoftRadii.bottomSheetRadiusValue),
+        ),
+      ),
+      child: Column(
+        children: [
+          // Drag handle bar
+          Container(
+            margin: const EdgeInsets.only(top: DocsoftSpacing.sm + 4),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: DocsoftColors.textTertiary,
+              borderRadius: BorderRadius.circular(2),
+            ),
           ),
-          child: Column(
-            children: [
-              // Handle bar
-              Container(
-                margin: const EdgeInsets.only(top: 12),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
 
-              // Header
+              // Header - Stitch style
               Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
+                padding: const EdgeInsets.all(DocsoftSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      Icons.auto_awesome,
-                      color: theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Sugerencias de IA',
-                            style: theme.textTheme.titleLarge?.copyWith(
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Asistente IA',
+                            style: DocsoftTextStyles.title.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Revisa y decide que sugerencias aplicar. Nada se guarda automaticamente.',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                            ),
+                        ),
+                        IconButton(
+                          onPressed: widget.onCancel,
+                          icon: Icon(
+                            Icons.close,
+                            color: DocsoftColors.textSecondary,
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            placeholderCount > 0
-                                ? '$emptyCount aplicables ($placeholderCount con placeholder), $overwriteCount con datos'
-                                : '$emptyCount campos vacios, $overwriteCount con contenido',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                            ),
-                          ),
-                        ],
-                      ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      onPressed: widget.onCancel,
-                      icon: const Icon(Icons.close),
+                    const SizedBox(height: DocsoftSpacing.xs),
+                    Text(
+                      'Encontramos $totalCount sugerencias basadas en la transcripción.',
+                      style: DocsoftTextStyles.body.copyWith(
+                        color: DocsoftColors.textSecondary,
+                      ),
                     ),
                   ],
                 ),
               ),
 
-              const Divider(height: 1),
+              // Segmented control - Stitch style
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: DocsoftSpacing.md,
+                ),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: DocsoftSegmentedControl(
+                    segments: [
+                      const DocsoftSegment(label: 'Todas'),
+                      DocsoftSegment(
+                        label: 'Revisar',
+                        badge: reviewCount > 0 ? reviewCount.toString() : null,
+                        badgeColor: DocsoftColors.warning,
+                      ),
+                    ],
+                    selectedIndex: _filterMode == _FilterMode.all ? 0 : 1,
+                    onChanged: (index) {
+                      setState(() {
+                        _filterMode =
+                            index == 0 ? _FilterMode.all : _FilterMode.review;
+                      });
+                    },
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: DocsoftSpacing.md),
 
               // Sections list
               Expanded(
-                child: ListView.builder(
-                  controller: scrollController,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  itemCount: effectiveSections.length,
+                child: ListView.separated(
+                  controller: widget.scrollController,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: DocsoftSpacing.md,
+                  ),
+                  itemCount: _filteredSections.length,
+                  separatorBuilder: (_, __) => Divider(
+                    color: DocsoftColors.divider,
+                    height: DocsoftSpacing.lg,
+                  ),
                   itemBuilder: (context, index) {
-                    final section = effectiveSections[index];
-                    if (!section.hasContent) return const SizedBox.shrink();
-                    final isEdited = _editedSuggestions.containsKey(section.id);
+                    final section = _filteredSections[index];
+                    final isSelected = _selectedSections.contains(section.id);
                     return _SuggestionCard(
                       section: section,
-                      isEdited: isEdited,
-                      onApply: (mode) => _handleApplySection(section.id, mode),
+                      isSelected: isSelected,
+                      onToggleSelect: () => _toggleSelection(section.id),
                       onEdit: () => _onEditSuggestion(section),
                     );
                   },
                 ),
               ),
 
-              // Bottom actions
+              // Bottom actions - Stitch style
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.fromLTRB(
+                  DocsoftSpacing.md,
+                  DocsoftSpacing.md,
+                  DocsoftSpacing.md,
+                  DocsoftSpacing.md + MediaQuery.of(context).padding.bottom,
+                ),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
+                  color: DocsoftColors.surface,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
+                      color: DocsoftColors.shadowLight,
                       blurRadius: 8,
                       offset: const Offset(0, -2),
                     ),
@@ -353,38 +462,67 @@ class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Primary action: Apply only to empty
-                    if (emptyCount > 0)
-                      FilledButton.icon(
-                        onPressed: _handleApplyOnlyEmpty,
-                        icon: const Icon(Icons.add_circle_outline),
-                        label: Text('Aplicar solo a campos vacios ($emptyCount)'),
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
+                    // Primary: Apply safe suggestions
+                    if (safeCount > 0)
+                      SizedBox(
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: _handleApplySafe,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: DocsoftColors.primary,
+                            foregroundColor: DocsoftColors.onPrimary,
+                            elevation: 2,
+                            shadowColor:
+                                DocsoftColors.primary.withValues(alpha: 0.3),
+                            shape: RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.circular(DocsoftRadii.md),
+                            ),
+                          ),
+                          child: Text(
+                            'Aplicar sugerencias seguras ($safeCount)',
+                            style: DocsoftTextStyles.button.copyWith(
+                              color: DocsoftColors.onPrimary,
+                              fontSize: 16,
+                            ),
+                          ),
                         ),
                       ),
-                    if (emptyCount > 0) const SizedBox(height: 8),
 
-                    // Secondary action: Replace all (dangerous)
-                    if (overwriteCount > 0)
-                      OutlinedButton.icon(
+                    // Secondary: Replace all (with warning)
+                    if (reviewCount > 0) ...[
+                      const SizedBox(height: DocsoftSpacing.sm + 4),
+                      TextButton(
                         onPressed: () => _confirmReplaceAll(context),
-                        icon: const Icon(Icons.swap_horiz, color: Colors.orange),
-                        label: Text(
-                          'Reemplazar todo ($overwriteCount seran sobrescritos)',
-                          style: const TextStyle(color: Colors.orange),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          side: const BorderSide(color: Colors.orange),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Reemplazar todo ($totalCount)',
+                              style: DocsoftTextStyles.body.copyWith(
+                                color: DocsoftColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(width: DocsoftSpacing.xs),
+                            Icon(
+                              Icons.warning_amber,
+                              size: 18,
+                              color: DocsoftColors.warning,
+                            ),
+                          ],
                         ),
                       ),
-                    if (overwriteCount > 0) const SizedBox(height: 8),
+                    ],
 
-                    // Cancel
+                    // Tertiary: Cancel
                     TextButton(
                       onPressed: widget.onCancel,
-                      child: const Text('Cancelar'),
+                      child: Text(
+                        'Cancelar',
+                        style: DocsoftTextStyles.body.copyWith(
+                          color: DocsoftColors.textTertiary,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -392,8 +530,6 @@ class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
             ],
           ),
         );
-      },
-    );
   }
 
   void _confirmReplaceAll(BuildContext context) {
@@ -403,18 +539,19 @@ class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
       builder: (ctx) => AlertDialog(
         title: const Text('Confirmar reemplazo'),
         content: const Text(
-          'Esto sobrescribira los campos que ya tienen contenido. '
-          'Podras deshacer esta accion despues de aplicar.',
+          'Esto sobrescribirá los campos que ya tienen contenido. '
+          'Podrás deshacer esta acción después de aplicar.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancelar'),
           ),
-          FilledButton(
+          ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.orange,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: DocsoftColors.warning,
+              foregroundColor: DocsoftColors.onWarning,
             ),
             child: const Text('Reemplazar todo'),
           ),
@@ -429,334 +566,272 @@ class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
   }
 }
 
-/// Card showing a single suggestion section.
+/// Card showing a single suggestion section - Stitch design.
 class _SuggestionCard extends StatelessWidget {
   const _SuggestionCard({
     required this.section,
-    required this.onApply,
+    required this.isSelected,
+    required this.onToggleSelect,
     required this.onEdit,
-    this.isEdited = false,
   });
 
   final AISuggestionSection section;
-  final void Function(ApplyMode mode) onApply;
+  final bool isSelected;
+  final VoidCallback onToggleSelect;
   final VoidCallback onEdit;
-  final bool isEdited;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final isReview = section.wouldOverwrite;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header row: title + status badge
+        Row(
           children: [
-            // Header row
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    section.label,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+            Expanded(
+              child: Text(
+                section.label,
+                style: DocsoftTextStyles.subtitle.copyWith(
+                  fontWeight: FontWeight.bold,
                 ),
-                // Edited indicator
-                if (isEdited)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.edit_note,
-                          size: 14,
-                          color: theme.colorScheme.primary,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Editado',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                // Status indicator
-                if (section.wouldOverwrite)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.warning_amber, size: 14, color: Colors.orange),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Sobrescribe',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: Colors.orange,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                else if (section.hasPlaceholder)
-                  // Field has placeholder text that will be replaced
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.edit_note, size: 14, color: Colors.blue),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Placeholder',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: Colors.blue,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                else if (section.isCurrentEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.check_circle, size: 14, color: Colors.green),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Campo vacio',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: Colors.green,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            // Current value (if exists)
-            if (section.wouldOverwrite) ...[
-              Text(
-                'Valor actual:',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: theme.colorScheme.outlineVariant,
-                  ),
-                ),
-                child: _ExpandableText(
-                  text: section.currentValue.trim(),
-                  collapsedLines: 2,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-
-            // Suggested value
-            Text(
-              'Sugerencia IA:',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.primary,
-                fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 4),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.3),
-                ),
-              ),
-              child: _ExpandableText(
-                text: section.suggestion.trim(),
-                collapsedLines: 4,
-                style: theme.textTheme.bodySmall,
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            // Per-section actions
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                // Edit button (always visible)
-                TextButton.icon(
-                  onPressed: onEdit,
-                  icon: const Icon(Icons.edit, size: 18),
-                  label: const Text('Editar'),
-                ),
-                const SizedBox(width: 8),
-                // Apply/Replace button - use isEffectivelyEmpty for safe apply
-                if (section.isEffectivelyEmpty)
-                  TextButton.icon(
-                    onPressed: () => onApply(ApplyMode.onlyEmpty),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Aplicar'),
-                  )
-                else ...[
-                  TextButton.icon(
-                    onPressed: () => onApply(ApplyMode.replace),
-                    icon: const Icon(Icons.swap_horiz, size: 18, color: Colors.orange),
-                    label: const Text(
-                      'Reemplazar',
-                      style: TextStyle(color: Colors.orange),
-                    ),
-                  ),
-                ],
-              ],
+            // Status badge
+            _StatusBadge(
+              label: isReview ? 'REVISAR' : 'SEGURO',
+              isWarning: isReview,
             ),
           ],
+        ),
+        const SizedBox(height: DocsoftSpacing.sm + 4),
+
+        // Current value block
+        _ValueBlock(
+          label: 'VALOR ACTUAL',
+          value: section.isCurrentEmpty
+              ? 'Campo vacío'
+              : section.currentValue.trim(),
+          isEmpty: section.isCurrentEmpty,
+        ),
+        const SizedBox(height: DocsoftSpacing.sm),
+
+        // Suggestion block with actions
+        _SuggestionBlock(
+          value: section.suggestion.trim(),
+          isSelected: isSelected,
+          onToggleSelect: onToggleSelect,
+          onEdit: onEdit,
+        ),
+      ],
+    );
+  }
+}
+
+/// Status badge (REVISAR / SEGURO).
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({
+    required this.label,
+    required this.isWarning,
+  });
+
+  final String label;
+  final bool isWarning;
+
+  @override
+  Widget build(BuildContext context) {
+    final bgColor = isWarning
+        ? DocsoftColors.warning.withValues(alpha: 0.15)
+        : DocsoftColors.primary.withValues(alpha: 0.15);
+    final textColor = isWarning ? DocsoftColors.warning : DocsoftColors.primary;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: DocsoftSpacing.sm,
+        vertical: DocsoftSpacing.xs,
+      ),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(DocsoftRadii.xs),
+      ),
+      child: Text(
+        label,
+        style: DocsoftTextStyles.caption.copyWith(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: textColor,
+          letterSpacing: 0.5,
         ),
       ),
     );
   }
 }
 
-/// Widget that shows text with expand/collapse functionality.
-///
-/// Shows a limited number of lines by default with a "Ver más" button
-/// if the text exceeds the limit. Uses AnimatedSize for smooth transitions.
-class _ExpandableText extends StatefulWidget {
-  const _ExpandableText({
-    required this.text,
-    this.collapsedLines = 4,
-    this.style,
+/// Value block showing current value or "Campo vacío".
+class _ValueBlock extends StatelessWidget {
+  const _ValueBlock({
+    required this.label,
+    required this.value,
+    required this.isEmpty,
   });
 
-  final String text;
-  final int collapsedLines;
-  final TextStyle? style;
-
-  @override
-  State<_ExpandableText> createState() => _ExpandableTextState();
-}
-
-class _ExpandableTextState extends State<_ExpandableText> {
-  bool _isExpanded = false;
-  bool _needsExpansion = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _checkIfNeedsExpansion();
-  }
-
-  @override
-  void didUpdateWidget(_ExpandableText oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.text != widget.text ||
-        oldWidget.collapsedLines != widget.collapsedLines) {
-      _checkIfNeedsExpansion();
-    }
-  }
-
-  void _checkIfNeedsExpansion() {
-    // Use a post-frame callback to measure after layout
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: widget.text,
-          style: widget.style ?? Theme.of(context).textTheme.bodySmall,
-        ),
-        maxLines: widget.collapsedLines,
-        textDirection: TextDirection.ltr,
-      );
-      // Use a reasonable width for calculation
-      textPainter.layout(maxWidth: MediaQuery.of(context).size.width - 100);
-      final needsExpansion = textPainter.didExceedMaxLines;
-      if (needsExpansion != _needsExpansion) {
-        setState(() {
-          _needsExpansion = needsExpansion;
-        });
-      }
-    });
-  }
+  final String label;
+  final String value;
+  final bool isEmpty;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final effectiveStyle = widget.style ?? theme.textTheme.bodySmall;
-
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeInOut,
-      alignment: Alignment.topLeft,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(DocsoftSpacing.sm + 4),
+      decoration: BoxDecoration(
+        color: DocsoftColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(DocsoftRadii.sm),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            widget.text,
-            style: effectiveStyle,
-            maxLines: _isExpanded ? null : widget.collapsedLines,
-            overflow: _isExpanded ? null : TextOverflow.ellipsis,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                label,
+                style: DocsoftTextStyles.caption.copyWith(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: DocsoftColors.textTertiary,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              if (isEmpty)
+                Text(
+                  'Campo vacío',
+                  style: DocsoftTextStyles.caption.copyWith(
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                    color: DocsoftColors.textTertiary,
+                  ),
+                ),
+            ],
           ),
-          if (_needsExpansion)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _isExpanded = !_isExpanded;
-                  });
-                },
-                child: Text(
-                  _isExpanded ? 'Ver menos' : 'Ver más',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                    fontWeight: FontWeight.w600,
+          if (!isEmpty) ...[
+            const SizedBox(height: DocsoftSpacing.xs),
+            Text(
+              value,
+              style: DocsoftTextStyles.body.copyWith(
+                color: DocsoftColors.textSecondary,
+              ),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Suggestion block with AI sparkle icon and action buttons.
+class _SuggestionBlock extends StatelessWidget {
+  const _SuggestionBlock({
+    required this.value,
+    required this.isSelected,
+    required this.onToggleSelect,
+    required this.onEdit,
+  });
+
+  final String value;
+  final bool isSelected;
+  final VoidCallback onToggleSelect;
+  final VoidCallback onEdit;
+
+  // Teal surface colors for AI suggestion
+  static const Color _bgColor = Color(0xFFECFDF5); // teal-50
+  static const Color _borderColor = Color(0xFFCCFBF1); // teal-100
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(DocsoftSpacing.sm + 4),
+      decoration: BoxDecoration(
+        color: _bgColor,
+        borderRadius: BorderRadius.circular(DocsoftRadii.sm),
+        border: Border.all(color: _borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header with label and actions
+          Row(
+            children: [
+              Icon(
+                Icons.auto_awesome,
+                size: 14,
+                color: DocsoftColors.primary,
+              ),
+              const SizedBox(width: DocsoftSpacing.xs),
+              Text(
+                'SUGERENCIA IA',
+                style: DocsoftTextStyles.caption.copyWith(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: DocsoftColors.primary,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const Spacer(),
+              // Edit button
+              GestureDetector(
+                onTap: onEdit,
+                child: Container(
+                  padding: const EdgeInsets.all(DocsoftSpacing.xs),
+                  child: Icon(
+                    Icons.edit,
+                    size: 20,
+                    color: DocsoftColors.primary,
                   ),
                 ),
               ),
+              const SizedBox(width: DocsoftSpacing.xs),
+              // Select checkbox
+              GestureDetector(
+                onTap: onToggleSelect,
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? DocsoftColors.primary
+                        : DocsoftColors.surface,
+                    borderRadius: BorderRadius.circular(DocsoftRadii.sm),
+                    border: Border.all(
+                      color: isSelected
+                          ? DocsoftColors.primary
+                          : DocsoftColors.border,
+                      width: isSelected ? 0 : 1.5,
+                    ),
+                  ),
+                  child: isSelected
+                      ? Icon(
+                          Icons.check,
+                          size: 18,
+                          color: DocsoftColors.onPrimary,
+                        )
+                      : null,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: DocsoftSpacing.sm),
+          // Suggestion text
+          Text(
+            value,
+            style: DocsoftTextStyles.body.copyWith(
+              color: DocsoftColors.textPrimary,
             ),
+          ),
         ],
       ),
     );
@@ -764,7 +839,6 @@ class _ExpandableTextState extends State<_ExpandableText> {
 }
 
 /// Dialog for editing a suggestion text.
-/// Owns its TextEditingController with proper lifecycle management.
 class _EditSuggestionDialog extends StatefulWidget {
   const _EditSuggestionDialog({
     required this.label,
@@ -804,9 +878,9 @@ class _EditSuggestionDialogState extends State<_EditSuggestionDialog> {
           maxLines: 6,
           minLines: 3,
           decoration: InputDecoration(
-            hintText: 'Ingrese el texto de la sugerencia',
+            hintText: 'Ingresa el texto de la sugerencia',
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(DocsoftRadii.sm),
             ),
           ),
           autofocus: true,
@@ -817,11 +891,15 @@ class _EditSuggestionDialogState extends State<_EditSuggestionDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancelar'),
         ),
-        FilledButton(
+        ElevatedButton(
           onPressed: () {
             final newText = _controller.text.trim();
             Navigator.pop(context, newText);
           },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: DocsoftColors.primary,
+            foregroundColor: DocsoftColors.onPrimary,
+          ),
           child: const Text('Guardar'),
         ),
       ],

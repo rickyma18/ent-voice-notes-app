@@ -359,28 +359,16 @@ class _SurgicalNoteWizardPageState
     // Create a fresh key for this sheet's ScaffoldMessenger
     _sheetMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
-    showModalBottomSheet(
+    // Show AI suggestions as a proper bottom sheet (from below)
+    AISuggestionsSheet.show(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        // Wrap with ScaffoldMessenger + Scaffold so SnackBars can be shown
-        return ScaffoldMessenger(
-          key: _sheetMessengerKey,
-          child: Scaffold(
-            backgroundColor: Colors.transparent,
-            body: AISuggestionsSheet(
-              sections: sections,
-              onApply: (editedSections, mode) {
-                _applySuggestions(editedSections, mode);
-              },
-              onApplySection: (editedSection, mode) {
-                _applySingleSectionWithFeedback(editedSection, mode);
-              },
-              onCancel: () => Navigator.pop(ctx),
-            ),
-          ),
-        );
+      sections: sections,
+      messengerKey: _sheetMessengerKey,
+      onApply: (editedSections, mode) {
+        _applySuggestions(editedSections, mode);
+      },
+      onApplySection: (editedSection, mode) {
+        _applySingleSectionWithFeedback(editedSection, mode);
       },
     ).whenComplete(() {
       _sheetMessengerKey = null;
