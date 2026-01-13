@@ -12,16 +12,22 @@ import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../ui/docsoft_ui.dart';
 import '../../../../core/base/base.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 import '../../../patients/patients_providers.dart';
 import '../../domain/entities/attachment_entity.dart';
 import '../../domain/entities/medical_note_entity.dart';
 import '../../domain/entities/medical_note_type.dart';
+import '../../domain/entities/note_status.dart';
 import '../../domain/entities/surgical_note_data_entity.dart';
+import '../../domain/usecases/add_attachment_to_medical_note_use_case.dart';
+import '../../medical_notes_providers.dart';
 import '../controllers/medical_notes_controller.dart';
 import '../utils/medical_note_pdf_builder.dart';
 import 'image_viewer_page.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 
 /// Editable sections in the detail page
 enum _EditableSection {
@@ -58,6 +64,10 @@ class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
   _EditableSection? _editingSection;
   bool _isSaving = false;
   bool _isGeneratingPdf = false;
+  bool _isUploadingAttachment = false;
+
+  // Image picker
+  final ImagePicker _imagePicker = ImagePicker();
 
   // Cached patient name for PDF
   String? _cachedPatientName;
@@ -529,87 +539,342 @@ class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
     );
   }
 
+  // ============================================================================
+  // Attachment methods
+  // ============================================================================
+
+  /// Show attachment options bottom sheet
+  void _showAttachmentSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: DocsoftColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(DocsoftRadii.xl),
+        ),
+      ),
+      builder: (ctx) => DocsoftAttachmentSheet(
+        title: 'Agregar archivo',
+        onTakePhoto: _onTakePhoto,
+        onChooseFromGallery: _onChooseFromGallery,
+        onChooseFile: _onChooseFile,
+      ),
+    );
+  }
+
+  /// Handle take photo action
+  Future<void> _onTakePhoto() async {
+    try {
+      final XFile? photo = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 80,
+      );
+
+      if (photo != null) {
+        await _uploadAttachment(photo);
+      }
+    } catch (e) {
+      _showErrorSnackbar('Error al tomar foto: $e');
+    }
+  }
+
+  /// Handle choose from gallery action
+  Future<void> _onChooseFromGallery() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80,
+      );
+
+      if (image != null) {
+        await _uploadAttachment(image);
+      }
+    } catch (e) {
+      _showErrorSnackbar('Error al seleccionar imagen: $e');
+    }
+  }
+
+  /// Handle choose file action (PDF, etc.)
+  Future<void> _onChooseFile() async {
+    try {
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'doc', 'docx', 'txt'],
+        withData: true,
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        final file = result.files.first;
+        if (file.bytes != null) {
+          await _uploadAttachmentFromBytes(
+            file.bytes!,
+            file.name,
+            _getMimeType(file.extension ?? ''),
+          );
+        }
+      }
+    } catch (e) {
+      _showErrorSnackbar('Error al seleccionar archivo: $e');
+    }
+  }
+
+  /// Upload attachment from XFile
+  Future<void> _uploadAttachment(XFile file) async {
+    final bytes = await file.readAsBytes();
+    final mimeType = file.mimeType ?? _getMimeTypeFromPath(file.path);
+    await _uploadAttachmentFromBytes(bytes, file.name, mimeType);
+  }
+
+  /// Upload attachment from bytes
+  Future<void> _uploadAttachmentFromBytes(
+    Uint8List bytes,
+    String fileName,
+    String mimeType,
+  ) async {
+    // Validate size (max 10MB)
+    const maxSize = 10 * 1024 * 1024;
+    if (bytes.lengthInBytes > maxSize) {
+      _showErrorSnackbar('El archivo excede el tamaño máximo de 10MB');
+      return;
+    }
+
+    setState(() => _isUploadingAttachment = true);
+
+    try {
+      final useCase = ref.read(addAttachmentToMedicalNoteUseCaseProvider);
+      final request = AddAttachmentRequest(
+        noteId: _currentNote.id,
+        fileName: fileName,
+        fileBytes: bytes,
+        mimeType: mimeType,
+      );
+
+      final result = await useCase.call(request);
+
+      result.when(
+        success: (updatedNote) {
+          setState(() {
+            _currentNote = updatedNote;
+            _isUploadingAttachment = false;
+          });
+          _showSuccessSnackbar('Archivo adjuntado correctamente');
+          // Also update in controller to sync state
+          ref
+              .read(medicalNotesControllerProvider.notifier)
+              .updateMedicalNote(updatedNote);
+        },
+        error: (failure) {
+          setState(() => _isUploadingAttachment = false);
+          _showErrorSnackbar(failure.message);
+        },
+      );
+    } catch (e) {
+      setState(() => _isUploadingAttachment = false);
+      _showErrorSnackbar('Error al subir archivo: $e');
+    }
+  }
+
+  /// Get MIME type from file extension
+  String _getMimeType(String extension) {
+    switch (extension.toLowerCase()) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'pdf':
+        return 'application/pdf';
+      case 'doc':
+        return 'application/msword';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'txt':
+        return 'text/plain';
+      case 'mp3':
+        return 'audio/mpeg';
+      case 'mp4':
+        return 'video/mp4';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
+  /// Get MIME type from file path
+  String _getMimeTypeFromPath(String path) {
+    final extension = path.split('.').last;
+    return _getMimeType(extension);
+  }
+
+  /// Show success snackbar
+  void _showSuccessSnackbar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: DocsoftColors.success),
+    );
+  }
+
+  /// Show error snackbar
+  void _showErrorSnackbar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: DocsoftColors.error),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Detalle de nota médica'),
-        actions: [
-          // PDF loading indicator
-          if (_isGeneratingPdf)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Center(
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
+      backgroundColor: DocsoftColors.background,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Inline Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                DocsoftSpacing.screenPadding,
+                DocsoftSpacing.screenPadding,
+                DocsoftSpacing.sm,
+                DocsoftSpacing.sm,
+              ),
+              child: Row(
+                children: [
+                  // Back button
+                  DocsoftBackButton(
+                    onTap: () => Navigator.pop(context),
+                    backgroundColor: DocsoftColors.primaryMuted,
+                    iconColor: DocsoftColors.primary,
+                  ),
+                  const SizedBox(width: DocsoftSpacing.sm),
+                  // Title
+                  Expanded(
+                    child: Text(
+                      'Detalle de nota médica',
+                      style: DocsoftTextStyles.appBarTitle,
+                    ),
+                  ),
+                  // PDF loading indicator
+                  if (_isGeneratingPdf)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: DocsoftSpacing.sm,
+                      ),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: DocsoftColors.primary,
+                        ),
+                      ),
+                    ),
+                  // Attachment button with loading indicator
+                  if (_isUploadingAttachment)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: DocsoftSpacing.sm,
+                      ),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: DocsoftColors.primary,
+                        ),
+                      ),
+                    )
+                  else
+                    IconButton(
+                      icon: Icon(
+                        Icons.attach_file,
+                        color: DocsoftColors.textSecondary,
+                      ),
+                      tooltip: 'Adjuntar archivo',
+                      onPressed: _isGeneratingPdf ? null : _showAttachmentSheet,
+                    ),
+                  // Edit mode toggle
+                  IconButton(
+                    icon: Icon(
+                      _isEditMode ? Icons.check : Icons.edit_outlined,
+                      color: _isEditMode
+                          ? DocsoftColors.primary
+                          : DocsoftColors.textSecondary,
+                    ),
+                    tooltip: _isEditMode ? 'Salir de edición' : 'Modo edición',
+                    onPressed: _isGeneratingPdf ? null : _toggleEditMode,
+                  ),
+                  // Export menu
+                  PopupMenuButton<String>(
+                    icon: Icon(
+                      Icons.more_horiz,
+                      color: DocsoftColors.textSecondary,
+                    ),
+                    enabled: !_isGeneratingPdf,
+                    tooltip: 'Opciones',
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'export':
+                          _onExportPdf();
+                        case 'share':
+                          _onSharePdf();
+                        case 'print':
+                          _onPrintPdf();
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'export',
+                        child: ListTile(
+                          leading: Icon(Icons.picture_as_pdf),
+                          title: Text('Exportar PDF'),
+                          contentPadding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'share',
+                        child: ListTile(
+                          leading: Icon(Icons.share),
+                          title: Text('Compartir'),
+                          contentPadding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'print',
+                        child: ListTile(
+                          leading: Icon(Icons.print),
+                          title: Text('Imprimir'),
+                          contentPadding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-          // Edit mode toggle
-          IconButton(
-            icon: Icon(_isEditMode ? Icons.check : Icons.edit),
-            tooltip: _isEditMode ? 'Salir de edición' : 'Modo edición',
-            onPressed: _isGeneratingPdf ? null : _toggleEditMode,
-          ),
-          // Export menu
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
-            enabled: !_isGeneratingPdf,
-            tooltip: 'Opciones',
-            onSelected: (value) {
-              switch (value) {
-                case 'export':
-                  _onExportPdf();
-                case 'share':
-                  _onSharePdf();
-                case 'print':
-                  _onPrintPdf();
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'export',
-                child: ListTile(
-                  leading: Icon(Icons.picture_as_pdf),
-                  title: Text('Exportar PDF'),
-                  contentPadding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
-                ),
+            // Content
+            Expanded(
+              child: _MedicalNoteDetailContent(
+                note: _currentNote,
+                isEditMode: _isEditMode,
+                editingSection: _editingSection,
+                isSaving: _isSaving,
+                controllers: _controllers,
+                onEditSection: _onEditSection,
+                onSave: _saveCurrentSection,
+                onCancel: _cancelEditing,
+                getController: _getController,
+                onAddAttachment: _showAttachmentSheet,
+                isUploadingAttachment: _isUploadingAttachment,
               ),
-              const PopupMenuItem(
-                value: 'share',
-                child: ListTile(
-                  leading: Icon(Icons.share),
-                  title: Text('Compartir'),
-                  contentPadding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'print',
-                child: ListTile(
-                  leading: Icon(Icons.print),
-                  title: Text('Imprimir'),
-                  contentPadding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: _MedicalNoteDetailContent(
-        note: _currentNote,
-        isEditMode: _isEditMode,
-        editingSection: _editingSection,
-        isSaving: _isSaving,
-        controllers: _controllers,
-        onEditSection: _onEditSection,
-        onSave: _saveCurrentSection,
-        onCancel: _cancelEditing,
-        getController: _getController,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -630,6 +895,8 @@ class _MedicalNoteDetailContent extends StatelessWidget {
     required this.onSave,
     required this.onCancel,
     required this.getController,
+    required this.onAddAttachment,
+    required this.isUploadingAttachment,
   });
 
   final MedicalNoteEntity note;
@@ -641,6 +908,8 @@ class _MedicalNoteDetailContent extends StatelessWidget {
   final Future<bool> Function() onSave;
   final VoidCallback onCancel;
   final TextEditingController Function(_EditableSection) getController;
+  final VoidCallback onAddAttachment;
+  final bool isUploadingAttachment;
 
   @override
   Widget build(BuildContext context) {
@@ -816,11 +1085,13 @@ class _MedicalNoteDetailContent extends StatelessWidget {
             const SizedBox(height: 12),
           ],
 
-          // Attachments (read-only)
-          if (note.attachments.isNotEmpty) ...[
-            _AttachmentsSection(attachments: note.attachments),
-            const SizedBox(height: 12),
-          ],
+          // Attachments section (always shown with add capability)
+          _AttachmentsSection(
+            attachments: note.attachments,
+            onAddAttachment: onAddAttachment,
+            isLoading: isUploadingAttachment,
+          ),
+          const SizedBox(height: 12),
 
           // Next appointment (read-only)
           if (note.proximaCita != null) ...[
@@ -834,12 +1105,8 @@ class _MedicalNoteDetailContent extends StatelessWidget {
             const SizedBox(height: 12),
           ],
 
-          // Raw transcript (read-only)
-          _SectionCard(
-            title: 'Transcripción original',
-            icon: Icons.mic,
-            content: note.rawTranscript,
-          ),
+          // Raw transcript (collapsible)
+          _TranscriptionSection(content: note.rawTranscript),
           const SizedBox(height: 24),
         ],
       ),
@@ -879,14 +1146,30 @@ class _EditableSectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    // Highlighted sections (Diagnóstico) get special treatment
+    final isHighlightedSection = highlighted;
 
-    return Card(
-      color: highlighted
-          ? theme.colorScheme.primaryContainer.withOpacity(0.3)
-          : null,
+    return Container(
+      decoration: BoxDecoration(
+        color: isHighlightedSection
+            ? DocsoftColors.primarySoft.withValues(alpha: 0.2)
+            : DocsoftColors.surface,
+        borderRadius: BorderRadius.circular(DocsoftRadii.xl),
+        border: Border(
+          left: isHighlightedSection
+              ? BorderSide(color: DocsoftColors.primaryMuted, width: 2)
+              : BorderSide.none,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(DocsoftSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -895,34 +1178,38 @@ class _EditableSectionCard extends StatelessWidget {
               children: [
                 Icon(
                   icon,
-                  color: highlighted
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurface.withOpacity(0.7),
+                  color: isHighlightedSection
+                      ? DocsoftColors.primaryDark
+                      : DocsoftColors.primary,
                   size: 20,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: DocsoftSpacing.sm),
                 Expanded(
                   child: Text(
-                    title,
-                    style: theme.textTheme.titleSmall?.copyWith(
+                    title.toUpperCase(),
+                    style: DocsoftTextStyles.caption.copyWith(
                       fontWeight: FontWeight.bold,
-                      color: highlighted ? theme.colorScheme.primary : null,
+                      color: isHighlightedSection
+                          ? DocsoftColors.primaryDark
+                          : DocsoftColors.primary,
+                      letterSpacing: 0.8,
                     ),
                   ),
                 ),
                 // Edit button (only in edit mode, not while editing this section)
                 if (isEditMode && !isEditing)
                   IconButton(
-                    icon: const Icon(Icons.edit, size: 20),
+                    icon: Icon(
+                      Icons.edit_outlined,
+                      size: 20,
+                      color: DocsoftColors.primary,
+                    ),
                     onPressed: onEdit,
                     tooltip: 'Editar',
-                    style: IconButton.styleFrom(
-                      foregroundColor: theme.colorScheme.primary,
-                    ),
                   ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: DocsoftSpacing.md),
 
             // Content: Text or TextField
             if (isEditing) ...[
@@ -932,52 +1219,43 @@ class _EditableSectionCard extends StatelessWidget {
                 minLines: 3,
                 enabled: !isSaving,
                 decoration: InputDecoration(
-                  border: const OutlineInputBorder(),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(DocsoftRadii.md),
+                  ),
                   hintText: 'Ingrese $title...',
-                  contentPadding: const EdgeInsets.all(12),
+                  contentPadding: const EdgeInsets.all(DocsoftSpacing.md),
                 ),
-                style: theme.textTheme.bodyMedium,
+                style: DocsoftTextStyles.body,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: DocsoftSpacing.md),
               // Action buttons
               Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: isSaving ? null : () => onSave(),
-                      icon: isSaving
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.save, size: 18),
-                      label: Text(isSaving ? 'Guardando...' : 'Guardar'),
-                    ),
+                  DocsoftPrimaryButton(
+                    onPressed: isSaving ? null : () => onSave(),
+                    label: isSaving ? 'Guardando...' : 'Guardar',
+                    icon: Icons.save,
+                    isLoading: isSaving,
+                    fullWidth: true,
                   ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: TextButton(
-                      onPressed: isSaving ? null : onCancel,
-                      child: const Text('Cancelar'),
-                    ),
+                  const SizedBox(height: DocsoftSpacing.sm),
+                  DocsoftSecondaryButton(
+                    onPressed: isSaving ? null : onCancel,
+                    label: 'Cancelar',
+                    fullWidth: true,
                   ),
                 ],
               ),
             ] else ...[
               Text(
                 content.isEmpty ? '(No especificado)' : content,
-                style: theme.textTheme.bodyMedium?.copyWith(
+                style: DocsoftTextStyles.body.copyWith(
                   color: content.isEmpty
-                      ? theme.colorScheme.onSurface.withOpacity(0.5)
-                      : null,
+                      ? DocsoftColors.textTertiary
+                      : DocsoftColors.textSecondary,
                   fontStyle: content.isEmpty ? FontStyle.italic : null,
+                  height: 1.7,
                 ),
               ),
             ],
@@ -988,98 +1266,187 @@ class _EditableSectionCard extends StatelessWidget {
   }
 }
 
-/// Patient info card (read-only)
+/// Patient info card (premium styled)
 class _PatientInfoCard extends ConsumerWidget {
   const _PatientInfoCard({required this.note});
 
   final MedicalNoteEntity note;
 
+  String _getInitials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts[0][0].toUpperCase();
+    return '${parts[0][0]}${parts[parts.length - 1][0]}'.toUpperCase();
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-
     return FutureBuilder<PatientEntity?>(
       future: _loadPatient(ref, note.patientId),
       builder: (context, snapshot) {
         final patientName = _resolvePatientName(snapshot);
         final isDeleted = snapshot.hasData && snapshot.data == null;
+        final initials = snapshot.data != null
+            ? _getInitials(snapshot.data!.fullName)
+            : '?';
 
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+        return Container(
+          decoration: BoxDecoration(
+            color: DocsoftColors.surface,
+            borderRadius: BorderRadius.circular(DocsoftRadii.xl),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 32,
+                offset: const Offset(0, 12),
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.02),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              // Top section with avatar + info
+              Padding(
+                padding: const EdgeInsets.all(DocsoftSpacing.lg),
+                child: Row(
                   children: [
-                    CircleAvatar(
-                      backgroundColor: isDeleted
-                          ? theme.colorScheme.errorContainer
-                          : theme.colorScheme.primaryContainer,
-                      child: Icon(
-                        isDeleted ? Icons.person_off : Icons.person,
-                        color: isDeleted
-                            ? theme.colorScheme.onErrorContainer
-                            : theme.colorScheme.onPrimaryContainer,
+                    // Gradient avatar with initials
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: isDeleted
+                              ? [DocsoftColors.error, DocsoftColors.error]
+                              : [
+                                  DocsoftColors.primary,
+                                  DocsoftColors.primaryDark,
+                                ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(DocsoftRadii.lg),
+                        boxShadow: [
+                          BoxShadow(
+                            color:
+                                (isDeleted
+                                        ? DocsoftColors.error
+                                        : DocsoftColors.primary)
+                                    .withValues(alpha: 0.15),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: isDeleted
+                            ? Icon(
+                                Icons.person_off,
+                                color: DocsoftColors.onPrimary,
+                                size: 28,
+                              )
+                            : Text(
+                                initials,
+                                style: DocsoftTextStyles.title.copyWith(
+                                  color: DocsoftColors.onPrimary,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 22,
+                                ),
+                              ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: DocsoftSpacing.lg),
+                    // Patient info
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             patientName,
-                            style: theme.textTheme.titleMedium?.copyWith(
+                            style: DocsoftTextStyles.title.copyWith(
                               fontWeight: FontWeight.bold,
-                              color: isDeleted ? theme.colorScheme.error : null,
+                              color: isDeleted
+                                  ? DocsoftColors.error
+                                  : DocsoftColors.textPrimary,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 4),
-                          if (snapshot.hasData && snapshot.data != null) ...[
+                          const SizedBox(height: DocsoftSpacing.xs),
+                          if (snapshot.hasData && snapshot.data != null)
                             Text(
                               '${snapshot.data!.age} años • ${snapshot.data!.sexDisplay}',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurface.withOpacity(
-                                  0.6,
-                                ),
+                              style: DocsoftTextStyles.body.copyWith(
+                                color: DocsoftColors.textSecondary,
                               ),
-                            ),
-                          ] else ...[
+                            )
+                          else
                             Text(
                               'ID: ${note.patientId}',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurface.withOpacity(
-                                  0.6,
-                                ),
+                              style: DocsoftTextStyles.caption.copyWith(
+                                color: DocsoftColors.textTertiary,
                               ),
                             ),
-                          ],
                         ],
                       ),
                     ),
                   ],
                 ),
-                const Divider(height: 24),
-                _InfoRow(
-                  icon: Icons.calendar_today,
-                  label: 'Fecha de creación',
-                  value: _formatDateTime(note.createdAt),
+              ),
+              // Bottom section with date + status
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: DocsoftSpacing.lg,
+                  vertical: DocsoftSpacing.md,
                 ),
-                const SizedBox(height: 8),
-                _InfoRow(
-                  icon: Icons.update,
-                  label: 'Última actualización',
-                  value: _formatDateTime(note.updatedAt),
+                decoration: BoxDecoration(
+                  color: DocsoftColors.surfaceAlt,
+                  border: Border(
+                    top: BorderSide(
+                      color: DocsoftColors.borderSubtle,
+                      width: 1,
+                    ),
+                  ),
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(DocsoftRadii.xl),
+                    bottomRight: Radius.circular(DocsoftRadii.xl),
+                  ),
                 ),
-                const SizedBox(height: 8),
-                _InfoRow(
-                  icon: Icons.assignment,
-                  label: 'Estado',
-                  value: note.status.displayName,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Humanized date
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.calendar_today,
+                          size: 16,
+                          color: DocsoftColors.textTertiary,
+                        ),
+                        const SizedBox(width: DocsoftSpacing.xs),
+                        Text(
+                          _formatHumanizedDate(note.createdAt),
+                          style: DocsoftTextStyles.caption.copyWith(
+                            color: DocsoftColors.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Status chip
+                    DocsoftInfoChip(
+                      label: note.status.displayName,
+                      color: _getStatusColor(note.status),
+                      textColor: _getStatusTextColor(note.status),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         );
       },
@@ -1105,14 +1472,41 @@ class _PatientInfoCard extends ConsumerWidget {
     return snapshot.data!.fullName;
   }
 
-  String _formatDateTime(DateTime dateTime) {
+  String _formatHumanizedDate(DateTime dateTime) {
     final dateFormat = DateFormat('dd/MM/yyyy');
-    final timeFormat = DateFormat('HH:mm');
-    return '${dateFormat.format(dateTime)} a las ${timeFormat.format(dateTime)}';
+    return 'Creada el ${dateFormat.format(dateTime)}';
+  }
+
+  Color _getStatusColor(NoteStatus status) {
+    switch (status) {
+      case NoteStatus.draft:
+        return DocsoftColors.primarySoft;
+      case NoteStatus.inReview:
+        return DocsoftColors.warningSoft;
+      case NoteStatus.signed:
+      case NoteStatus.sent:
+        return DocsoftColors.successSoft;
+      case NoteStatus.archived:
+        return DocsoftColors.surfaceAlt;
+    }
+  }
+
+  Color _getStatusTextColor(NoteStatus status) {
+    switch (status) {
+      case NoteStatus.draft:
+        return DocsoftColors.primary;
+      case NoteStatus.inReview:
+        return DocsoftColors.warning;
+      case NoteStatus.signed:
+      case NoteStatus.sent:
+        return DocsoftColors.success;
+      case NoteStatus.archived:
+        return DocsoftColors.textSecondary;
+    }
   }
 }
 
-/// Note type badge
+/// Note type badge (contextual indicator, not CTA)
 class _NoteTypeBadge extends StatelessWidget {
   const _NoteTypeBadge({required this.type});
 
@@ -1120,34 +1514,42 @@ class _NoteTypeBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final isSurgical = type == MedicalNoteType.surgicalNote;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(
+        horizontal: DocsoftSpacing.md,
+        vertical: DocsoftSpacing.sm,
+      ),
       decoration: BoxDecoration(
-        color: isSurgical
-            ? theme.colorScheme.tertiaryContainer
-            : theme.colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(16),
+        color: DocsoftColors.surface,
+        borderRadius: BorderRadius.circular(DocsoftRadii.full),
+        border: Border.all(
+          color: isSurgical
+              ? DocsoftColors.warning.withValues(alpha: 0.3)
+              : DocsoftColors.primary.withValues(alpha: 0.3),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            isSurgical ? Icons.local_hospital : Icons.assignment,
+            isSurgical ? Icons.local_hospital : Icons.history_edu,
             size: 16,
-            color: isSurgical
-                ? theme.colorScheme.onTertiaryContainer
-                : theme.colorScheme.onSecondaryContainer,
+            color: isSurgical ? DocsoftColors.warning : DocsoftColors.primary,
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: DocsoftSpacing.xs),
           Text(
             type.displayName,
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: isSurgical
-                  ? theme.colorScheme.onTertiaryContainer
-                  : theme.colorScheme.onSecondaryContainer,
+            style: DocsoftTextStyles.caption.copyWith(
+              color: isSurgical ? DocsoftColors.warning : DocsoftColors.primary,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -1468,57 +1870,136 @@ class _TagsCard extends StatelessWidget {
   }
 }
 
-/// Attachments section (read-only)
+/// Attachments section with add capability
 class _AttachmentsSection extends StatelessWidget {
-  const _AttachmentsSection({required this.attachments});
+  const _AttachmentsSection({
+    required this.attachments,
+    required this.onAddAttachment,
+    this.isLoading = false,
+  });
 
   final List<AttachmentEntity> attachments;
+  final VoidCallback onAddAttachment;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final hasAttachments = attachments.isNotEmpty;
 
-    return Card(
+    return Container(
+      decoration: BoxDecoration(
+        color: DocsoftColors.surface,
+        borderRadius: BorderRadius.circular(DocsoftRadii.xl),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(DocsoftSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Header row
             Row(
               children: [
-                Icon(
-                  Icons.attach_file,
-                  color: theme.colorScheme.primary,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Archivos adjuntos',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
+                Icon(Icons.attach_file, color: DocsoftColors.primary, size: 20),
+                const SizedBox(width: DocsoftSpacing.sm),
+                Expanded(
+                  child: Text(
+                    'ARCHIVOS ADJUNTOS',
+                    style: DocsoftTextStyles.caption.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: DocsoftColors.primary,
+                      letterSpacing: 0.8,
+                    ),
                   ),
                 ),
-                const Spacer(),
-                Text(
-                  '${attachments.length} archivo(s)',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withOpacity(0.6),
+                if (hasAttachments) ...[
+                  Text(
+                    '${attachments.length}',
+                    style: DocsoftTextStyles.caption.copyWith(
+                      color: DocsoftColors.textTertiary,
+                    ),
                   ),
-                ),
+                  const SizedBox(width: DocsoftSpacing.sm),
+                  // Small add button when has attachments
+                  if (isLoading)
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: DocsoftColors.primary,
+                      ),
+                    )
+                  else
+                    IconButton(
+                      icon: Icon(
+                        Icons.add,
+                        size: 20,
+                        color: DocsoftColors.primary,
+                      ),
+                      onPressed: onAddAttachment,
+                      tooltip: 'Agregar archivo',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                    ),
+                ],
               ],
             ),
-            const SizedBox(height: 16),
-            if (_hasImages) ...[
-              _ImageThumbnailsGrid(
-                images: attachments
-                    .where((a) => a.tipo == AttachmentType.image)
-                    .toList(),
+
+            if (hasAttachments) ...[
+              const SizedBox(height: DocsoftSpacing.md),
+              if (_hasImages) ...[
+                _ImageThumbnailsGrid(
+                  images: attachments
+                      .where((a) => a.tipo == AttachmentType.image)
+                      .toList(),
+                ),
+                const SizedBox(height: DocsoftSpacing.md),
+              ],
+              ...attachments
+                  .where((a) => a.tipo != AttachmentType.image)
+                  .map((attachment) => _AttachmentRow(attachment: attachment)),
+            ] else ...[
+              // Empty state
+              const SizedBox(height: DocsoftSpacing.lg),
+              Center(
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.folder_open_outlined,
+                      size: 48,
+                      color: DocsoftColors.textTertiary,
+                    ),
+                    const SizedBox(height: DocsoftSpacing.md),
+                    Text(
+                      'Sin archivos adjuntos',
+                      style: DocsoftTextStyles.body.copyWith(
+                        color: DocsoftColors.textTertiary,
+                      ),
+                    ),
+                    const SizedBox(height: DocsoftSpacing.lg),
+                    if (isLoading)
+                      CircularProgressIndicator(color: DocsoftColors.primary)
+                    else
+                      DocsoftPrimaryButton(
+                        onPressed: onAddAttachment,
+                        label: 'Agregar archivo',
+                        icon: Icons.add,
+                      ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: DocsoftSpacing.md),
             ],
-            ...attachments
-                .where((a) => a.tipo != AttachmentType.image)
-                .map((attachment) => _AttachmentRow(attachment: attachment)),
           ],
         ),
       ),
@@ -1925,101 +2406,82 @@ Future<void> _openAttachment(
   }
 }
 
-/// Read-only section card
-class _SectionCard extends StatelessWidget {
-  const _SectionCard({
-    required this.title,
-    required this.icon,
-    required this.content,
-    this.highlighted = false,
-  });
+/// Collapsible transcription section
+class _TranscriptionSection extends StatefulWidget {
+  const _TranscriptionSection({required this.content});
 
-  final String title;
-  final IconData icon;
   final String content;
-  final bool highlighted;
+
+  @override
+  State<_TranscriptionSection> createState() => _TranscriptionSectionState();
+}
+
+class _TranscriptionSectionState extends State<_TranscriptionSection> {
+  bool _isExpanded = false;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Card(
-      color: highlighted
-          ? theme.colorScheme.primaryContainer.withOpacity(0.3)
-          : null,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  icon,
-                  color: highlighted
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurface.withOpacity(0.7),
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: highlighted ? theme.colorScheme.primary : null,
+    return Container(
+      decoration: BoxDecoration(
+        color: DocsoftColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(DocsoftRadii.xl),
+        border: Border.all(color: DocsoftColors.borderSubtle),
+      ),
+      child: Column(
+        children: [
+          // Header (always visible)
+          InkWell(
+            onTap: () => setState(() => _isExpanded = !_isExpanded),
+            borderRadius: BorderRadius.circular(DocsoftRadii.xl),
+            child: Padding(
+              padding: const EdgeInsets.all(DocsoftSpacing.md),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.mic_none,
+                    size: 20,
+                    color: DocsoftColors.textTertiary,
                   ),
-                ),
-              ],
+                  const SizedBox(width: DocsoftSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      'TRANSCRIPCIÓN ORIGINAL',
+                      style: DocsoftTextStyles.caption.copyWith(
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.8,
+                        color: DocsoftColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    _isExpanded ? Icons.expand_less : Icons.expand_more,
+                    color: DocsoftColors.textTertiary,
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
-            Text(
-              content.isEmpty ? '(No especificado)' : content,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: content.isEmpty
-                    ? theme.colorScheme.onSurface.withOpacity(0.5)
-                    : null,
-                fontStyle: content.isEmpty ? FontStyle.italic : null,
+          ),
+          // Expandable content
+          if (_isExpanded) ...[
+            Divider(height: 1, color: DocsoftColors.borderSubtle),
+            Padding(
+              padding: const EdgeInsets.all(DocsoftSpacing.md),
+              child: Text(
+                widget.content.isEmpty ? '(Sin transcripción)' : widget.content,
+                style: DocsoftTextStyles.body.copyWith(
+                  color: widget.content.isEmpty
+                      ? DocsoftColors.textTertiary
+                      : DocsoftColors.textSecondary,
+                  fontStyle: widget.content.isEmpty
+                      ? FontStyle.italic
+                      : FontStyle.normal,
+                  height: 1.6,
+                ),
               ),
             ),
           ],
-        ),
+        ],
       ),
-    );
-  }
-}
-
-/// Info row widget
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Row(
-      children: [
-        Icon(
-          icon,
-          size: 16,
-          color: theme.colorScheme.onSurface.withOpacity(0.6),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          '$label: ',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurface.withOpacity(0.6),
-          ),
-        ),
-        Expanded(child: Text(value, style: theme.textTheme.bodyMedium)),
-      ],
     );
   }
 }

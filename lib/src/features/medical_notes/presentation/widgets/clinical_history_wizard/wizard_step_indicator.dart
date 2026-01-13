@@ -2,6 +2,8 @@
 
 import 'package:flutter/material.dart';
 
+import '../../../../../ui/docsoft_ui.dart';
+
 /// Step indicator for the clinical history wizard.
 ///
 /// Shows the current step and allows navigation between steps.
@@ -108,6 +110,10 @@ class WizardStepIndicator extends StatelessWidget {
 
 /// Navigation buttons for the wizard (Back/Next/Save).
 ///
+/// Stitch-style design:
+/// - Primary "Siguiente" button with arrow icon (full width, prominent)
+/// - Subtle "Guardar como borrador" as TextButton below (not competing)
+///
 /// When [compact] is true (e.g., keyboard is open), the "Guardar como borrador"
 /// button is hidden to save vertical space.
 class WizardNavigationButtons extends StatelessWidget {
@@ -142,54 +148,102 @@ class WizardNavigationButtons extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      mainAxisSize: MainAxisSize.min, // Critical: don't expand vertically
+      mainAxisSize: MainAxisSize.min,
       children: [
-        // Main navigation row
+        // Main navigation row - Stitch style
         Row(
           children: [
-            // Back button
-            if (!isFirstStep)
-              Expanded(
-                child: OutlinedButton.icon(
+            // Back button (only if not first step)
+            if (!isFirstStep) ...[
+              SizedBox(
+                height: 52,
+                child: OutlinedButton(
                   onPressed: isSaving ? null : onBack,
-                  icon: const Icon(Icons.arrow_back),
-                  label: const Text('Atrás'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: DocsoftColors.textSecondary,
+                    side: BorderSide(color: DocsoftColors.border),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(DocsoftRadii.md),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                  ),
+                  child: const Icon(Icons.arrow_back, size: 20),
                 ),
-              )
-            else
-              const Spacer(),
-            const SizedBox(width: 12),
-            // Next/Save button
+              ),
+              const SizedBox(width: 12),
+            ],
+
+            // Next/Save button - prominent Stitch style
             Expanded(
-              flex: 2,
-              child: FilledButton.icon(
-                onPressed: isSaving ? null : (isLastStep ? onSave : onNext),
-                icon: isSaving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
+              child: SizedBox(
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: isSaving ? null : (isLastStep ? onSave : onNext),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: DocsoftColors.primary,
+                    foregroundColor: DocsoftColors.onPrimary,
+                    elevation: 4,
+                    shadowColor: DocsoftColors.primary.withValues(alpha: 0.3),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(DocsoftRadii.md),
+                    ),
+                  ),
+                  child: isSaving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              isLastStep ? 'Guardar nota' : 'Siguiente',
+                              style: DocsoftTextStyles.button.copyWith(
+                                color: DocsoftColors.onPrimary,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Icon(
+                              isLastStep ? Icons.check : Icons.arrow_forward,
+                              size: 20,
+                            ),
+                          ],
                         ),
-                      )
-                    : Icon(isLastStep ? Icons.save : Icons.arrow_forward),
-                label: Text(
-                  isSaving
-                      ? 'Guardando...'
-                      : (isLastStep ? 'Guardar nota' : 'Siguiente'),
                 ),
               ),
             ),
           ],
         ),
-        // Save as draft option (hidden in compact mode to save space)
+
+        // Save as draft - subtle TextButton (hidden in compact mode)
         if (canSaveAsDraft && !isLastStep && !compact) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           TextButton.icon(
             onPressed: isSaving ? null : onSaveAsDraft,
-            icon: const Icon(Icons.save_outlined, size: 18),
-            label: const Text('Guardar como borrador'),
+            style: TextButton.styleFrom(
+              foregroundColor: DocsoftColors.primary,
+              padding: const EdgeInsets.symmetric(
+                horizontal: DocsoftSpacing.md,
+                vertical: DocsoftSpacing.sm,
+              ),
+            ),
+            icon: Icon(
+              Icons.save_outlined,
+              size: 18,
+              color: DocsoftColors.primary,
+            ),
+            label: Text(
+              'Guardar como borrador',
+              style: DocsoftTextStyles.body.copyWith(
+                color: DocsoftColors.primary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
         ],
       ],
@@ -214,15 +268,16 @@ class CompactStepIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(
+        horizontal: DocsoftSpacing.md,
+        vertical: DocsoftSpacing.sm,
+      ),
       decoration: BoxDecoration(
-        color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
+        color: DocsoftColors.primaryMuted,
         border: Border(
           bottom: BorderSide(
-            color: theme.colorScheme.outline.withValues(alpha: 0.2),
+            color: DocsoftColors.border,
           ),
         ),
       ),
@@ -231,14 +286,15 @@ class CompactStepIndicator extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: theme.colorScheme.primary,
+              color: DocsoftColors.primary,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
               '${currentStep + 1}/$totalSteps',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onPrimary,
+              style: DocsoftTextStyles.caption.copyWith(
+                color: DocsoftColors.onPrimary,
                 fontWeight: FontWeight.bold,
+                fontSize: 11,
               ),
             ),
           ),
@@ -246,7 +302,7 @@ class CompactStepIndicator extends StatelessWidget {
           Expanded(
             child: Text(
               stepTitle,
-              style: theme.textTheme.bodyMedium?.copyWith(
+              style: DocsoftTextStyles.body.copyWith(
                 fontWeight: FontWeight.w500,
               ),
               overflow: TextOverflow.ellipsis,

@@ -751,7 +751,7 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
                     const SizedBox(width: 4),
                     Flexible(
                       child: Text(
-                        widget.patient.sex,
+                        widget.patient.sexDisplay,
                         style: DocsoftTextStyles.caption.copyWith(
                           color: Colors.white.withValues(alpha: 0.9),
                         ),
@@ -879,14 +879,14 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
 
           // Helper text
           Text(
-            'Puedes dictar una nota médica o grabar una entrevista\nmédico-paciente.',
+            'Puedes dictar una nota médica o grabar una entrevista médico-paciente.',
             style: DocsoftTextStyles.body.copyWith(
               color: DocsoftColors.textSecondary,
             ),
             textAlign: TextAlign.center,
           ),
           Text(
-            'La IA se adapta automáticamente.',
+            '\n La IA se adapta automáticamente.',
             style: DocsoftTextStyles.body.copyWith(
               color: DocsoftColors.primary,
               fontWeight: FontWeight.w500,

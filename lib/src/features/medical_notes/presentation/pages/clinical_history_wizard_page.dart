@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/base/result.dart';
@@ -24,6 +25,7 @@ import '../widgets/clinical_history_wizard/ai_suggestions_sheet.dart';
 import '../widgets/clinical_history_wizard/clinical_history_wizard.dart';
 import '../widgets/clinical_history_wizard/dictation_quick_sheet.dart';
 import '../widgets/clinical_history_wizard/vitals_card.dart';
+import '../../../../ui/docsoft_ui.dart';
 
 /// Multi-step wizard page for creating/editing clinical history notes.
 ///
@@ -83,6 +85,9 @@ class _ClinicalHistoryWizardPageState
   bool _isGeneratingSuggestions = false;
   bool _isGeneratingPlan = false;
   bool _bannerDismissed = false;
+
+  /// Dictation status for UI display (none, available, generated)
+  DictationStatus _dictationStatus = DictationStatus.none;
   bool _dictationChoiceShown = false;
   bool _neverShowDictationChoice = false;
   bool _suggestionsGenerated = false;
@@ -156,6 +161,13 @@ class _ClinicalHistoryWizardPageState
 
   int get _totalSteps => _stepTitles.length;
 
+  String _getInitials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts[0][0].toUpperCase();
+    return '${parts[0][0]}${parts[parts.length - 1][0]}'.toUpperCase();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -207,6 +219,11 @@ class _ClinicalHistoryWizardPageState
     // Store initial raw transcript from DictationAssistPage
     // This can be used for future AI processing
     _rawTranscript = widget.initialRawTranscript;
+
+    // Initialize dictation status based on transcript availability
+    if (_rawTranscript != null && _rawTranscript!.trim().isNotEmpty) {
+      _dictationStatus = DictationStatus.available;
+    }
 
     // Parse and apply vital signs from initial transcript (if any)
     if (_rawTranscript != null && _rawTranscript!.trim().isNotEmpty) {
@@ -485,7 +502,8 @@ class _ClinicalHistoryWizardPageState
   bool get _hasDictation =>
       _rawTranscript != null && _rawTranscript!.trim().isNotEmpty;
 
-  bool get _canGenerateSuggestions => _hasDictation && !_isGeneratingSuggestions;
+  bool get _canGenerateSuggestions =>
+      _hasDictation && !_isGeneratingSuggestions;
 
   /// Whether the AI banner should be shown.
   bool _shouldShowAiBanner(bool keyboardOpen) =>
@@ -534,6 +552,8 @@ class _ClinicalHistoryWizardPageState
 
       setState(() {
         _isGeneratingSuggestions = false;
+        _dictationStatus = DictationStatus.generated;
+        _suggestionsGenerated = true;
       });
 
       // Build sections for the sheet using structured v1 data
@@ -542,7 +562,9 @@ class _ClinicalHistoryWizardPageState
       if (sections.isEmpty || sections.every((s) => !s.hasContent)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No se encontraron hallazgos clinicos claros en el dictado para sugerir campos.'),
+            content: Text(
+              'No se encontraron hallazgos clinicos claros en el dictado para sugerir campos.',
+            ),
             backgroundColor: Colors.orange,
           ),
         );
@@ -668,7 +690,9 @@ class _ClinicalHistoryWizardPageState
     }
 
     if (structured.medicamentosHabituales.isNotEmpty) {
-      parts.add('Medicamentos habituales: ${structured.medicamentosHabituales.join(", ")}');
+      parts.add(
+        'Medicamentos habituales: ${structured.medicamentosHabituales.join(", ")}',
+      );
     }
 
     return parts.join('\n');
@@ -937,7 +961,10 @@ class _ClinicalHistoryWizardPageState
   /// Applies a single section suggestion with individual field feedback.
   ///
   /// Shows a short SnackBar indicating which field was updated.
-  void _applySingleSectionWithFeedback(AISuggestionSection section, ApplyMode mode) {
+  void _applySingleSectionWithFeedback(
+    AISuggestionSection section,
+    ApplyMode mode,
+  ) {
     if (!section.hasContent) return;
 
     // Use isEffectivelyEmpty to include placeholders as "empty"
@@ -1127,7 +1154,9 @@ class _ClinicalHistoryWizardPageState
       if (stepSections.isEmpty || stepSections.every((s) => !s.hasContent)) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No se encontraron hallazgos clinicos claros en el dictado para sugerir campos.'),
+            content: Text(
+              'No se encontraron hallazgos clinicos claros en el dictado para sugerir campos.',
+            ),
             backgroundColor: Colors.orange,
           ),
         );
@@ -1171,7 +1200,9 @@ class _ClinicalHistoryWizardPageState
     // At least one context field must have content
     final hasDiagnostico = _diagnosticoController.text.trim().isNotEmpty;
     final hasMotivo = _motivoController.text.trim().isNotEmpty;
-    final hasPadecimiento = _padecimientoActualController.text.trim().isNotEmpty;
+    final hasPadecimiento = _padecimientoActualController.text
+        .trim()
+        .isNotEmpty;
 
     return hasDiagnostico || hasMotivo || hasPadecimiento;
   }
@@ -1329,11 +1360,10 @@ class _ClinicalHistoryWizardPageState
             child: Text(
               'Basado en diagnóstico/motivo. Revisa antes de aplicar.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.6),
-                  ),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
             ),
           ),
         ],
@@ -1547,28 +1577,22 @@ class _ClinicalHistoryWizardPageState
               ),
               const SizedBox(height: 24),
               FilledButton.icon(
-                onPressed: () => Navigator.pop(
-                  ctx,
-                  _DictationOptionsAction.applyToField,
-                ),
+                onPressed: () =>
+                    Navigator.pop(ctx, _DictationOptionsAction.applyToField),
                 icon: const Icon(Icons.text_fields),
                 label: const Text('Aplicar solo a este campo'),
               ),
               const SizedBox(height: 12),
               FilledButton.tonalIcon(
-                onPressed: () => Navigator.pop(
-                  ctx,
-                  _DictationOptionsAction.generateAI,
-                ),
+                onPressed: () =>
+                    Navigator.pop(ctx, _DictationOptionsAction.generateAI),
                 icon: const Icon(Icons.auto_awesome),
                 label: const Text('Generar sugerencias con IA'),
               ),
               const SizedBox(height: 12),
               TextButton(
-                onPressed: () => Navigator.pop(
-                  ctx,
-                  _DictationOptionsAction.cancel,
-                ),
+                onPressed: () =>
+                    Navigator.pop(ctx, _DictationOptionsAction.cancel),
                 child: const Text('Cancelar'),
               ),
               const SizedBox(height: 8),
@@ -1835,8 +1859,9 @@ class _ClinicalHistoryWizardPageState
           child: CircularProgressIndicator(strokeWidth: 2),
         ),
         label: const Text('Procesando...'),
-        backgroundColor:
-            Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5),
+        backgroundColor: Theme.of(
+          context,
+        ).colorScheme.primaryContainer.withOpacity(0.5),
       );
     }
 
@@ -1845,8 +1870,9 @@ class _ClinicalHistoryWizardPageState
       return Chip(
         avatar: const Text('✨', style: TextStyle(fontSize: 14)),
         label: const Text('Sugerencias listas'),
-        backgroundColor:
-            Theme.of(context).colorScheme.tertiaryContainer.withOpacity(0.7),
+        backgroundColor: Theme.of(
+          context,
+        ).colorScheme.tertiaryContainer.withOpacity(0.7),
       );
     }
 
@@ -1854,8 +1880,181 @@ class _ClinicalHistoryWizardPageState
     return Chip(
       avatar: const Text('🧠', style: TextStyle(fontSize: 14)),
       label: const Text('Dictado listo'),
-      backgroundColor:
-          Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.7),
+      backgroundColor: Theme.of(
+        context,
+      ).colorScheme.secondaryContainer.withOpacity(0.7),
+    );
+  }
+
+  Widget _buildPatientInfo() {
+    if (_patient == null) return const SizedBox.shrink();
+
+    final dateFormat = DateFormat('dd/MM/yyyy');
+    final patient = _patient!;
+
+    return Container(
+      padding: const EdgeInsets.all(DocsoftSpacing.md),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [DocsoftColors.primary, DocsoftColors.primaryDark],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(DocsoftRadii.xl),
+        boxShadow: [
+          BoxShadow(
+            color: DocsoftColors.primary.withValues(alpha: 0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Avatar with initials
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: DocsoftColors.overlayOnPrimary,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.2),
+                width: 2,
+              ),
+            ),
+            child: Center(
+              child: Text(
+                _getInitials(patient.fullName),
+                style: DocsoftTextStyles.title.copyWith(
+                  color: DocsoftColors.onPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: DocsoftSpacing.md),
+
+          // Patient info
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  patient.fullName,
+                  style: DocsoftTextStyles.subtitle.copyWith(
+                    color: DocsoftColors.onPrimary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: DocsoftSpacing.xs),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.cake_outlined,
+                      size: 14,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${patient.age} años',
+                      style: DocsoftTextStyles.caption.copyWith(
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                    ),
+                    const SizedBox(width: DocsoftSpacing.sm),
+                    Text(
+                      '•',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    const SizedBox(width: DocsoftSpacing.sm),
+                    Icon(
+                      patient.sex.toUpperCase() == 'M'
+                          ? Icons.male
+                          : Icons.female,
+                      size: 14,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        patient.sexDisplay,
+                        style: DocsoftTextStyles.caption.copyWith(
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: DocsoftSpacing.xs),
+
+          // Date badge
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 130),
+            child: GestureDetector(
+              onTap: widget.isEditMode
+                  ? null
+                  : () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: _noteDate,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) {
+                        setState(() => _noteDate = picked);
+                      }
+                    },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: DocsoftSpacing.xs,
+                  vertical: DocsoftSpacing.xs,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(DocsoftRadii.sm),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.calendar_today,
+                      size: 14,
+                      color: DocsoftColors.textSecondary,
+                    ),
+                    const SizedBox(width: DocsoftSpacing.xs),
+                    Text(
+                      dateFormat.format(_noteDate),
+                      style: DocsoftTextStyles.caption.copyWith(
+                        color: DocsoftColors.textPrimary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (!widget.isEditMode) ...[
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.edit,
+                        size: 10,
+                        color: DocsoftColors.textTertiary,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1864,39 +2063,8 @@ class _ClinicalHistoryWizardPageState
     final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
     return Scaffold(
+      backgroundColor: DocsoftColors.background,
       resizeToAvoidBottomInset: true,
-      appBar: AppBar(
-        title: Text(
-          widget.isEditMode
-              ? 'Editar historia clinica'
-              : 'Nueva historia clinica',
-        ),
-        actions: [
-          // AI Suggestions action (only visible when raw transcript exists)
-          if (_canGenerateSuggestions)
-            _isGeneratingSuggestions
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                : IconButton(
-                    onPressed: _generateAISuggestions,
-                    icon: const Icon(Icons.auto_awesome),
-                    tooltip: 'La IA puede ayudarte a estructurar la nota a partir del dictado',
-                  ),
-          // Save as draft action
-          if (!_isSaving)
-            TextButton.icon(
-              onPressed: () => _saveNote(asDraft: true),
-              icon: const Icon(Icons.save_outlined),
-              label: const Text('Borrador'),
-            ),
-        ],
-      ),
       // Footer in bottomNavigationBar - takes its own layout space, never overlays
       bottomNavigationBar: AnimatedPadding(
         duration: const Duration(milliseconds: 180),
@@ -1924,161 +2092,142 @@ class _ClinicalHistoryWizardPageState
       ),
       body: SafeArea(
         bottom: false,
-        child: _isLoadingPatient
-            ? const Center(child: CircularProgressIndicator())
-            : Column(
+        child: Column(
+          children: [
+            // Custom Header (replaces AppBar)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                DocsoftSpacing.screenPadding,
+                DocsoftSpacing.screenPadding,
+                DocsoftSpacing.screenPadding,
+                DocsoftSpacing.sm,
+              ),
+              child: Row(
                 children: [
-                  // Patient header - collapses when keyboard is open
-                  ClipRect(
-                    child: AnimatedSize(
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOut,
-                      child: keyboardOpen
-                          ? const SizedBox.shrink()
-                          : _patient != null
-                              ? Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    16,
-                                    8,
-                                    16,
-                                    0,
-                                  ),
-                                  child: PatientHeader(
-                                    patient: _patient!,
-                                    date: _noteDate,
-                                    isEditing: widget.isEditMode,
-                                    onDateChanged: widget.isEditMode
-                                        ? null
-                                        : (date) {
-                                            setState(() {
-                                              _noteDate = date;
-                                            });
-                                          },
-                                  ),
-                                )
-                              : const SizedBox.shrink(),
-                    ),
+                  DocsoftBackButton(
+                    onTap: () => Navigator.of(context).maybePop(),
+                    backgroundColor: DocsoftColors.primaryMuted,
+                    iconColor: DocsoftColors.primary,
                   ),
-
-                  // AI dictation banner - non-intrusive prompt
-                  if (_shouldShowAiBanner(keyboardOpen))
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                      child: Card(
-                        elevation: 2,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .primaryContainer
-                            .withOpacity(0.7),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.auto_awesome,
-                                color: Theme.of(context).colorScheme.primary,
-                                size: 24,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'Se detecto un dictado. La IA puede ayudarte a estructurar la historia clinica.',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodyMedium
-                                      ?.copyWith(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onPrimaryContainer,
-                                      ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              TextButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _bannerDismissed = true;
-                                  });
-                                },
-                                child: const Text('Cerrar'),
-                              ),
-                              const SizedBox(width: 4),
-                              Flexible(
-                                child: FilledButton.tonal(
-                                  onPressed: _generateAISuggestions,
-                                  child: const Text('Generar'),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  // Step indicator - full version when keyboard closed,
-                  // compact version when keyboard open
-                  ClipRect(
-                    child: AnimatedSize(
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOut,
-                      child: keyboardOpen
-                          ? CompactStepIndicator(
-                              currentStep: _currentStep,
-                              totalSteps: _totalSteps,
-                              stepTitle: _stepTitles[_currentStep],
-                            )
-                          : Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: WizardStepIndicator(
-                                currentStep: _currentStep,
-                                totalSteps: _totalSteps,
-                                stepTitles: _stepTitles,
-                                onStepTapped: _goToStep,
-                              ),
-                            ),
-                    ),
+                  const SizedBox(width: DocsoftSpacing.sm),
+                  Text(
+                    widget.isEditMode
+                        ? 'Editar historia clínica'
+                        : 'Nueva historia clínica',
+                    style: DocsoftTextStyles.appBarTitle,
                   ),
-
-                  // AI state chip - shows near step indicator
-                  if (!keyboardOpen) ...[
-                    if (_buildAIStateChip() case final chip?)
-                      Align(
-                        alignment: Alignment.center,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: chip,
-                        ),
-                      ),
-                  ],
-
-                  // Step content (PageView inside Expanded)
-                  Expanded(
-                    child: Form(
-                      key: _formKey,
-                      child: PageView(
-                        controller: _pageController,
-                        physics: const NeverScrollableScrollPhysics(),
-                        onPageChanged: (page) {
-                          ScaffoldMessenger.of(context).clearSnackBars();
-                          setState(() {
-                            _currentStep = page;
-                          });
-                        },
-                        children: [
-                          _buildStep0MotivoConsulta(),
-                          _buildStep1AntecedentesHeredofamiliares(),
-                          _buildStep2AntecedentesNoPatologicos(),
-                          _buildStep3AntecedentesPatologicos(),
-                          _buildStep4PadecimientoActual(),
-                          _buildStep5ExploracionOrl(),
-                          _buildStep6DiagnosticoPlan(),
-                          _buildStep7Attachments(),
-                        ],
-                      ),
-                    ),
+                  const Spacer(),
+                  // Sparkle icon (subtle AI indicator)
+                  Icon(
+                    Icons.auto_awesome_outlined,
+                    color: DocsoftColors.textTertiary,
+                    size: 20,
                   ),
                 ],
               ),
+            ),
+
+            if (_isLoadingPatient)
+              const Expanded(child: Center(child: CircularProgressIndicator()))
+            else
+              Expanded(
+                child: Column(
+                  children: [
+                    // Patient header - collapses when keyboard is open
+                    ClipRect(
+                      child: AnimatedSize(
+                        duration: const Duration(milliseconds: 180),
+                        curve: Curves.easeOut,
+                        child: keyboardOpen
+                            ? const SizedBox.shrink()
+                            : Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  8,
+                                  16,
+                                  0,
+                                ),
+                                child: _buildPatientInfo(),
+                              ),
+                      ),
+                    ),
+
+                    // Progress indicator - Stitch style
+                    if (!keyboardOpen)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          DocsoftSpacing.md,
+                          DocsoftSpacing.sm,
+                          DocsoftSpacing.md,
+                          0,
+                        ),
+                        child: DocsoftWizardProgress(
+                          currentStep: _currentStep,
+                          totalSteps: _totalSteps,
+                        ),
+                      )
+                    else
+                      CompactStepIndicator(
+                        currentStep: _currentStep,
+                        totalSteps: _totalSteps,
+                        stepTitle: _stepTitles[_currentStep],
+                      ),
+
+                    // AI dictation banner - Stitch style with states
+                    if (!keyboardOpen &&
+                        _dictationStatus == DictationStatus.available &&
+                        !_bannerDismissed)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          DocsoftSpacing.md,
+                          DocsoftSpacing.md,
+                          DocsoftSpacing.md,
+                          0,
+                        ),
+                        child: DocsoftDictationBanner(
+                          status: _dictationStatus,
+                          isGenerating: _isGeneratingSuggestions,
+                          onGenerate: _generateAISuggestions,
+                          onDismiss: () {
+                            setState(() {
+                              _bannerDismissed = true;
+                              _dictationStatus = DictationStatus.none;
+                            });
+                          },
+                        ),
+                      ),
+
+                    // Step content (PageView inside Expanded)
+                    Expanded(
+                      child: Form(
+                        key: _formKey,
+                        child: PageView(
+                          controller: _pageController,
+                          physics: const NeverScrollableScrollPhysics(),
+                          onPageChanged: (page) {
+                            ScaffoldMessenger.of(context).clearSnackBars();
+                            setState(() {
+                              _currentStep = page;
+                            });
+                          },
+                          children: [
+                            _buildStep0MotivoConsulta(),
+                            _buildStep1AntecedentesHeredofamiliares(),
+                            _buildStep2AntecedentesNoPatologicos(),
+                            _buildStep3AntecedentesPatologicos(),
+                            _buildStep4PadecimientoActual(),
+                            _buildStep5ExploracionOrl(),
+                            _buildStep6DiagnosticoPlan(),
+                            _buildStep7Attachments(),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -2094,9 +2243,7 @@ class _ClinicalHistoryWizardPageState
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.all(16),
           child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minHeight: constraints.maxHeight,
-            ),
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
             child: child,
           ),
         );
@@ -2360,8 +2507,7 @@ class _ClinicalHistoryWizardPageState
           const SizedBox(height: 16),
 
           // AI Plan Autocomplete CTA (no dictation required)
-          if (_buildPlanAutocompleteCta() case final planCta?)
-            planCta,
+          if (_buildPlanAutocompleteCta() case final planCta?) planCta,
 
           // Plan de tratamiento
           _WizardSectionCard(
@@ -2581,6 +2727,8 @@ class _ClinicalHistoryWizardPageState
 }
 
 /// Section card for wizard steps
+///
+/// Suavizado: fondo surface, borde sutil, acento solo en icono/titulo.
 class _WizardSectionCard extends StatelessWidget {
   const _WizardSectionCard({
     required this.title,
@@ -2596,38 +2744,50 @@ class _WizardSectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Card(
-      color: highlighted
-          ? theme.colorScheme.primaryContainer.withOpacity(0.3)
-          : null,
-      elevation: highlighted ? 2 : 1,
+    return Container(
+      decoration: BoxDecoration(
+        color: DocsoftColors.surface,
+        borderRadius: BorderRadius.circular(DocsoftRadii.md),
+        border: Border.all(color: DocsoftColors.border),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(DocsoftSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
+                // Accent bar for highlighted sections
+                if (highlighted)
+                  Container(
+                    width: 3,
+                    height: 20,
+                    margin: const EdgeInsets.only(right: DocsoftSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: DocsoftColors.primary,
+                      borderRadius: BorderRadius.circular(DocsoftRadii.xs),
+                    ),
+                  ),
                 Icon(
                   icon,
                   color: highlighted
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurface.withOpacity(0.7),
+                      ? DocsoftColors.primary
+                      : DocsoftColors.textSecondary,
                   size: 20,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: DocsoftSpacing.sm),
                 Text(
                   title,
-                  style: theme.textTheme.titleMedium?.copyWith(
+                  style: DocsoftTextStyles.subtitle.copyWith(
                     fontWeight: FontWeight.bold,
-                    color: highlighted ? theme.colorScheme.primary : null,
+                    color: highlighted
+                        ? DocsoftColors.primary
+                        : DocsoftColors.textPrimary,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: DocsoftSpacing.md),
             child,
           ],
         ),

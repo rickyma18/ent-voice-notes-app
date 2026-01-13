@@ -28,6 +28,7 @@ import 'domain/usecases/delete_medical_note_use_case.dart';
 import 'domain/usecases/get_medical_notes_use_case.dart';
 import 'domain/usecases/update_medical_note_use_case.dart';
 import 'domain/usecases/get_medical_note_by_id_use_case.dart';
+import 'domain/usecases/add_attachment_to_medical_note_use_case.dart';
 import 'domain/entities/medical_note_entity.dart';
 import '../../presentation/core/application_state/current_doctor_provider/current_doctor_provider.dart';
 
@@ -278,5 +279,16 @@ UploadPdfAttachmentUseCase uploadPdfAttachmentUseCase(
 ) {
   return UploadPdfAttachmentUseCase(
     repository: ref.watch(attachmentsRepositoryProvider),
+  );
+}
+
+/// Add attachment to medical note use case provider.
+@riverpod
+AddAttachmentToMedicalNoteUseCase addAttachmentToMedicalNoteUseCase(
+  AddAttachmentToMedicalNoteUseCaseRef ref,
+) {
+  return AddAttachmentToMedicalNoteUseCase(
+    ref.watch(medicalNotesRepositoryProvider),
+    ref.watch(attachmentsRepositoryProvider),
   );
 }

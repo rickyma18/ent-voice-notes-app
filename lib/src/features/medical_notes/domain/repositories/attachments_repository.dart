@@ -1,6 +1,7 @@
 // lib/src/features/medical_notes/domain/repositories/attachments_repository.dart
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import '../entities/attachment_entity.dart';
 
@@ -55,4 +56,14 @@ abstract class AttachmentsRepository {
   ///
   /// [url] - The download URL of the attachment to delete.
   Future<void> deleteAttachment(String url);
+
+  /// Uploads raw bytes (used for Web support and generic adds)
+  Future<AttachmentEntity> uploadBytes({
+    required Uint8List bytes,
+    required String fileName,
+    required String mimeType,
+    required String doctorId,
+    required String patientId,
+    required String noteId,
+  });
 }

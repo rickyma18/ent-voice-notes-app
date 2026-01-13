@@ -27,6 +27,10 @@ export 'widgets/docsoft_dialog.dart';
 export 'widgets/docsoft_dialogs.dart';
 export 'widgets/docsoft_section_card.dart';
 export 'widgets/docsoft_timeline_item.dart';
+export 'widgets/docsoft_attachment_sheet.dart';
+export 'widgets/docsoft_dictation_banner.dart';
+export 'widgets/docsoft_wizard_progress.dart';
+export 'widgets/docsoft_status_chip.dart';
 
 // Components
 export 'components/avatar/docsoft_editable_avatar.dart';

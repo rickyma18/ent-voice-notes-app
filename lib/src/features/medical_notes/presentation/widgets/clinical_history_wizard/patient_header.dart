@@ -3,14 +3,15 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../../../../ui/docsoft_ui.dart';
 import '../../../../patients/domain/entities/patient_entity.dart';
 
 /// Read-only header displaying patient information at the top of the wizard.
 ///
-/// Shows:
-/// - Patient name
-/// - Age (derived from patient entity)
-/// - Date (current date or existing note date, editable)
+/// Stitch-style design with:
+/// - Large circular avatar with initials
+/// - Name + age/sex row with icons
+/// - Editable date chip on the right
 class PatientHeader extends StatelessWidget {
   const PatientHeader({
     super.key,
@@ -25,143 +26,105 @@ class PatientHeader extends StatelessWidget {
   final ValueChanged<DateTime>? onDateChanged;
   final bool isEditing;
 
-  /// Breakpoint for switching between wide (Row) and narrow (Column) layout.
-  static const double _narrowBreakpoint = 420.0;
-
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final dateFormat = DateFormat('dd/MM/yyyy');
+    final dateFormat = DateFormat('dd/MM/yy');
 
-    return Card(
-      color: theme.colorScheme.primaryContainer.withOpacity(0.3),
-      elevation: 0,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final isNarrow = constraints.maxWidth < _narrowBreakpoint;
-
-            final avatar = CircleAvatar(
-              radius: 24,
-              backgroundColor: theme.colorScheme.primary,
+    return DocsoftCard(
+      showBorder: true,
+      borderColor: DocsoftColors.border,
+      borderWidth: 1,
+      padding: const EdgeInsets.all(DocsoftSpacing.md),
+      child: Row(
+        children: [
+          // Avatar with initials
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: DocsoftColors.primary,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
               child: Text(
                 _getInitials(patient.fullName),
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: theme.colorScheme.onPrimary,
+                style: DocsoftTextStyles.title.copyWith(
+                  color: DocsoftColors.onPrimary,
                   fontWeight: FontWeight.bold,
+                  fontSize: 20,
                 ),
               ),
-            );
+            ),
+          ),
+          const SizedBox(width: DocsoftSpacing.md),
 
-            final patientInfo = Column(
+          // Patient info
+          Expanded(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
+                // Name
                 Text(
                   patient.fullName,
-                  style: theme.textTheme.titleMedium?.copyWith(
+                  style: DocsoftTextStyles.subtitle.copyWith(
                     fontWeight: FontWeight.bold,
+                    fontSize: 18,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
+
+                // Age and sex row
                 Row(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _InfoChip(
-                      icon: Icons.cake_outlined,
-                      label: '${patient.age} años',
-                    ),
-                    const SizedBox(width: 8),
-                    _InfoChip(
-                      icon: patient.sex.toUpperCase() == 'M'
-                          ? Icons.male
-                          : Icons.female,
-                      label: patient.sexDisplay,
-                    ),
-                  ],
-                ),
-              ],
-            );
-
-            final dateContainer = InkWell(
-              onTap: onDateChanged != null
-                  ? () => _showDatePicker(context)
-                  : null,
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: theme.colorScheme.outline.withOpacity(0.3),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
+                    // Age
                     Icon(
-                      Icons.calendar_today,
-                      size: 16,
-                      color: theme.colorScheme.primary,
+                      Icons.cake_outlined,
+                      size: 14,
+                      color: DocsoftColors.textSecondary.withValues(alpha: 0.7),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${patient.age} a\u00f1os',
+                      style: DocsoftTextStyles.caption.copyWith(
+                        color: DocsoftColors.textSecondary,
+                      ),
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      dateFormat.format(date),
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
+
+                    // Separator dot
+                    Container(
+                      width: 4,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: DocsoftColors.textTertiary,
+                        shape: BoxShape.circle,
                       ),
                     ),
-                    if (onDateChanged != null) ...[
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.edit,
-                        size: 14,
-                        color: theme.colorScheme.onSurface.withOpacity(0.5),
+                    const SizedBox(width: 8),
+
+                    // Sex
+                    Text(
+                      patient.sexDisplay,
+                      style: DocsoftTextStyles.caption.copyWith(
+                        color: DocsoftColors.textSecondary,
                       ),
-                    ],
+                    ),
                   ],
                 ),
-              ),
-            );
-
-            if (isNarrow) {
-              // Narrow layout: Column with two rows
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // First row: avatar + patient info
-                  Row(
-                    children: [
-                      avatar,
-                      const SizedBox(width: 16),
-                      Expanded(child: patientInfo),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  // Second row: date container aligned right
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: dateContainer,
-                  ),
-                ],
-              );
-            }
-
-            // Wide layout: single Row
-            return Row(
-              children: [
-                avatar,
-                const SizedBox(width: 16),
-                Expanded(child: patientInfo),
-                dateContainer,
               ],
-            );
-          },
-        ),
+            ),
+          ),
+
+          // Date chip
+          _DateChip(
+            date: date,
+            dateFormat: dateFormat,
+            onTap: onDateChanged != null ? () => _showDatePicker(context) : null,
+          ),
+        ],
       ),
     );
   }
@@ -189,35 +152,60 @@ class PatientHeader extends StatelessWidget {
   }
 }
 
-class _InfoChip extends StatelessWidget {
-  const _InfoChip({
-    required this.icon,
-    required this.label,
+/// Compact date chip with calendar icon and edit icon.
+class _DateChip extends StatelessWidget {
+  const _DateChip({
+    required this.date,
+    required this.dateFormat,
+    this.onTap,
   });
 
-  final IconData icon;
-  final String label;
+  final DateTime date;
+  final DateFormat dateFormat;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          icon,
-          size: 14,
-          color: theme.colorScheme.onSurface.withOpacity(0.6),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(DocsoftRadii.sm),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: DocsoftSpacing.sm,
+          vertical: DocsoftSpacing.xs + 2,
         ),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurface.withOpacity(0.7),
-          ),
+        decoration: BoxDecoration(
+          color: DocsoftColors.background,
+          borderRadius: BorderRadius.circular(DocsoftRadii.sm),
+          border: Border.all(color: DocsoftColors.border),
         ),
-      ],
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.calendar_today,
+              size: 14,
+              color: DocsoftColors.textSecondary,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              dateFormat.format(date),
+              style: DocsoftTextStyles.caption.copyWith(
+                fontSize: 12,
+                color: DocsoftColors.textSecondary,
+              ),
+            ),
+            if (onTap != null) ...[
+              const SizedBox(width: 4),
+              Icon(
+                Icons.edit,
+                size: 12,
+                color: DocsoftColors.textTertiary,
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

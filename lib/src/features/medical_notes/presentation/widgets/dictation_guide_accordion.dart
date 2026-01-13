@@ -89,7 +89,7 @@ class DictationGuideAccordion extends StatelessWidget {
                   const SizedBox(width: DocsoftSpacing.sm),
                   Expanded(
                     child: Text(
-                      'Dicta en orden. Si algo no aplica, di "niega" o "sin datos relevantes".',
+                      'Dicta la historia clínica, o graba la consulta médica. Si algo no aplica, di "niega" o "sin datos relevantes".',
                       style: DocsoftTextStyles.caption.copyWith(
                         color: DocsoftColors.textPrimary,
                         fontStyle: FontStyle.italic,
