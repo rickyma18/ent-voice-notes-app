@@ -1,27 +1,21 @@
 // lib/src/features/medical_notes/presentation/pages/dictation_assist_page.dart
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../../../presentation/core/router/route_names.dart';
+import '../../../../ui/docsoft_ui.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 import '../../application/audio_recording_service.dart';
 import '../../medical_notes_providers.dart';
-import '../widgets/clinical_history_wizard/patient_header.dart';
 import '../widgets/dictation_guide_accordion.dart';
 import '../widgets/recording_controls.dart';
 
 /// Dictation status for the assist page
-enum DictationStatus {
-  idle,
-  recording,
-  paused,
-  transcribing,
-  ready,
-}
+enum DictationStatus { idle, recording, paused, transcribing, ready }
 
 /// Secondary tool screen for dictation assistance.
 ///
@@ -68,6 +62,9 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
   /// Delays para backoff exponencial (en segundos)
   static const List<int> _retryDelays = [2, 5];
 
+  /// Loading state for CTA buttons
+  bool _isGenerating = false;
+
   RecordingState get _recordingState {
     switch (_status) {
       case DictationStatus.idle:
@@ -79,6 +76,13 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
       case DictationStatus.paused:
         return RecordingState.paused;
     }
+  }
+
+  String _getInitials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts[0][0].toUpperCase();
+    return '${parts[0][0]}${parts[parts.length - 1][0]}'.toUpperCase();
   }
 
   Future<void> _onStart() async {
@@ -96,17 +100,17 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(e.message),
-            backgroundColor: Colors.red,
+            backgroundColor: DocsoftColors.error,
             action:
                 e.reason == RecordingFailureReason.permissionPermanentlyDenied
-                    ? SnackBarAction(
-                        label: 'Configuracion',
-                        textColor: Colors.white,
-                        onPressed: () {
-                          // Could open app settings here
-                        },
-                      )
-                    : null,
+                ? SnackBarAction(
+                    label: 'Configuracion',
+                    textColor: DocsoftColors.onError,
+                    onPressed: () {
+                      // Could open app settings here
+                    },
+                  )
+                : null,
           ),
         );
         setState(() {
@@ -118,7 +122,7 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error inesperado: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: DocsoftColors.error,
           ),
         );
         setState(() {
@@ -148,8 +152,10 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Espera $remaining segundos antes de transcribir de nuevo...'),
-              backgroundColor: Colors.orange,
+              content: Text(
+                'Espera $remaining segundos antes de transcribir de nuevo...',
+              ),
+              backgroundColor: DocsoftColors.warning,
               duration: const Duration(seconds: 2),
             ),
           );
@@ -174,9 +180,11 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
       if (audioFilePath == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Error: No se pudo obtener el archivo de audio'),
-              backgroundColor: Colors.red,
+            SnackBar(
+              content: const Text(
+                'Error: No se pudo obtener el archivo de audio',
+              ),
+              backgroundColor: DocsoftColors.error,
             ),
           );
           setState(() {
@@ -192,7 +200,6 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
       String? transcript;
       int attempt = 0;
       Object? lastError;
-      StackTrace? lastStack;
 
       while (attempt <= _maxRetries) {
         try {
@@ -205,22 +212,23 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
           break;
         } catch (e, st) {
           lastError = e;
-          lastStack = st;
 
           debugPrint('🛑 STT ERROR (intento ${attempt + 1}): $e');
           debugPrint('🧵 STACK: $st');
 
           final msg = e.toString().toLowerCase();
 
-          // ─────────────────────────────────────────────────────────────────────
+          // ─────────────────────────────────────────────────────────────────────────
           // DETECTAR TIPO DE ERROR
-          // ─────────────────────────────────────────────────────────────────────
-          final isRateLimit = msg.contains('429') ||
+          // ─────────────────────────────────────────────────────────────────────────
+          final isRateLimit =
+              msg.contains('429') ||
               msg.contains('rate limit') ||
               msg.contains('rate_limit') ||
               msg.contains('too many requests');
 
-          final isQuotaBilling = msg.contains('insufficient_quota') ||
+          final isQuotaBilling =
+              msg.contains('insufficient_quota') ||
               msg.contains('quota') ||
               msg.contains('billing') ||
               msg.contains('payment') ||
@@ -228,15 +236,17 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
 
           // Si es quota/billing, NO reintentar - mostrar error y salir
           if (isQuotaBilling) {
-            debugPrint('💳 STT: Error de cuota/billing detectado - NO reintentar');
+            debugPrint(
+              '💳 STT: Error de cuota/billing detectado - NO reintentar',
+            );
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
+                SnackBar(
+                  content: const Text(
                     'Cuota agotada o problema de billing. Revisa el plan de tu proyecto OpenAI.',
                   ),
-                  backgroundColor: Colors.orange,
-                  duration: Duration(seconds: 6),
+                  backgroundColor: DocsoftColors.warning,
+                  duration: const Duration(seconds: 6),
                   showCloseIcon: true,
                 ),
               );
@@ -250,13 +260,17 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
           // Si es rate-limit y quedan reintentos, hacer backoff
           if (isRateLimit && attempt < _maxRetries) {
             final delay = _retryDelays[attempt];
-            debugPrint('⏳ STT: Rate-limit detectado. Esperando $delay segundos antes de reintentar...');
+            debugPrint(
+              '⏳ STT: Rate-limit detectado. Esperando $delay segundos antes de reintentar...',
+            );
 
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Limite de solicitudes. Reintentando en $delay segundos...'),
-                  backgroundColor: Colors.orange,
+                  content: Text(
+                    'Limite de solicitudes. Reintentando en $delay segundos...',
+                  ),
+                  backgroundColor: DocsoftColors.warning,
                   duration: Duration(seconds: delay),
                 ),
               );
@@ -283,12 +297,15 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
       } else if (mounted) {
         // Todos los reintentos fallaron
         final msg = lastError.toString().toLowerCase();
-        final isRateLimit = msg.contains('429') ||
+        final isRateLimit =
+            msg.contains('429') ||
             msg.contains('rate limit') ||
             msg.contains('rate_limit') ||
             msg.contains('too many requests');
 
-        debugPrint('❌ STT: Todos los intentos fallaron. Ultimo error: $lastError');
+        debugPrint(
+          '❌ STT: Todos los intentos fallaron. Ultimo error: $lastError',
+        );
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -297,7 +314,9 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
                   ? 'Limite de solicitudes alcanzado. Espera 10-20 segundos y vuelve a intentar.'
                   : 'Error al transcribir el audio: ${lastError.toString().split('\n').first}',
             ),
-            backgroundColor: isRateLimit ? Colors.orange : Colors.red,
+            backgroundColor: isRateLimit
+                ? DocsoftColors.warning
+                : DocsoftColors.error,
             duration: const Duration(seconds: 5),
             showCloseIcon: true,
           ),
@@ -315,8 +334,10 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error inesperado: ${e.toString().split('\n').first}'),
-            backgroundColor: Colors.red,
+            content: Text(
+              'Error inesperado: ${e.toString().split('\n').first}',
+            ),
+            backgroundColor: DocsoftColors.error,
             duration: const Duration(seconds: 4),
             showCloseIcon: true,
           ),
@@ -349,7 +370,7 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(e.message),
-            backgroundColor: Colors.red,
+            backgroundColor: DocsoftColors.error,
           ),
         );
       }
@@ -371,24 +392,160 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(e.message),
-            backgroundColor: Colors.red,
+            backgroundColor: DocsoftColors.error,
           ),
         );
       }
     }
   }
 
+  void _onRerecord() {
+    setState(() {
+      _rawTranscript = '';
+      _status = DictationStatus.idle;
+    });
+  }
+
   void _copyTranscript() {
     Clipboard.setData(ClipboardData(text: _rawTranscript));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Transcripcion copiada al portapapeles'),
-        duration: Duration(seconds: 2),
+      SnackBar(
+        content: const Text('Transcripción copiada al portapapeles'),
+        backgroundColor: DocsoftColors.primary,
+        duration: const Duration(seconds: 2),
       ),
     );
   }
 
-  void _continueToWizard() {
+  void _showEditTranscriptModal() {
+    final controller = TextEditingController(text: _rawTranscript);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: DocsoftColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: DocsoftRadii.bottomSheet,
+      ),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.7,
+            ),
+            padding: const EdgeInsets.all(DocsoftSpacing.screenPadding),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Handle bar
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: DocsoftColors.textTertiary,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: DocsoftSpacing.md),
+
+                // Title
+                Text('Editar transcripción', style: DocsoftTextStyles.title),
+                const SizedBox(height: DocsoftSpacing.sm),
+                Text(
+                  'Ajusta términos médicos o errores de transcripción.',
+                  style: DocsoftTextStyles.caption,
+                ),
+                const SizedBox(height: DocsoftSpacing.md),
+
+                // Text field
+                Flexible(
+                  child: TextField(
+                    controller: controller,
+                    maxLines: null,
+                    minLines: 6,
+                    style: DocsoftTextStyles.body,
+                    decoration: InputDecoration(
+                      hintText: 'Transcripción...',
+                      hintStyle: DocsoftTextStyles.body.copyWith(
+                        color: DocsoftColors.textTertiary,
+                      ),
+                      filled: true,
+                      fillColor: DocsoftColors.surfaceAlt,
+                      border: OutlineInputBorder(
+                        borderRadius: DocsoftRadii.input,
+                        borderSide: BorderSide(color: DocsoftColors.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: DocsoftRadii.input,
+                        borderSide: BorderSide(color: DocsoftColors.border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: DocsoftRadii.input,
+                        borderSide: BorderSide(
+                          color: DocsoftColors.primary,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: DocsoftSpacing.lg),
+
+                // Actions
+                Row(
+                  children: [
+                    Expanded(
+                      child: DocsoftOutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        label: 'Cancelar',
+                        fullWidth: true,
+                      ),
+                    ),
+                    const SizedBox(width: DocsoftSpacing.md),
+                    Expanded(
+                      child: DocsoftPrimaryButton(
+                        onPressed: () {
+                          setState(() {
+                            _rawTranscript = controller.text;
+                          });
+                          Navigator.pop(context);
+                        },
+                        label: 'Guardar',
+                        fullWidth: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _continueToWizard() async {
+    if (_isGenerating) return;
+
+    setState(() {
+      _isGenerating = true;
+    });
+
+    // Small delay for visual feedback
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    if (!mounted) return;
+
+    setState(() {
+      _isGenerating = false;
+    });
+
     context.pushNamed(
       RouteNames.clinicalHistoryWizard,
       extra: {
@@ -398,7 +555,21 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
     );
   }
 
-  void _continueToSurgicalNote() {
+  void _continueToSurgicalNote() async {
+    if (_isGenerating) return;
+
+    setState(() {
+      _isGenerating = true;
+    });
+
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    if (!mounted) return;
+
+    setState(() {
+      _isGenerating = false;
+    });
+
     context.pushNamed(
       RouteNames.surgicalNoteWizard,
       extra: {
@@ -408,137 +579,279 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
     );
   }
 
+  bool get _ctasEnabled =>
+      _status == DictationStatus.ready &&
+      _rawTranscript.isNotEmpty &&
+      !_isGenerating;
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
     return Scaffold(
-      backgroundColor: isDark ? theme.colorScheme.surface : null,
-      appBar: AppBar(
-        title: const Text('Asistente de dictado'),
-      ),
+      backgroundColor: DocsoftColors.background,
       body: SafeArea(
         child: Column(
           children: [
-            // Patient header
+            // Header
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: PatientHeader(
-                patient: widget.patient,
-                date: DateTime.now(),
+              padding: const EdgeInsets.fromLTRB(
+                DocsoftSpacing.screenPadding,
+                DocsoftSpacing.screenPadding,
+                DocsoftSpacing.screenPadding,
+                DocsoftSpacing.sm,
               ),
-            ),
-
-            // Main content - scrollable
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(16),
+              child: Row(
                 children: [
-                  // Mic control section
-                  _buildMicSection(theme),
-                  const SizedBox(height: 24),
-
-                  // Dictation guide accordion
-                  const DictationGuideAccordion(),
-                  const SizedBox(height: 24),
-
-                  // Transcript section (only when ready)
-                  if (_status == DictationStatus.ready &&
-                      _rawTranscript.isNotEmpty)
-                    _buildTranscriptSection(theme),
+                  // Back button
+                  DocsoftBackButton(
+                    onTap: () => context.pop(),
+                    backgroundColor: DocsoftColors.primaryMuted,
+                    iconColor: DocsoftColors.primary,
+                  ),
+                  const SizedBox(width: DocsoftSpacing.sm),
+                  Text(
+                    'Asistente de dictado',
+                    style: DocsoftTextStyles.appBarTitle,
+                  ),
                 ],
               ),
             ),
 
-            // Bottom CTAs (only when transcript is ready)
-            if (_status == DictationStatus.ready && _rawTranscript.isNotEmpty)
-              _buildBottomActions(theme),
+            // Main scrollable content
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: DocsoftSpacing.screenPadding,
+                ),
+                children: [
+                  // Patient card with gradient
+                  _buildPatientCard(),
+                  const SizedBox(height: DocsoftSpacing.lg),
+
+                  // Context selector chips
+                  _buildContextSelector(),
+                  const SizedBox(height: DocsoftSpacing.lg),
+
+                  // Recording section
+                  _buildRecordingSection(),
+                  const SizedBox(height: DocsoftSpacing.lg),
+
+                  // Help accordion
+                  const DictationGuideAccordion(),
+                  const SizedBox(height: DocsoftSpacing.lg),
+
+                  // Transcript section (always visible, content varies)
+                  _buildTranscriptSection(),
+
+                  // Bottom padding
+                  const SizedBox(height: DocsoftSpacing.xl),
+                ],
+              ),
+            ),
+
+            // Sticky CTAs at bottom
+            _buildStickyCtAs(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildMicSection(ThemeData theme) {
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            // Capability chips (informational, non-interactive)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+  Widget _buildPatientCard() {
+    final dateFormat = DateFormat('dd/MM/yyyy');
+
+    return Container(
+      padding: const EdgeInsets.all(DocsoftSpacing.md),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [DocsoftColors.primary, DocsoftColors.primaryDark],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(DocsoftRadii.xl),
+        boxShadow: [
+          BoxShadow(
+            color: DocsoftColors.primary.withValues(alpha: 0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Avatar with initials
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: DocsoftColors.overlayOnPrimary,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.2),
+                width: 2,
+              ),
+            ),
+            child: Center(
+              child: Text(
+                _getInitials(widget.patient.fullName),
+                style: DocsoftTextStyles.title.copyWith(
+                  color: DocsoftColors.onPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: DocsoftSpacing.md),
+
+          // Patient info
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildCapabilityChip(theme, Icons.description, 'Nota médica'),
-                const SizedBox(width: 8),
-                _buildCapabilityChip(theme, Icons.forum, 'Entrevista'),
+                Text(
+                  widget.patient.fullName,
+                  style: DocsoftTextStyles.subtitle.copyWith(
+                    color: DocsoftColors.onPrimary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: DocsoftSpacing.xs),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.cake_outlined,
+                      size: 14,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${widget.patient.age} años',
+                      style: DocsoftTextStyles.caption.copyWith(
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                    ),
+                    const SizedBox(width: DocsoftSpacing.sm),
+                    Text(
+                      '•',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    const SizedBox(width: DocsoftSpacing.sm),
+                    Icon(
+                      widget.patient.sex.toUpperCase() == 'M'
+                          ? Icons.male
+                          : Icons.female,
+                      size: 14,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        widget.patient.sex,
+                        style: DocsoftTextStyles.caption.copyWith(
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
-            const SizedBox(height: 8),
+          ),
+          const SizedBox(width: DocsoftSpacing.xs),
 
-            // Helper text
-            Text(
-              'La IA detecta el contexto automáticamente',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+          // Date badge
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 130),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: DocsoftSpacing.xs,
+                vertical: DocsoftSpacing.xs,
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-
-            // Recording controls
-            RecordingControls(
-              state: _recordingState,
-              isProcessing: _status == DictationStatus.transcribing,
-              onStart: _onStart,
-              onStop: _onStop,
-              onPause: _onPause,
-              onResume: _onResume,
-              size: RecordingControlsSize.large,
-            ),
-
-            const SizedBox(height: 16),
-
-            // Secondary micro-copy
-            Text(
-              'Puedes dictar una nota médica o grabar una entrevista médico-paciente.\n'
-              'La IA se adapta automáticamente.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(DocsoftRadii.sm),
               ),
-              textAlign: TextAlign.center,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.calendar_today,
+                    size: 14,
+                    color: DocsoftColors.textSecondary,
+                  ),
+                  const SizedBox(width: DocsoftSpacing.xs),
+                  Text(
+                    dateFormat.format(DateTime.now()),
+                    style: DocsoftTextStyles.caption.copyWith(
+                      color: DocsoftColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildCapabilityChip(ThemeData theme, IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+  Widget _buildContextSelector() {
+    return Column(
+      children: [
+        // Chips row
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildContextChip(
+              icon: Icons.description_outlined,
+              label: 'Nota médica',
+            ),
+            const SizedBox(width: DocsoftSpacing.sm),
+            _buildContextChip(icon: Icons.forum_outlined, label: 'Entrevista'),
+          ],
         ),
+        const SizedBox(height: DocsoftSpacing.sm),
+
+        // Helper text
+        Text(
+          'LA IA DETECTA EL CONTEXTO AUTOMÁTICAMENTE',
+          style: DocsoftTextStyles.caption.copyWith(
+            color: DocsoftColors.textTertiary,
+            fontSize: 11,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildContextChip({required IconData icon, required String label}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: DocsoftSpacing.md,
+        vertical: DocsoftSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(DocsoftRadii.full),
+        border: Border.all(color: DocsoftColors.border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 14,
-            color: theme.colorScheme.primary,
-          ),
-          const SizedBox(width: 6),
+          Icon(icon, size: 16, color: DocsoftColors.primary),
+          const SizedBox(width: DocsoftSpacing.xs),
           Text(
             label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSurface,
+            style: DocsoftTextStyles.caption.copyWith(
+              color: DocsoftColors.textPrimary,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -547,65 +860,183 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
     );
   }
 
-  Widget _buildTranscriptSection(ThemeData theme) {
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.text_snippet,
-                  color: theme.colorScheme.primary,
-                  size: 20,
+  Widget _buildRecordingSection() {
+    return Center(
+      child: Column(
+        children: [
+          RecordingControls(
+            state: _recordingState,
+            isProcessing: _status == DictationStatus.transcribing,
+            onStart: _onStart,
+            onStop: _onStop,
+            onPause: _onPause,
+            onResume: _onResume,
+            size: RecordingControlsSize.large,
+            enablePulse: true,
+            showWaveform: true,
+          ),
+          const SizedBox(height: DocsoftSpacing.lg),
+
+          // Helper text
+          Text(
+            'Puedes dictar una nota médica o grabar una entrevista\nmédico-paciente.',
+            style: DocsoftTextStyles.body.copyWith(
+              color: DocsoftColors.textSecondary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          Text(
+            'La IA se adapta automáticamente.',
+            style: DocsoftTextStyles.body.copyWith(
+              color: DocsoftColors.primary,
+              fontWeight: FontWeight.w500,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTranscriptSection() {
+    final isRecording =
+        _status == DictationStatus.recording ||
+        _status == DictationStatus.paused;
+    final hasTranscript = _rawTranscript.isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.all(DocsoftSpacing.md),
+      decoration: BoxDecoration(
+        color: DocsoftColors.surface,
+        borderRadius: BorderRadius.circular(DocsoftRadii.lg),
+        border: Border.all(color: DocsoftColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header row
+          Row(
+            children: [
+              // Status indicator
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _status == DictationStatus.recording
+                      ? DocsoftColors.error
+                      : hasTranscript
+                      ? DocsoftColors.success
+                      : DocsoftColors.textTertiary,
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  'Transcripcion',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
+              ),
+              const SizedBox(width: DocsoftSpacing.sm),
+              Text(
+                'Transcripción',
+                style: DocsoftTextStyles.subtitle.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+
+              // Rerecord button
+              if (hasTranscript)
+                TextButton(
+                  onPressed: _onRerecord,
+                  style: TextButton.styleFrom(
+                    foregroundColor: DocsoftColors.primary,
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(0, 0),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(
+                    'REGRABAR',
+                    style: DocsoftTextStyles.caption.copyWith(
+                      color: DocsoftColors.primary,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
-                const Spacer(),
-                IconButton(
-                  onPressed: _copyTranscript,
-                  icon: const Icon(Icons.copy),
-                  tooltip: 'Copiar',
-                  iconSize: 20,
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
+            ],
+          ),
+          const SizedBox(height: DocsoftSpacing.sm),
+
+          // Content
+          if (!hasTranscript)
+            Text(
+              isRecording
+                  ? 'Iniciando dictado...'
+                  : 'La transcripción aparecerá aquí después de grabar.',
+              style: DocsoftTextStyles.body.copyWith(
+                color: DocsoftColors.textTertiary,
+                fontStyle: FontStyle.italic,
+              ),
+            )
+          else ...[
+            // Transcript preview
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: theme.colorScheme.outlineVariant,
-                ),
-              ),
-              constraints: const BoxConstraints(
-                minHeight: 100,
-                maxHeight: 200,
-              ),
+              constraints: const BoxConstraints(minHeight: 60, maxHeight: 120),
               child: SingleChildScrollView(
                 child: SelectableText(
                   _rawTranscript,
-                  style: theme.textTheme.bodyMedium,
+                  style: DocsoftTextStyles.body,
                 ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: DocsoftSpacing.md),
+
+            // Action buttons
+            Row(
+              children: [
+                // Copy button
+                _buildTranscriptActionButton(
+                  icon: Icons.copy_outlined,
+                  label: 'Copiar',
+                  onTap: _copyTranscript,
+                ),
+                const SizedBox(width: DocsoftSpacing.sm),
+                // Edit button
+                _buildTranscriptActionButton(
+                  icon: Icons.edit_outlined,
+                  label: 'Editar',
+                  onTap: _showEditTranscriptModal,
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTranscriptActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: DocsoftSpacing.sm,
+          vertical: DocsoftSpacing.xs,
+        ),
+        decoration: BoxDecoration(
+          color: DocsoftColors.surfaceAlt,
+          borderRadius: BorderRadius.circular(DocsoftRadii.sm),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: DocsoftColors.textSecondary),
+            const SizedBox(width: DocsoftSpacing.xs),
             Text(
-              'Puedes grabar de nuevo para reemplazar esta transcripcion',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                fontStyle: FontStyle.italic,
+              label,
+              style: DocsoftTextStyles.caption.copyWith(
+                color: DocsoftColors.textSecondary,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],
@@ -614,81 +1045,93 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
     );
   }
 
-  Widget _buildBottomActions(ThemeData theme) {
+  Widget _buildStickyCtAs() {
+    // For return mode, show different CTAs
+    if (widget.returnMode) {
+      return _buildReturnModeCtas();
+    }
+
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(
+        DocsoftSpacing.screenPadding,
+        DocsoftSpacing.md,
+        DocsoftSpacing.screenPadding,
+        DocsoftSpacing.screenPadding + MediaQuery.of(context).padding.bottom,
+      ),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
+        color: DocsoftColors.surface,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
+            color: DocsoftColors.shadowLight,
+            blurRadius: 12,
+            offset: const Offset(0, -4),
           ),
         ],
       ),
-      child: widget.returnMode
-          ? _buildReturnModeActions(theme)
-          : _buildNavigationModeActions(theme),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Primary CTA - Clinical History
+          DocsoftPrimaryButton(
+            onPressed: _ctasEnabled ? _continueToWizard : null,
+            label: 'Generar Historia clínica',
+            icon: Icons.auto_fix_high,
+            isLoading: _isGenerating,
+            fullWidth: true,
+          ),
+          const SizedBox(height: DocsoftSpacing.sm),
+
+          // Secondary CTA - Surgical Note
+          DocsoftOutlinedButton(
+            onPressed: _ctasEnabled ? _continueToSurgicalNote : null,
+            label: 'Generar Nota quirúrgica',
+            icon: Icons.content_cut,
+            fullWidth: true,
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildReturnModeActions(ThemeData theme) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        FilledButton.icon(
-          onPressed: () => Navigator.pop(context, _rawTranscript),
-          icon: const Icon(Icons.check),
-          label: const Text('Usar este texto'),
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 14),
+  Widget _buildReturnModeCtas() {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        DocsoftSpacing.screenPadding,
+        DocsoftSpacing.md,
+        DocsoftSpacing.screenPadding,
+        DocsoftSpacing.screenPadding + MediaQuery.of(context).padding.bottom,
+      ),
+      decoration: BoxDecoration(
+        color: DocsoftColors.surface,
+        boxShadow: [
+          BoxShadow(
+            color: DocsoftColors.shadowLight,
+            blurRadius: 12,
+            offset: const Offset(0, -4),
           ),
-        ),
-        const SizedBox(height: 8),
-        OutlinedButton(
-          onPressed: () => Navigator.pop(context, null),
-          child: const Text('Cancelar'),
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 14),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          DocsoftPrimaryButton(
+            onPressed: _ctasEnabled
+                ? () => Navigator.pop(context, _rawTranscript)
+                : null,
+            label: 'Usar este texto',
+            icon: Icons.check,
+            fullWidth: true,
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNavigationModeActions(ThemeData theme) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Continuar con:',
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w600,
+          const SizedBox(height: DocsoftSpacing.sm),
+          DocsoftOutlinedButton(
+            onPressed: () => Navigator.pop(context, null),
+            label: 'Cancelar',
+            fullWidth: true,
           ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 12),
-        FilledButton.icon(
-          onPressed: _continueToWizard,
-          icon: const Icon(Icons.assignment),
-          label: const Text('Historia Clinica'),
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-          ),
-        ),
-        const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: _continueToSurgicalNote,
-          icon: const Icon(Icons.local_hospital),
-          label: const Text('Nota Quirurgica'),
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

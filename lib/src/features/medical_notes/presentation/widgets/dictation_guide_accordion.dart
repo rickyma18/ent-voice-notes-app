@@ -2,6 +2,8 @@
 
 import 'package:flutter/material.dart';
 
+import '../../../../ui/docsoft_ui.dart';
+
 /// A collapsible guide panel that helps doctors remember what to dictate
 /// during audio recording for clinical history notes.
 ///
@@ -16,46 +18,65 @@ class DictationGuideAccordion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return Card(
-      elevation: 0,
-      color: isDark
-          ? theme.colorScheme.surfaceContainerHighest
-          : theme.colorScheme.surfaceContainerLow,
-      margin: EdgeInsets.zero,
+    return Container(
+      decoration: BoxDecoration(
+        color: DocsoftColors.surface,
+        borderRadius: BorderRadius.circular(DocsoftRadii.lg),
+        border: Border.all(color: DocsoftColors.border),
+      ),
       child: Theme(
         // Remove divider lines from ExpansionTile
-        data: theme.copyWith(dividerColor: Colors.transparent),
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: false,
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          leading: Icon(
-            Icons.lightbulb_outline,
-            color: theme.colorScheme.primary,
-            size: 20,
+          tilePadding: const EdgeInsets.symmetric(
+            horizontal: DocsoftSpacing.md,
+            vertical: DocsoftSpacing.xs,
+          ),
+          childrenPadding: EdgeInsets.fromLTRB(
+            DocsoftSpacing.md,
+            0,
+            DocsoftSpacing.md,
+            DocsoftSpacing.md,
+          ),
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+          collapsedShape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.zero,
+          ),
+          leading: Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: DocsoftColors.warningSoft,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Icon(
+                Icons.lightbulb_outline,
+                color: DocsoftColors.warning,
+                size: 16,
+              ),
+            ),
           ),
           title: Text(
             '¿Qué dictar?',
-            style: theme.textTheme.titleSmall?.copyWith(
+            style: DocsoftTextStyles.subtitle.copyWith(
               fontWeight: FontWeight.w600,
-              color: theme.colorScheme.primary,
+              color: DocsoftColors.textPrimary,
             ),
           ),
           trailing: Icon(
-            Icons.expand_more,
-            color: theme.colorScheme.primary,
+            Icons.chevron_right,
+            color: DocsoftColors.textTertiary,
           ),
           children: [
             // Tip at the top
             Container(
-              padding: const EdgeInsets.all(12),
-              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(DocsoftSpacing.itemSpacing),
+              margin: const EdgeInsets.only(bottom: DocsoftSpacing.itemSpacing),
               decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(8),
+                color: DocsoftColors.primaryMuted,
+                borderRadius: BorderRadius.circular(DocsoftRadii.sm),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -63,14 +84,14 @@ class DictationGuideAccordion extends StatelessWidget {
                   Icon(
                     Icons.tips_and_updates,
                     size: 16,
-                    color: theme.colorScheme.primary,
+                    color: DocsoftColors.primary,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: DocsoftSpacing.sm),
                   Expanded(
                     child: Text(
                       'Dicta en orden. Si algo no aplica, di "niega" o "sin datos relevantes".',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurface,
+                      style: DocsoftTextStyles.caption.copyWith(
+                        color: DocsoftColors.textPrimary,
                         fontStyle: FontStyle.italic,
                       ),
                     ),
@@ -80,87 +101,71 @@ class DictationGuideAccordion extends StatelessWidget {
             ),
 
             // AI interpretation guide
-            _buildAIInterpretationSection(theme),
-            const SizedBox(height: 12),
+            _buildAIInterpretationSection(),
+            const SizedBox(height: DocsoftSpacing.itemSpacing),
 
             // Section list
-            ..._buildSectionItems(theme),
+            ..._buildSectionItems(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildAIInterpretationSection(ThemeData theme) {
+  Widget _buildAIInterpretationSection() {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(DocsoftSpacing.itemSpacing),
       decoration: BoxDecoration(
-        color: theme.colorScheme.tertiaryContainer.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: theme.colorScheme.tertiary.withValues(alpha: 0.3),
-        ),
+        color: DocsoftColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(DocsoftRadii.sm),
+        border: Border.all(color: DocsoftColors.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(
-                Icons.psychology,
-                size: 16,
-                color: theme.colorScheme.tertiary,
-              ),
-              const SizedBox(width: 8),
+              Icon(Icons.psychology, size: 16, color: DocsoftColors.primary),
+              const SizedBox(width: DocsoftSpacing.sm),
               Text(
                 '¿Cómo interpreta la IA lo que dices?',
-                style: theme.textTheme.labelMedium?.copyWith(
+                style: DocsoftTextStyles.caption.copyWith(
                   fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.tertiary,
+                  color: DocsoftColors.primary,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: DocsoftSpacing.sm),
           _buildAIBullet(
-            theme,
             'Si hablas en primera persona ("me duele", "tengo"), '
-                'se interpreta como voz del paciente',
+            'se interpreta como voz del paciente',
           ),
-          _buildAIBullet(
-            theme,
-            'La IA redacta la nota en lenguaje clínico',
-          ),
-          _buildAIBullet(
-            theme,
-            'Puedes hablar como en una consulta normal',
-          ),
-          _buildAIBullet(
-            theme,
-            'No es necesario dictar en formato médico',
-          ),
+          _buildAIBullet('La IA redacta la nota en lenguaje clínico'),
+          _buildAIBullet('Puedes hablar como en una consulta normal'),
+          _buildAIBullet('No es necesario dictar en formato médico'),
         ],
       ),
     );
   }
 
-  Widget _buildAIBullet(ThemeData theme, String text) {
+  Widget _buildAIBullet(String text) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: DocsoftSpacing.xs),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             '• ',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+            style: DocsoftTextStyles.caption.copyWith(
+              color: DocsoftColors.textSecondary,
             ),
           ),
           Expanded(
             child: Text(
               text,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+              style: DocsoftTextStyles.caption.copyWith(
+                color: DocsoftColors.textSecondary,
               ),
             ),
           ),
@@ -169,7 +174,7 @@ class DictationGuideAccordion extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildSectionItems(ThemeData theme) {
+  List<Widget> _buildSectionItems() {
     const sections = [
       _DictationSection(
         number: '1',
@@ -233,8 +238,8 @@ class DictationGuideAccordion extends StatelessWidget {
 
     return sections.map((section) {
       return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: _DictationSectionTile(section: section, theme: theme),
+        padding: const EdgeInsets.only(bottom: DocsoftSpacing.sm),
+        child: _DictationSectionTile(section: section),
       );
     }).toList();
   }
@@ -255,24 +260,18 @@ class _DictationSection {
 }
 
 class _DictationSectionTile extends StatelessWidget {
-  const _DictationSectionTile({
-    required this.section,
-    required this.theme,
-  });
+  const _DictationSectionTile({required this.section});
 
   final _DictationSection section;
-  final ThemeData theme;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(DocsoftSpacing.itemSpacing),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-        ),
+        color: DocsoftColors.surface,
+        borderRadius: BorderRadius.circular(DocsoftRadii.sm),
+        border: Border.all(color: DocsoftColors.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -286,20 +285,21 @@ class _DictationSectionTile extends StatelessWidget {
                 width: 22,
                 height: 22,
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer,
+                  color: DocsoftColors.primaryMuted,
                   shape: BoxShape.circle,
                 ),
                 child: Center(
                   child: Text(
                     section.number,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onPrimaryContainer,
+                    style: DocsoftTextStyles.caption.copyWith(
+                      color: DocsoftColors.primary,
                       fontWeight: FontWeight.bold,
+                      fontSize: 11,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: DocsoftSpacing.sm),
               // Title and hint
               Expanded(
                 child: Column(
@@ -307,15 +307,15 @@ class _DictationSectionTile extends StatelessWidget {
                   children: [
                     Text(
                       section.title,
-                      style: theme.textTheme.bodyMedium?.copyWith(
+                      style: DocsoftTextStyles.body.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       section.hint,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                      style: DocsoftTextStyles.caption.copyWith(
+                        color: DocsoftColors.textSecondary,
                         fontStyle: FontStyle.italic,
                       ),
                     ),
@@ -326,24 +326,25 @@ class _DictationSectionTile extends StatelessWidget {
           ),
           // Sub-items if present
           if (section.subItems != null && section.subItems!.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: DocsoftSpacing.sm),
             Wrap(
               spacing: 6,
               runSpacing: 4,
               children: section.subItems!.map((item) {
                 return Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
+                    horizontal: DocsoftSpacing.sm,
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(12),
+                    color: DocsoftColors.surfaceAlt,
+                    borderRadius: BorderRadius.circular(DocsoftRadii.full),
                   ),
                   child: Text(
                     item,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                    style: DocsoftTextStyles.caption.copyWith(
+                      color: DocsoftColors.textSecondary,
+                      fontSize: 11,
                     ),
                   ),
                 );

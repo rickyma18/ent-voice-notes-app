@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../../../../ui/docsoft_ui.dart';
 import '../../application/audio_recording_service.dart';
 
 /// Unified recording controls widget with Mic, Pause/Resume, and Stop buttons.
@@ -11,7 +12,7 @@ import '../../application/audio_recording_service.dart';
 /// - When recording: Shows Pause and Stop buttons
 /// - When paused: Shows Resume and Stop buttons
 /// - When processing: Shows a loading indicator
-class RecordingControls extends StatelessWidget {
+class RecordingControls extends StatefulWidget {
   const RecordingControls({
     super.key,
     required this.state,
@@ -21,6 +22,8 @@ class RecordingControls extends StatelessWidget {
     required this.onPause,
     required this.onResume,
     this.size = RecordingControlsSize.large,
+    this.enablePulse = false,
+    this.showWaveform = false,
   });
 
   /// The current recording state.
@@ -44,27 +47,97 @@ class RecordingControls extends StatelessWidget {
   /// Size variant for the controls.
   final RecordingControlsSize size;
 
+  /// Whether to show pulse animation on mic button during recording.
+  /// Default: false (opt-in to avoid affecting existing flows).
+  final bool enablePulse;
+
+  /// Whether to show animated waveform bars during recording.
+  /// Default: false (opt-in to avoid affecting existing flows).
+  final bool showWaveform;
+
+  @override
+  State<RecordingControls> createState() => _RecordingControlsState();
+}
+
+class _RecordingControlsState extends State<RecordingControls>
+    with TickerProviderStateMixin {
+  late AnimationController _pulseController;
+  late AnimationController _waveformController;
+  late Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.08).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+
+    _waveformController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+  }
+
+  @override
+  void didUpdateWidget(RecordingControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _updateAnimations();
+  }
+
+  void _updateAnimations() {
+    final isRecording = widget.state == RecordingState.recording;
+
+    if (isRecording && widget.enablePulse) {
+      _pulseController.repeat(reverse: true);
+    } else {
+      _pulseController.stop();
+      _pulseController.reset();
+    }
+
+    if (isRecording && widget.showWaveform) {
+      _waveformController.repeat();
+    } else {
+      _waveformController.stop();
+      _waveformController.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    _waveformController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
     // During processing, show loading indicator
-    if (isProcessing) {
+    if (widget.isProcessing) {
       return _buildProcessingIndicator(theme);
     }
 
     // When idle, show only the mic button
-    if (state == RecordingState.idle) {
-      return _buildMicButton(theme);
+    if (widget.state == RecordingState.idle) {
+      return _buildIdleState(theme);
     }
 
-    // When recording or paused, show Pause/Resume + Stop
-    return _buildRecordingControls(theme);
+    // When recording or paused, show main control + actions
+    return _buildRecordingState(theme);
   }
 
   Widget _buildProcessingIndicator(ThemeData theme) {
-    final buttonSize = size == RecordingControlsSize.large ? 120.0 : 80.0;
-    final indicatorSize = size == RecordingControlsSize.large ? 40.0 : 32.0;
+    final buttonSize = widget.size == RecordingControlsSize.large
+        ? 100.0
+        : 80.0;
+    final indicatorSize = widget.size == RecordingControlsSize.large
+        ? 36.0
+        : 28.0;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -74,186 +147,255 @@ class RecordingControls extends StatelessWidget {
           height: buttonSize,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: theme.colorScheme.surfaceContainerHighest,
+            color: DocsoftColors.primarySoft,
           ),
           child: Center(
             child: SizedBox(
               width: indicatorSize,
               height: indicatorSize,
-              child: const CircularProgressIndicator(strokeWidth: 3),
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                color: DocsoftColors.primary,
+              ),
             ),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: DocsoftSpacing.itemSpacing),
         Text(
-          'Procesando...',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.primary,
-            fontWeight: FontWeight.w500,
+          'Transcribiendo...',
+          style: DocsoftTextStyles.subtitle.copyWith(
+            color: DocsoftColors.primary,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildMicButton(ThemeData theme) {
-    final buttonSize = size == RecordingControlsSize.large ? 120.0 : 80.0;
-    final iconSize = size == RecordingControlsSize.large ? 56.0 : 40.0;
+  Widget _buildIdleState(ThemeData theme) {
+    final buttonSize = widget.size == RecordingControlsSize.large
+        ? 100.0
+        : 80.0;
+    final iconSize = widget.size == RecordingControlsSize.large ? 48.0 : 36.0;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         GestureDetector(
-          onTap: onStart,
+          onTap: widget.onStart,
           child: Container(
             width: buttonSize,
             height: buttonSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: theme.colorScheme.primaryContainer,
+              color: DocsoftColors.primary,
+              boxShadow: [
+                BoxShadow(
+                  color: DocsoftColors.primary.withValues(alpha: 0.3),
+                  blurRadius: 16,
+                  spreadRadius: 2,
+                ),
+              ],
             ),
             child: Center(
               child: Icon(
                 Icons.mic,
                 size: iconSize,
-                color: theme.colorScheme.onPrimaryContainer,
+                color: DocsoftColors.onPrimary,
               ),
             ),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: DocsoftSpacing.itemSpacing),
         Text(
           'Toca para grabar',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+          style: DocsoftTextStyles.subtitle.copyWith(
+            color: DocsoftColors.primary,
+            fontWeight: FontWeight.w600,
           ),
+        ),
+        // Waveform placeholder (inactive dots)
+        if (widget.showWaveform) ...[
+          const SizedBox(height: DocsoftSpacing.sm),
+          _buildInactiveWaveformDots(),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildInactiveWaveformDots() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (index) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          child: Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: DocsoftColors.textTertiary,
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _buildRecordingState(ThemeData theme) {
+    final buttonSize = widget.size == RecordingControlsSize.large
+        ? 100.0
+        : 80.0;
+    final iconSize = widget.size == RecordingControlsSize.large ? 48.0 : 36.0;
+    final isPaused = widget.state == RecordingState.paused;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Main action button (pause/resume when recording)
+        GestureDetector(
+          onTap: isPaused ? widget.onResume : widget.onPause,
+          child: AnimatedBuilder(
+            animation: _pulseAnimation,
+            builder: (context, child) {
+              final scale = widget.enablePulse && !isPaused
+                  ? _pulseAnimation.value
+                  : 1.0;
+              return Transform.scale(
+                scale: scale,
+                child: Container(
+                  width: buttonSize,
+                  height: buttonSize,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: DocsoftColors.primary,
+                    boxShadow: [
+                      BoxShadow(
+                        color: DocsoftColors.primary.withValues(alpha: 0.4),
+                        blurRadius: 20,
+                        spreadRadius: 4,
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Icon(
+                      isPaused ? Icons.play_arrow : Icons.pause,
+                      size: iconSize,
+                      color: DocsoftColors.onPrimary,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: DocsoftSpacing.itemSpacing),
+
+        // Status text
+        Text(
+          isPaused ? 'Pausado' : 'Grabando...',
+          style: DocsoftTextStyles.subtitle.copyWith(
+            color: DocsoftColors.primary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+
+        // Animated waveform bars
+        if (widget.showWaveform) ...[
+          const SizedBox(height: DocsoftSpacing.sm),
+          _buildAnimatedWaveformBars(isPaused),
+        ],
+
+        const SizedBox(height: DocsoftSpacing.lg),
+
+        // Secondary actions row
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Stop/Finish button
+            _buildSecondaryActionButton(
+              icon: Icons.stop,
+              label: 'Detener y transcribir',
+              onTap: widget.onStop,
+              color: DocsoftColors.error,
+            ),
+          ],
         ),
       ],
     );
   }
 
-  Widget _buildRecordingControls(ThemeData theme) {
-    final mainButtonSize = size == RecordingControlsSize.large ? 100.0 : 70.0;
-    final secondaryButtonSize =
-        size == RecordingControlsSize.large ? 64.0 : 48.0;
-    final mainIconSize = size == RecordingControlsSize.large ? 48.0 : 36.0;
-    final secondaryIconSize = size == RecordingControlsSize.large ? 28.0 : 22.0;
-
-    final isPaused = state == RecordingState.paused;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Status text
-        Row(
+  Widget _buildAnimatedWaveformBars(bool isPaused) {
+    return AnimatedBuilder(
+      animation: _waveformController,
+      builder: (context, child) {
+        return Row(
           mainAxisSize: MainAxisSize.min,
-          children: [
-            if (!isPaused) ...[
-              Container(
-                width: 12,
-                height: 12,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.red,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: List.generate(5, (index) {
+            // Staggered animation for each bar
+            final delay = index * 0.15;
+            final progress = (_waveformController.value + delay) % 1.0;
+            final height = isPaused
+                ? 8.0
+                : 8.0 + (24.0 * _waveformHeight(progress));
+
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 3),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 100),
+                width: 6,
+                height: height,
+                decoration: BoxDecoration(
+                  color: DocsoftColors.primary,
+                  borderRadius: BorderRadius.circular(3),
                 ),
               ),
-              const SizedBox(width: 8),
-            ],
+            );
+          }),
+        );
+      },
+    );
+  }
+
+  double _waveformHeight(double t) {
+    // Creates a smooth wave effect
+    return (1 + (t * 3.14159 * 2).sin()) / 2;
+  }
+
+  Widget _buildSecondaryActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    required Color color,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: DocsoftSpacing.md,
+          vertical: DocsoftSpacing.sm,
+        ),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(DocsoftRadii.full),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: DocsoftSpacing.sm),
             Text(
-              isPaused ? 'Pausado' : 'Grabando...',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: isPaused ? Colors.orange : Colors.red,
+              label,
+              style: DocsoftTextStyles.caption.copyWith(
+                color: color,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 20),
-
-        // Control buttons row
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Pause/Resume button
-            _buildControlButton(
-              theme: theme,
-              size: secondaryButtonSize,
-              iconSize: secondaryIconSize,
-              icon: isPaused ? Icons.play_arrow : Icons.pause,
-              color: isPaused ? Colors.green : Colors.orange,
-              onTap: isPaused ? onResume : onPause,
-              label: isPaused ? 'Reanudar' : 'Pausar',
-            ),
-            SizedBox(width: size == RecordingControlsSize.large ? 32 : 24),
-
-            // Stop button (main action)
-            _buildControlButton(
-              theme: theme,
-              size: mainButtonSize,
-              iconSize: mainIconSize,
-              icon: Icons.stop,
-              color: Colors.red,
-              onTap: onStop,
-              label: 'Detener',
-              isMain: true,
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildControlButton({
-    required ThemeData theme,
-    required double size,
-    required double iconSize,
-    required IconData icon,
-    required Color color,
-    required VoidCallback onTap,
-    required String label,
-    bool isMain = false,
-  }) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        GestureDetector(
-          onTap: onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: color,
-              boxShadow: isMain
-                  ? [
-                      BoxShadow(
-                        color: color.withValues(alpha: 0.4),
-                        blurRadius: 16,
-                        spreadRadius: 2,
-                      ),
-                    ]
-                  : null,
-            ),
-            child: Center(
-              child: Icon(
-                icon,
-                size: iconSize,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -265,4 +407,21 @@ enum RecordingControlsSize {
 
   /// Larger size for full-page dictation UIs.
   large,
+}
+
+/// Extension to add sin function for waveform animation
+extension on double {
+  double sin() => _sin(this);
+}
+
+double _sin(double x) {
+  // Taylor series approximation for sin
+  x = x % (2 * 3.14159);
+  double result = x;
+  double term = x;
+  for (int i = 1; i <= 7; i++) {
+    term *= -x * x / ((2 * i) * (2 * i + 1));
+    result += term;
+  }
+  return result;
 }
