@@ -14,7 +14,7 @@ import '../../../features/medical_notes/presentation/pages/notes_list_page.dart'
 import '../../../features/medical_notes/presentation/pages/surgical_note_wizard_page.dart';
 import '../../../features/patients/domain/entities/patient_entity.dart';
 import '../../../features/patients/presentation/pages/new_patient_page_wrapper.dart';
-import '../../../features/patients/presentation/pages/patient_detail_page.dart';
+import '../../../features/patients/presentation/pages/patient_detail_page_wrapper.dart';
 import '../../../features/patients/presentation/pages/patients_list_page.dart';
 import '../../../features/patients/presentation/pages/select_patient_page.dart';
 import '../../features/authentication/forgot_password/view/create_new_password_page.dart';

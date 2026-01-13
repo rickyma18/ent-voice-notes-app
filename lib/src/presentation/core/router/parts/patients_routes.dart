@@ -35,7 +35,9 @@ List<RouteBase> _patientsRoutes(ref) {
               );
             }
 
-            return MaterialPage(child: PatientDetailPage(patient: patient));
+            return MaterialPage(
+              child: PatientDetailPageWrapper(patient: patient),
+            );
           },
         ),
         GoRoute(

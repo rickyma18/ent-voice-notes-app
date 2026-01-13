@@ -18,6 +18,7 @@ class PatientsPage extends StatefulWidget {
     required this.onNewPatient,
     required this.onNewNote,
     this.onViewNotes,
+    this.onDeletePatient,
     this.onSearchChanged,
     this.onFilterChanged,
     this.isLoading = false,
@@ -37,6 +38,10 @@ class PatientsPage extends StatefulWidget {
 
   /// Optional callback when "Ver notas" is tapped for a patient
   final void Function(String patientId)? onViewNotes;
+
+  /// Optional callback when a patient is deleted via swipe.
+  /// Returns a Future<bool> where true confirms the deletion.
+  final Future<bool> Function(PatientDisplayData patient)? onDeletePatient;
 
   /// Optional callback when search text changes
   final ValueChanged<String>? onSearchChanged;
@@ -143,6 +148,21 @@ class _PatientsPageState extends State<PatientsPage> {
           const SizedBox(height: DocsoftSpacing.itemSpacing),
       itemBuilder: (context, index) {
         final patient = widget.patients[index];
+
+        // Use DismissiblePatientCard if delete callback is provided
+        if (widget.onDeletePatient != null) {
+          return DismissiblePatientCard(
+            patient: patient,
+            onTap: () => widget.onTapPatient(patient),
+            onNewNote: () => widget.onNewNote(patient.id),
+            onDelete: () => widget.onDeletePatient!(patient),
+            onViewNotes: widget.onViewNotes != null
+                ? () => widget.onViewNotes!(patient.id)
+                : null,
+          );
+        }
+
+        // Fallback to regular PatientCard
         return PatientCard(
           patient: patient,
           onTap: () => widget.onTapPatient(patient),

@@ -26,6 +26,10 @@ import '../widgets/note_type_selector_bottom_sheet.dart';
 /// Navigation:
 /// - Pass [patient] to show notes for a specific patient
 /// - Omit [patient] to show all notes for the current doctor (global mode)
+///
+/// Architecture:
+/// Uses a FAMILY provider [notesListControllerProvider] scoped by [NotesListScope]
+/// to prevent state pollution between doctor-wide and patient-specific views.
 class NotesListPage extends ConsumerStatefulWidget {
   const NotesListPage({super.key, this.patient});
 
@@ -41,10 +45,19 @@ class NotesListPage extends ConsumerStatefulWidget {
 class _NotesListPageState extends ConsumerState<NotesListPage> {
   final _searchController = TextEditingController();
 
+  /// The scope for this page instance - computed once from widget.patient.
+  late final NotesListScope _scope;
+
   @override
   void initState() {
     super.initState();
-    // Load notes after build
+
+    // Compute scope from patient context
+    _scope = widget.patient == null
+        ? const NotesListScope.doctor()
+        : NotesListScope.patient(widget.patient!.id);
+
+    // Load notes ONCE on init - no reloads from build()
     Future.microtask(_loadNotes);
   }
 
@@ -55,12 +68,7 @@ class _NotesListPageState extends ConsumerState<NotesListPage> {
   }
 
   void _loadNotes() {
-    final controller = ref.read(notesListControllerProvider.notifier);
-    if (widget.patient != null) {
-      controller.loadNotesForPatient(widget.patient!);
-    } else {
-      controller.loadNotesForDoctor();
-    }
+    ref.read(notesListControllerProvider(_scope).notifier).loadNotes();
   }
 
   void _handleNewNote() {
@@ -75,7 +83,8 @@ class _NotesListPageState extends ConsumerState<NotesListPage> {
 
   void _handleTapNote(String noteId) {
     // Find the full note entity to pass to detail page
-    final notes = ref.read(notesListControllerProvider).notesAsync.value ?? [];
+    final notes =
+        ref.read(notesListControllerProvider(_scope)).notesAsync.value ?? [];
     final note = notes.firstWhere(
       (n) => n.id == noteId,
       orElse: () => MedicalNoteEntity.empty(patientId: '', doctorId: ''),
@@ -87,48 +96,30 @@ class _NotesListPageState extends ConsumerState<NotesListPage> {
   }
 
   Future<void> _handleDeleteNote(String noteId) async {
-    await ref.read(notesListControllerProvider.notifier).deleteNote(noteId);
+    await ref
+        .read(notesListControllerProvider(_scope).notifier)
+        .deleteNote(noteId);
   }
 
   Future<bool> _confirmDelete(BuildContext context) async {
-    final result = await showDialog<bool>(
+    final result = await DocsoftConfirmations.confirmDelete(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: DocsoftRadii.card),
-        title: Text('Eliminar nota', style: DocsoftTextStyles.title),
-        content: Text(
-          '\u00bfSeguro que quieres eliminar esta nota?',
-          style: DocsoftTextStyles.body,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              'Cancelar',
-              style: DocsoftTextStyles.button.copyWith(
-                color: DocsoftColors.textSecondary,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              'Eliminar',
-              style: DocsoftTextStyles.button.copyWith(
-                color: DocsoftColors.error,
-              ),
-            ),
-          ),
-        ],
-      ),
+      title: 'Eliminar nota',
+      message: '¿Seguro que deseas eliminar esta nota?',
     );
     return result ?? false;
   }
 
   @override
   Widget build(BuildContext context) {
-    final controllerState = ref.watch(notesListControllerProvider);
-    final filteredNotesList = ref.watch(filteredNotesProvider);
+    // Watch the scoped controller state
+    final controllerState = ref.watch(notesListControllerProvider(_scope));
+
+    // Watch the scoped filtered notes provider with patient name for patient scope
+    final filteredNotesList = ref.watch(
+      filteredNotesProvider(_scope, widget.patient?.fullName),
+    );
+
     final selectedFilter = controllerState.selectedFilter;
     final notesAsync = controllerState.notesAsync;
 
@@ -146,7 +137,7 @@ class _NotesListPageState extends ConsumerState<NotesListPage> {
               controller: _searchController,
               onChanged: (query) {
                 ref
-                    .read(notesListControllerProvider.notifier)
+                    .read(notesListControllerProvider(_scope).notifier)
                     .setSearchQuery(query);
               },
             ),
@@ -156,7 +147,7 @@ class _NotesListPageState extends ConsumerState<NotesListPage> {
               labelBuilder: (filter) => filter.label,
               onSelected: (filter) {
                 ref
-                    .read(notesListControllerProvider.notifier)
+                    .read(notesListControllerProvider(_scope).notifier)
                     .setFilter(filter);
               },
             ),

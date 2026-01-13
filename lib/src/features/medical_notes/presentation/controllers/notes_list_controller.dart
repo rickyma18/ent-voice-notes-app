@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -13,14 +14,56 @@ import '../widgets/notes_list/notes_filter_chips.dart';
 
 part 'notes_list_controller.g.dart';
 
+// =============================================================================
+// SCOPE
+// =============================================================================
+
+/// Scope object for NotesListController family provider.
+/// Determines whether to load all doctor notes or patient-specific notes.
+@immutable
+class NotesListScope {
+  /// Doctor-scoped: loads ALL notes for the current doctor.
+  const NotesListScope.doctor() : patientId = null;
+
+  /// Patient-scoped: loads only notes for a specific patient.
+  const NotesListScope.patient(this.patientId);
+
+  /// The patient ID to filter by, or null for doctor-wide scope.
+  final String? patientId;
+
+  /// Whether this is doctor-scoped (all notes).
+  bool get isDoctorScope => patientId == null;
+
+  /// Whether this is patient-scoped (filtered notes).
+  bool get isPatientScope => patientId != null;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NotesListScope &&
+          runtimeType == other.runtimeType &&
+          patientId == other.patientId;
+
+  @override
+  int get hashCode => patientId.hashCode;
+
+  @override
+  String toString() => isDoctorScope
+      ? 'NotesListScope.doctor()'
+      : 'NotesListScope.patient($patientId)';
+}
+
+// =============================================================================
+// STATE
+// =============================================================================
+
 /// State for the notes list UI.
-/// Contains raw notes data, filter settings, and computed filtered list.
+/// Contains raw notes data, filter settings, and patient cache (for doctor mode).
 class NotesListState {
   const NotesListState({
     required this.notesAsync,
     this.selectedFilter = NotesFilter.all,
     this.searchQuery = '',
-    this.patientContext,
     this.patientCache = const {},
   });
 
@@ -33,43 +76,53 @@ class NotesListState {
   /// Current search query.
   final String searchQuery;
 
-  /// Optional patient context (when viewing notes for specific patient).
-  final PatientEntity? patientContext;
-
-  /// Cache of patient entities by ID for displaying patient names.
+  /// Cache of patient entities by ID for displaying patient names (doctor mode only).
   final Map<String, PatientEntity> patientCache;
 
   NotesListState copyWith({
     AsyncValue<List<MedicalNoteEntity>>? notesAsync,
     NotesFilter? selectedFilter,
     String? searchQuery,
-    PatientEntity? patientContext,
     Map<String, PatientEntity>? patientCache,
   }) {
     return NotesListState(
       notesAsync: notesAsync ?? this.notesAsync,
       selectedFilter: selectedFilter ?? this.selectedFilter,
       searchQuery: searchQuery ?? this.searchQuery,
-      patientContext: patientContext ?? this.patientContext,
       patientCache: patientCache ?? this.patientCache,
     );
   }
 }
 
+// =============================================================================
+// CONTROLLER (FAMILY PROVIDER)
+// =============================================================================
+
 /// Controller for the notes list page.
-/// Manages loading, filtering, searching, and CRUD operations.
+/// Scoped by [NotesListScope] to prevent state pollution between contexts.
+///
+/// Usage:
+/// ```dart
+/// // Doctor mode (all notes)
+/// ref.watch(notesListControllerProvider(const NotesListScope.doctor()));
+///
+/// // Patient mode (filtered notes)
+/// ref.watch(notesListControllerProvider(NotesListScope.patient(patientId)));
+/// ```
 @riverpod
 class NotesListController extends _$NotesListController {
   @override
-  NotesListState build() =>
-      const NotesListState(notesAsync: AsyncValue.loading());
+  NotesListState build(NotesListScope scope) {
+    // Initial state with loading
+    return const NotesListState(notesAsync: AsyncValue.loading());
+  }
 
-  /// Load notes for all patients (global mode).
-  Future<void> loadNotesForDoctor() async {
-    state = state.copyWith(
-      notesAsync: const AsyncValue.loading(),
-      patientContext: null,
-    );
+  /// Loads notes based on the current scope.
+  /// Call this ONCE from page initState, not from build().
+  Future<void> loadNotes() async {
+    final scope = this.scope;
+
+    state = state.copyWith(notesAsync: const AsyncValue.loading());
 
     final doctorId = ref.read(currentDoctorIdProvider);
     if (doctorId == null) {
@@ -83,70 +136,72 @@ class NotesListController extends _$NotesListController {
     }
 
     try {
-      final result = await ref
-          .read(getMedicalNotesByDoctorUseCaseProvider)
-          .call(doctorId);
-
-      result.when(
-        success: (notes) {
-          state = state.copyWith(notesAsync: AsyncValue.data(notes));
-          // Fetch patient names for notes
-          _fetchPatientNames(notes);
-        },
-        error: (failure) {
-          state = state.copyWith(
-            notesAsync: AsyncValue.error(
-              failure,
-              failure.stackTrace ?? StackTrace.current,
-            ),
-          );
-        },
-      );
+      if (scope.isDoctorScope) {
+        await _loadDoctorNotes(doctorId);
+      } else {
+        await _loadPatientNotes(scope.patientId!, doctorId);
+      }
     } catch (e, st) {
       state = state.copyWith(notesAsync: AsyncValue.error(e, st));
     }
   }
 
-  /// Load notes for a specific patient.
-  Future<void> loadNotesForPatient(PatientEntity patient) async {
-    state = state.copyWith(
-      notesAsync: const AsyncValue.loading(),
-      patientContext: patient,
-      patientCache: {patient.id: patient},
+  /// Loads all notes for the doctor.
+  Future<void> _loadDoctorNotes(String doctorId) async {
+    final result = await ref
+        .read(getMedicalNotesByDoctorUseCaseProvider)
+        .call(doctorId);
+
+    result.when(
+      success: (notes) {
+        state = state.copyWith(notesAsync: AsyncValue.data(notes));
+        // Fetch patient names for notes in doctor mode
+        _fetchPatientNames(notes);
+      },
+      error: (failure) {
+        state = state.copyWith(
+          notesAsync: AsyncValue.error(
+            failure,
+            failure.stackTrace ?? StackTrace.current,
+          ),
+        );
+      },
     );
+  }
 
-    final doctorId = ref.read(currentDoctorIdProvider);
-    if (doctorId == null) {
-      state = state.copyWith(
-        notesAsync: AsyncValue.error(
-          Exception('Doctor not authenticated'),
-          StackTrace.current,
-        ),
-      );
-      return;
-    }
+  /// Loads notes for a specific patient.
+  Future<void> _loadPatientNotes(String patientId, String doctorId) async {
+    final result = await ref
+        .read(getMedicalNotesUseCaseProvider)
+        .call(patientId: patientId, doctorId: doctorId);
 
-    try {
-      final result = await ref
-          .read(getMedicalNotesUseCaseProvider)
-          .call(patientId: patient.id, doctorId: doctorId);
-
-      result.when(
-        success: (notes) {
-          state = state.copyWith(notesAsync: AsyncValue.data(notes));
-        },
-        error: (failure) {
-          state = state.copyWith(
-            notesAsync: AsyncValue.error(
-              failure,
-              failure.stackTrace ?? StackTrace.current,
-            ),
-          );
-        },
-      );
-    } catch (e, st) {
-      state = state.copyWith(notesAsync: AsyncValue.error(e, st));
-    }
+    result.when(
+      success: (notes) {
+        // DEBUG ASSERTION: Verify all returned notes belong to the requested patient.
+        assert(() {
+          final wrongPatientNotes =
+              notes.where((n) => n.patientId != patientId);
+          if (wrongPatientNotes.isNotEmpty) {
+            throw StateError(
+              'loadPatientNotes: Data layer returned notes for wrong patient!\n'
+              'Requested patientId: $patientId\n'
+              'Wrong notes: ${wrongPatientNotes.map((n) => '${n.id} (patientId: ${n.patientId})').join(', ')}',
+            );
+          }
+          return true;
+        }());
+        state = state.copyWith(notesAsync: AsyncValue.data(notes));
+        // No need to fetch patient names - the page has the patient entity
+      },
+      error: (failure) {
+        state = state.copyWith(
+          notesAsync: AsyncValue.error(
+            failure,
+            failure.stackTrace ?? StackTrace.current,
+          ),
+        );
+      },
+    );
   }
 
   /// Update search query.
@@ -183,7 +238,7 @@ class NotesListController extends _$NotesListController {
     }
   }
 
-  /// Fetch patient names for notes (for global mode).
+  /// Fetch patient names for notes (doctor mode only).
   void _fetchPatientNames(List<MedicalNoteEntity> notes) {
     final patientIds = notes.map((n) => n.patientId).toSet();
     final cache = Map<String, PatientEntity>.from(state.patientCache);
@@ -210,35 +265,39 @@ class NotesListController extends _$NotesListController {
       });
     }
   }
-
-  /// Get patient name for a note.
-  String getPatientName(String patientId) {
-    if (state.patientContext != null && state.patientContext!.id == patientId) {
-      return state.patientContext!.fullName;
-    }
-    return state.patientCache[patientId]?.fullName ?? 'Cargando...';
-  }
 }
+
+// =============================================================================
+// FILTERED NOTES PROVIDER (FAMILY)
+// =============================================================================
 
 /// Computed provider for filtered and mapped notes.
 /// Returns UI models ready for display.
+///
+/// [scope] determines which controller instance to watch.
+/// [patientName] is used for patient-scoped mode where all notes share
+/// the same patient name from the widget. Pass null for doctor scope.
 @riverpod
-List<NoteListItemUiModel> filteredNotes(Ref ref) {
-  final controllerState = ref.watch(notesListControllerProvider);
+List<NoteListItemUiModel> filteredNotes(
+  Ref ref,
+  NotesListScope scope,
+  String? patientName,
+) {
+  final controllerState = ref.watch(notesListControllerProvider(scope));
   final notes = controllerState.notesAsync.value ?? [];
   final filter = controllerState.selectedFilter;
   final query = controllerState.searchQuery.trim().toLowerCase();
   final patientCache = controllerState.patientCache;
-  final patientContext = controllerState.patientContext;
 
   // Map to UI models
   List<NoteListItemUiModel> uiNotes = notes.map((note) {
-    final patientName =
-        patientContext?.fullName ??
-        patientCache[note.patientId]?.fullName ??
-        'Desconocido';
+    // For patient scope, use provided patientName
+    // For doctor scope, use cache lookup
+    final displayName = scope.isPatientScope
+        ? (patientName ?? 'Paciente')
+        : (patientCache[note.patientId]?.fullName ?? 'Cargando...');
 
-    return _mapToUiModel(note, patientName);
+    return _mapToUiModel(note, displayName);
   }).toList();
 
   // Apply filter
@@ -274,6 +333,10 @@ List<NoteListItemUiModel> filteredNotes(Ref ref) {
 
   return uiNotes;
 }
+
+// =============================================================================
+// HELPERS
+// =============================================================================
 
 /// Map domain entity to UI model.
 NoteListItemUiModel _mapToUiModel(MedicalNoteEntity note, String patientName) {

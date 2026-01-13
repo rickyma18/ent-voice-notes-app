@@ -3,6 +3,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+import '../../core/base/result.dart';
 import 'application/note_ai_service.dart';
 import 'application/note_ai_service_impl.dart';
 import 'application/audio_recording_service.dart';
@@ -26,10 +28,57 @@ import 'domain/usecases/delete_medical_note_use_case.dart';
 import 'domain/usecases/get_medical_notes_use_case.dart';
 import 'domain/usecases/update_medical_note_use_case.dart';
 import 'domain/usecases/get_medical_note_by_id_use_case.dart';
-
-
+import 'domain/entities/medical_note_entity.dart';
+import '../../presentation/core/application_state/current_doctor_provider/current_doctor_provider.dart';
 
 part 'medical_notes_providers.g.dart';
+
+/// Family provider for loading medical notes for a specific patient.
+/// Returns AsyncValue<List<MedicalNoteEntity>> scoped to one patient.
+///
+/// This provider is isolated from the global [medicalNotesControllerProvider]
+/// to prevent state pollution when navigating between patient detail and notes list.
+///
+/// Usage (in patient detail):
+/// ```dart
+/// final notesAsync = ref.watch(medicalNotesByPatientProvider(patient.id));
+/// ```
+@riverpod
+Future<List<MedicalNoteEntity>> medicalNotesByPatient(
+  Ref ref,
+  String patientId,
+) async {
+  final doctorId = ref.read(currentDoctorIdProvider);
+  if (doctorId == null) {
+    throw Exception('Doctor not authenticated');
+  }
+
+  final result = await ref
+      .read(getMedicalNotesUseCaseProvider)
+      .call(patientId: patientId, doctorId: doctorId);
+
+  final notes = switch (result) {
+    Success(:final data) => data,
+    Error(:final error) => throw error,
+    _ => throw Exception('Unexpected result type'),
+  };
+
+  // DEBUG ASSERTION: Verify all returned notes belong to the requested patient.
+  // If this assertion fails, the data layer is not filtering correctly.
+  assert(() {
+    final wrongPatientNotes = notes.where((n) => n.patientId != patientId);
+    if (wrongPatientNotes.isNotEmpty) {
+      throw StateError(
+        'medicalNotesByPatientProvider: Data layer returned notes for wrong patient!\n'
+        'Requested patientId: $patientId\n'
+        'Wrong notes: ${wrongPatientNotes.map((n) => '${n.id} (patientId: ${n.patientId})').join(', ')}',
+      );
+    }
+    return true;
+  }());
+
+  return notes;
+}
 
 /// Remote datasource provider
 ///
@@ -100,20 +149,15 @@ OpenAIClient openAIClient(Ref ref) {
 /// PRODUCTION MODE: Uses real OpenAI APIs (Whisper + GPT-4).
 /// TEST MODE: Uncomment the stub below for UI testing without API calls.
 @riverpod
-NoteAIService noteAIService(
-  NoteAIServiceRef ref,
-) {
+NoteAIService noteAIService(NoteAIServiceRef ref) {
   return NoteAIServiceImpl(
     openAIClient: ref.watch(openAIClientProvider),
     enablePhoneticMedicationMatching: true, // ✅ AQUÍ
   );
 }
 
-
 @riverpod
-AudioRecordingService audioRecordingService(
-  AudioRecordingServiceRef ref,
-) {
+AudioRecordingService audioRecordingService(AudioRecordingServiceRef ref) {
   // CRITICAL: Keep provider alive to prevent disposal during recording
   // Without this, the provider can be disposed between startRecording() and stopRecording(),
   // causing "not recording" errors when stop is called on a new instance.
@@ -133,9 +177,7 @@ AudioRecordingService audioRecordingService(
 /// with NoteAIService pipeline.
 /// TEST MODE: Uncomment the stub below for UI testing without API calls.
 @riverpod
-SpeechToTextService speechToTextService(
-  Ref ref,
-) {
+SpeechToTextService speechToTextService(Ref ref) {
   // PRODUCTION MODE: Real Whisper transcription with Phase 1.5 post-processing
   return SpeechToTextServiceImpl(
     openAIClient: ref.watch(openAIClientProvider),
@@ -148,9 +190,7 @@ SpeechToTextService speechToTextService(
 
 /// Repository provider
 @riverpod
-MedicalNotesRepository medicalNotesRepository(
-  MedicalNotesRepositoryRef ref,
-) {
+MedicalNotesRepository medicalNotesRepository(MedicalNotesRepositoryRef ref) {
   return MedicalNotesRepositoryImpl(
     remoteDatasource: ref.watch(medicalNotesRemoteDatasourceProvider),
     localDatasource: ref.watch(medicalNotesLocalDatasourceProvider),
@@ -160,12 +200,8 @@ MedicalNotesRepository medicalNotesRepository(
 /// Use cases providers
 
 @riverpod
-GetMedicalNotesUseCase getMedicalNotesUseCase(
-  GetMedicalNotesUseCaseRef ref,
-) {
-  return GetMedicalNotesUseCase(
-    ref.watch(medicalNotesRepositoryProvider),
-  );
+GetMedicalNotesUseCase getMedicalNotesUseCase(GetMedicalNotesUseCaseRef ref) {
+  return GetMedicalNotesUseCase(ref.watch(medicalNotesRepositoryProvider));
 }
 
 @riverpod
@@ -181,36 +217,28 @@ GetMedicalNotesByDoctorUseCase getMedicalNotesByDoctorUseCase(
 GetMedicalNoteByIdUseCase getMedicalNoteByIdUseCase(
   GetMedicalNoteByIdUseCaseRef ref,
 ) {
-  return GetMedicalNoteByIdUseCase(
-    ref.watch(medicalNotesRepositoryProvider),
-  );
+  return GetMedicalNoteByIdUseCase(ref.watch(medicalNotesRepositoryProvider));
 }
 
 @riverpod
 CreateMedicalNoteUseCase createMedicalNoteUseCase(
   CreateMedicalNoteUseCaseRef ref,
 ) {
-  return CreateMedicalNoteUseCase(
-    ref.watch(medicalNotesRepositoryProvider),
-  );
+  return CreateMedicalNoteUseCase(ref.watch(medicalNotesRepositoryProvider));
 }
 
 @riverpod
 UpdateMedicalNoteUseCase updateMedicalNoteUseCase(
   UpdateMedicalNoteUseCaseRef ref,
 ) {
-  return UpdateMedicalNoteUseCase(
-    ref.watch(medicalNotesRepositoryProvider),
-  );
+  return UpdateMedicalNoteUseCase(ref.watch(medicalNotesRepositoryProvider));
 }
 
 @riverpod
 DeleteMedicalNoteUseCase deleteMedicalNoteUseCase(
   DeleteMedicalNoteUseCaseRef ref,
 ) {
-  return DeleteMedicalNoteUseCase(
-    ref.watch(medicalNotesRepositoryProvider),
-  );
+  return DeleteMedicalNoteUseCase(ref.watch(medicalNotesRepositoryProvider));
 }
 
 // =============================================================================
@@ -227,9 +255,7 @@ AttachmentsStorageDatasource attachmentsStorageDatasource(
 
 /// Attachments repository provider.
 @riverpod
-AttachmentsRepository attachmentsRepository(
-  AttachmentsRepositoryRef ref,
-) {
+AttachmentsRepository attachmentsRepository(AttachmentsRepositoryRef ref) {
   return AttachmentsRepositoryImpl(
     datasource: ref.watch(attachmentsStorageDatasourceProvider),
   );

@@ -47,11 +47,6 @@ class EditProfilePage extends StatelessWidget {
   /// Whether save action is in progress
   final bool isLoading;
 
-  // Layout constants
-  static const double _headerHeight = 220.0;
-  static const double _avatarSize = 120.0;
-  static const double _overlap = 50.0;
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -59,35 +54,20 @@ class EditProfilePage extends StatelessWidget {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // Header with overlapping avatar
-            Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.center,
-              children: [
-                // 1. Illustrated Header with back button
-                DocsoftIllustratedHeader(
-                  title: 'Editar perfil',
-                  height: _headerHeight,
-                  onBack: onBack,
-                ),
-
-                // 2. Avatar positioned to overlap header
-                Positioned(
-                  bottom: -(_avatarSize / 2),
-                  child: DocsoftEditableAvatar(
-                    initials: initials,
-                    imageUrl: photoUrl,
-                    size: _avatarSize,
-                    onTap: onChangePhoto,
-                  ),
-                ),
-              ],
+            // Hero Header with back button and avatar
+            DocsoftHeroHeader(
+              title: 'Editar perfil',
+              leading: DocsoftBackButton(onTap: onBack),
+              content: _EditProfileAvatarRow(
+                initials: initials,
+                photoUrl: photoUrl,
+                onTap: onChangePhoto,
+              ),
             ),
 
-            // Space to compensate for avatar overflow
-            SizedBox(height: (_avatarSize / 2) + DocsoftSpacing.lg),
+            const SizedBox(height: DocsoftSpacing.sectionSpacing),
 
-            // 3. Form Card
+            // Form Card
             Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: DocsoftSpacing.screenPadding,
@@ -161,7 +141,7 @@ class EditProfilePage extends StatelessWidget {
 
             const SizedBox(height: DocsoftSpacing.xl),
 
-            // 4. Save Button
+            // Save Button
             Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: DocsoftSpacing.screenPadding,
@@ -178,6 +158,84 @@ class EditProfilePage extends StatelessWidget {
             const SizedBox(height: DocsoftSpacing.xl),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Avatar row for EditProfile header.
+/// Shows editable avatar with camera badge.
+class _EditProfileAvatarRow extends StatelessWidget {
+  const _EditProfileAvatarRow({
+    required this.initials,
+    required this.photoUrl,
+    required this.onTap,
+  });
+
+  final String initials;
+  final String? photoUrl;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Stack(
+        children: [
+          GestureDetector(
+            onTap: onTap,
+            child: Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: DocsoftColors.overlayOnPrimary,
+                borderRadius: BorderRadius.circular(DocsoftRadii.lg),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  width: 2,
+                ),
+                image: photoUrl != null && photoUrl!.isNotEmpty
+                    ? DecorationImage(
+                        image: NetworkImage(photoUrl!),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
+              ),
+              child: photoUrl == null || photoUrl!.isEmpty
+                  ? Center(
+                      child: Text(
+                        initials,
+                        style: DocsoftTextStyles.headline.copyWith(
+                          color: DocsoftColors.onPrimary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    )
+                  : null,
+            ),
+          ),
+          // Edit badge
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: DocsoftColors.surface,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: DocsoftColors.primary,
+                  width: 2,
+                ),
+              ),
+              child: const Icon(
+                Icons.camera_alt_rounded,
+                size: 14,
+                color: DocsoftColors.primary,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

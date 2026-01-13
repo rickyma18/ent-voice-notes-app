@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/base/result.dart';
 import '../../../../presentation/core/application_state/current_doctor_provider/current_doctor_provider.dart';
 import '../../../../presentation/core/router/route_names.dart';
 import '../../../../presentation/features/patients/view/patients_page.dart';
 import '../../../../presentation/features/patients/widgets/patient_card.dart';
+import '../../../../ui/docsoft_ui.dart';
 import '../../../medical_notes/domain/entities/medical_note_entity.dart';
 import '../../../medical_notes/presentation/controllers/medical_notes_controller.dart';
 import '../../../medical_notes/presentation/widgets/note_type_selector_bottom_sheet.dart';
@@ -256,6 +258,44 @@ class _PatientsListPageState extends ConsumerState<PatientsListPage> {
                   extra: patientEntity,
                 );
               }
+            },
+            onDeletePatient: (displayData) async {
+              // Show confirmation dialog
+              final confirmed = await DocsoftConfirmations.confirmDelete(
+                context: context,
+                title: 'Eliminar paciente',
+                message: '¿Seguro que deseas eliminar a ${displayData.name}? '
+                    'Esta acción no se puede deshacer.',
+              );
+
+              if (confirmed != true) return false;
+
+              // Perform deletion via controller
+              final result = await ref
+                  .read(patientsControllerProvider.notifier)
+                  .deletePatient(displayData.id);
+
+              // Show feedback based on result
+              bool deleted = false;
+              result.when(
+                success: (_) {
+                  DocsoftSnackBar.show(
+                    context,
+                    message: 'Paciente eliminado correctamente',
+                    type: SnackBarType.success,
+                  );
+                  deleted = true;
+                },
+                error: (failure) {
+                  DocsoftSnackBar.show(
+                    context,
+                    message: 'Error al eliminar: ${failure.message}',
+                    type: SnackBarType.error,
+                  );
+                  deleted = false;
+                },
+              );
+              return deleted;
             },
           ),
         );

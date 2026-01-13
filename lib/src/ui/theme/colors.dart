@@ -84,6 +84,9 @@ abstract class DocsoftColors {
   /// Subtle overlay for pressed states on primary
   static const Color overlayOnPrimary = Color(0x1AFFFFFF); // 10% white
 
+  /// Subtle shadow for headers and elevated surfaces
+  static const Color shadowLight = Color(0x29000000); // ~16% black
+
   // ────────────────────────────────────────────────────────────────────────────
   // Feedback (semantic)
   // ────────────────────────────────────────────────────────────────────────────
@@ -111,6 +114,17 @@ abstract class DocsoftColors {
   /// Soft pink tint for female options
   static const Color femaleTint = Color(0xFFEC4899); // Pink-500
   static const Color femaleSoft = Color(0x1AEC4899); // 10% pink
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Info Tile Icons (patient detail, profiles)
+  // ────────────────────────────────────────────────────────────────────────────
+  /// Blue for age/birthday icons
+  static const Color infoAgeTint = Color(0xFF3B82F6); // Blue-500
+  static const Color infoAgeSoft = Color(0x1A3B82F6); // 10% blue
+
+  /// Purple for sex/gender icons
+  static const Color infoSexTint = Color(0xFF8B5CF6); // Violet-500
+  static const Color infoSexSoft = Color(0x1A8B5CF6); // 10% violet
 
   // ────────────────────────────────────────────────────────────────────────────
   // Inputs

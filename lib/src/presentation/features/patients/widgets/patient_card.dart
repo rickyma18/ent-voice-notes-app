@@ -228,3 +228,60 @@ class _NotesCountChip extends StatelessWidget {
     );
   }
 }
+
+/// Wrapper widget that adds swipe-to-delete functionality to PatientCard.
+/// Shows a red background with delete icon when swiping.
+///
+/// Follows the same pattern as [DismissibleNoteCard] for consistency.
+class DismissiblePatientCard extends StatelessWidget {
+  const DismissiblePatientCard({
+    super.key,
+    required this.patient,
+    required this.onTap,
+    required this.onNewNote,
+    required this.onDelete,
+    this.onViewNotes,
+  });
+
+  /// Patient data to display
+  final PatientDisplayData patient;
+
+  /// Callback when the card is tapped
+  final VoidCallback onTap;
+
+  /// Callback when "Nueva nota" is tapped
+  final VoidCallback onNewNote;
+
+  /// Callback for delete confirmation - returns true if confirmed
+  final Future<bool> Function() onDelete;
+
+  /// Optional callback when "Ver notas" is tapped
+  final VoidCallback? onViewNotes;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dismissible(
+      key: ValueKey(patient.id),
+      direction: DismissDirection.endToStart,
+      confirmDismiss: (_) => onDelete(),
+      background: Container(
+        decoration: const BoxDecoration(
+          color: DocsoftColors.errorSoft,
+          borderRadius: DocsoftRadii.card,
+        ),
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: DocsoftSpacing.screenPadding),
+        child: const Icon(
+          Icons.delete_outline_rounded,
+          color: DocsoftColors.error,
+        ),
+      ),
+      child: PatientCard(
+        patient: patient,
+        onTap: onTap,
+        onNewNote: onNewNote,
+        onViewNotes: onViewNotes,
+      ),
+    );
+  }
+}
