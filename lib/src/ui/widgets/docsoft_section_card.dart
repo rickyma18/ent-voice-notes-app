@@ -1,77 +1,100 @@
 import 'package:flutter/material.dart';
 
-import '../theme/colors.dart';
-import '../theme/radii.dart';
-import '../theme/spacing.dart';
-import '../theme/text_styles.dart';
+import '../docsoft_ui.dart';
 
-/// Docsoft Section Card
+/// A standard card for wizard sections, matching the design of ClinicalHistoryWizardPage.
 ///
-/// A card component with a title header row (optional action on the right)
-/// and content area. Uses standard card styling.
-///
-/// Use cases:
-/// - Patient detail sections
-/// - Settings groups
-/// - Dashboard cards with headers
+/// Features:
+/// - Consistent padding, radius, and border.
+/// - Optional highlighting (primary color accent) for required/important sections.
+/// - Built-in icon and title styling.
 class DocsoftSectionCard extends StatelessWidget {
   const DocsoftSectionCard({
     super.key,
     required this.title,
+    required this.icon,
     required this.child,
+    this.highlighted = false,
     this.action,
-    this.padding,
   });
 
-  /// Section title
+  /// The title of the card section.
   final String title;
 
-  /// Optional action widget on the right (e.g., edit icon button)
-  final Widget? action;
+  /// The icon displayed next to the title.
+  final IconData icon;
 
-  /// Content of the card
+  /// The content of the card.
   final Widget child;
 
-  /// Custom padding (defaults to card padding)
-  final EdgeInsetsGeometry? padding;
+  /// Whether to highlight this card (e.g., for required or AI-generated sections).
+  ///
+  /// Highlights include a colored accent bar and primary-colored icon/text.
+  final bool highlighted;
+
+  /// Optional action widget locally positioned in the header (e.g. edit button).
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
         color: DocsoftColors.surface,
-        borderRadius: DocsoftRadii.card,
-        border: Border.all(color: DocsoftColors.borderSubtle, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(DocsoftRadii.md),
+        border: Border.all(
+          color: highlighted
+              ? DocsoftColors.primary.withValues(alpha: 0.3)
+              : DocsoftColors.border,
+        ),
       ),
-      padding: padding ?? const EdgeInsets.all(DocsoftSpacing.cardPadding),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Header row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                title,
-                style: DocsoftTextStyles.subtitle.copyWith(
-                  fontWeight: FontWeight.w600,
+      child: Padding(
+        padding: const EdgeInsets.all(DocsoftSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                // Accent bar for highlighted sections
+                if (highlighted)
+                  Container(
+                    width: 3,
+                    height: 20,
+                    margin: const EdgeInsets.only(right: DocsoftSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: DocsoftColors.primary,
+                      borderRadius: BorderRadius.circular(DocsoftRadii.xs),
+                    ),
+                  ),
+                Icon(
+                  icon,
+                  color: highlighted
+                      ? DocsoftColors.primary
+                      : DocsoftColors.textSecondary,
+                  size: 20,
                 ),
-              ),
-              if (action != null) action!,
-            ],
-          ),
-          const SizedBox(height: DocsoftSpacing.md),
-          // Content
-          child,
-        ],
+                const SizedBox(width: DocsoftSpacing.sm),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: DocsoftTextStyles.subtitle.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: highlighted
+                          ? DocsoftColors.primary
+                          : DocsoftColors.textPrimary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (action != null) ...[
+                  const SizedBox(width: DocsoftSpacing.sm),
+                  action!,
+                ],
+              ],
+            ),
+            const SizedBox(height: DocsoftSpacing.md),
+            child,
+          ],
+        ),
       ),
     );
   }

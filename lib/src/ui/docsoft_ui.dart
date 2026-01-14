@@ -32,6 +32,7 @@ export 'widgets/docsoft_dictation_banner.dart';
 export 'widgets/docsoft_wizard_progress.dart';
 export 'widgets/docsoft_status_chip.dart';
 export 'widgets/docsoft_segmented_control.dart';
+export 'widgets/docsoft_ai_generating_overlay.dart';
 
 // Components
 export 'components/avatar/docsoft_editable_avatar.dart';

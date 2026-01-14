@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/base/result.dart';
+import '../../../../ui/docsoft_ui.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 import '../../../patients/patients_providers.dart';
 import '../../domain/entities/attachment_entity.dart';
@@ -91,6 +92,9 @@ class _SurgicalNoteWizardPageState
   // Parent ScaffoldMessenger captured before opening the sheet
   ScaffoldMessengerState? _parentMessenger;
 
+  // Cached suggestions for re-opening
+  List<AISuggestionSection>? _lastSuggestionSections;
+
   /// Returns the active ScaffoldMessenger for showing SnackBars.
   /// Priority: sheet messenger (if open) > parent messenger > context fallback
   ScaffoldMessengerState get _activeMessenger =>
@@ -103,7 +107,7 @@ class _SurgicalNoteWizardPageState
   late final TextEditingController _procedimientoController; // motivoConsulta
   late final TextEditingController _diagnosticoPreopController; // diagnostico
   late final TextEditingController
-      _diagnosticoPostopController; // planTratamiento
+  _diagnosticoPostopController; // planTratamiento
 
   // Surgical-specific fields (SurgicalNoteDataEntity)
   late final TextEditingController _tecnicaQuirurgicaController;
@@ -300,6 +304,10 @@ class _SurgicalNoteWizardPageState
       }
 
       // Show suggestions sheet
+
+      // Cache for reopening
+      _lastSuggestionSections = sections;
+
       if (mounted) {
         _showSuggestionsSheet(sections);
       }
@@ -383,7 +391,8 @@ class _SurgicalNoteWizardPageState
     for (final section in sections) {
       if (!section.hasContent) continue;
 
-      final shouldApply = mode == ApplyMode.replace ||
+      final shouldApply =
+          mode == ApplyMode.replace ||
           (mode == ApplyMode.onlyEmpty && section.isCurrentEmpty);
 
       if (shouldApply) {
@@ -404,7 +413,8 @@ class _SurgicalNoteWizardPageState
   ) {
     if (!section.hasContent) return;
 
-    final shouldApply = mode == ApplyMode.replace ||
+    final shouldApply =
+        mode == ApplyMode.replace ||
         (mode == ApplyMode.onlyEmpty && section.isCurrentEmpty);
 
     if (!shouldApply) return;
@@ -475,38 +485,31 @@ class _SurgicalNoteWizardPageState
       );
   }
 
-  /// Builds the AI state chip based on current wizard state.
-  Widget? _buildAIStateChip() {
-    if (!_hasDictation) return null;
+  // ---------------------------------------------------------------------------
+  // AI Chip Logic (Shared with Clinical)
+  // ---------------------------------------------------------------------------
 
-    if (_isGeneratingSuggestions) {
-      return Chip(
-        avatar: const SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-        label: const Text('Procesando...'),
-        backgroundColor:
-            Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
-      );
-    }
+  bool get _hasActiveSuggestions =>
+      _suggestionsGenerated &&
+      _lastSuggestionSections != null &&
+      _lastSuggestionSections!.any((s) => s.hasContent);
 
-    if (_suggestionsGenerated) {
-      return Chip(
-        avatar: const Text('\u2728', style: TextStyle(fontSize: 14)),
-        label: const Text('Sugerencias listas'),
-        backgroundColor:
-            Theme.of(context).colorScheme.tertiaryContainer.withValues(alpha: 0.7),
-      );
-    }
+  Widget _buildAIChip() {
+    final count =
+        _lastSuggestionSections?.where((s) => s.hasContent).length ?? 0;
 
-    return Chip(
-      avatar: const Text('\u{1F9E0}', style: TextStyle(fontSize: 14)),
-      label: const Text('Dictado listo'),
-      backgroundColor:
-          Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.7),
+    return DocsoftStatusChip(
+      label: 'Sugerencias ($count)',
+      icon: Icons.auto_awesome,
+      variant: DocsoftStatusChipVariant.success,
+      onTap: _reopenSuggestionsSheet,
     );
+  }
+
+  void _reopenSuggestionsSheet() {
+    if (_lastSuggestionSections != null) {
+      _showSuggestionsSheet(_lastSuggestionSections!);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -571,28 +574,22 @@ class _SurgicalNoteWizardPageState
               ),
               const SizedBox(height: 24),
               FilledButton.icon(
-                onPressed: () => Navigator.pop(
-                  ctx,
-                  _DictationOptionsAction.applyToField,
-                ),
+                onPressed: () =>
+                    Navigator.pop(ctx, _DictationOptionsAction.applyToField),
                 icon: const Icon(Icons.text_fields),
                 label: const Text('Aplicar solo a este campo'),
               ),
               const SizedBox(height: 12),
               FilledButton.tonalIcon(
-                onPressed: () => Navigator.pop(
-                  ctx,
-                  _DictationOptionsAction.generateAI,
-                ),
+                onPressed: () =>
+                    Navigator.pop(ctx, _DictationOptionsAction.generateAI),
                 icon: const Icon(Icons.auto_awesome),
                 label: const Text('Generar sugerencias con IA'),
               ),
               const SizedBox(height: 12),
               TextButton(
-                onPressed: () => Navigator.pop(
-                  ctx,
-                  _DictationOptionsAction.cancel,
-                ),
+                onPressed: () =>
+                    Navigator.pop(ctx, _DictationOptionsAction.cancel),
                 child: const Text('Cancelar'),
               ),
               const SizedBox(height: 8),
@@ -604,8 +601,8 @@ class _SurgicalNoteWizardPageState
                 child: Text(
                   'No volver a mostrar',
                   style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(ctx).colorScheme.outline,
-                      ),
+                    color: Theme.of(ctx).colorScheme.outline,
+                  ),
                 ),
               ),
             ],
@@ -804,8 +801,8 @@ class _SurgicalNoteWizardPageState
               asDraft
                   ? 'Borrador guardado exitosamente'
                   : (isEditing
-                      ? 'Nota quirurgica actualizada exitosamente'
-                      : 'Nota quirurgica creada exitosamente'),
+                        ? 'Nota quirurgica actualizada exitosamente'
+                        : 'Nota quirurgica creada exitosamente'),
             ),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
@@ -852,38 +849,9 @@ class _SurgicalNoteWizardPageState
     final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
     return Scaffold(
+      backgroundColor: DocsoftColors.background,
       resizeToAvoidBottomInset: true,
-      appBar: AppBar(
-        title: Text(widget.isEditMode
-            ? 'Editar nota quirurgica'
-            : 'Nueva nota quirurgica'),
-        actions: [
-          // AI Suggestions action (only visible when raw transcript exists)
-          if (_canGenerateSuggestions)
-            _isGeneratingSuggestions
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                : IconButton(
-                    onPressed: _generateAISuggestions,
-                    icon: const Icon(Icons.auto_awesome),
-                    tooltip: 'Generar sugerencias con IA',
-                  ),
-          // Save as draft action
-          if (!_isSaving)
-            TextButton.icon(
-              onPressed: () => _saveNote(asDraft: true),
-              icon: const Icon(Icons.save_outlined),
-              label: const Text('Borrador'),
-            ),
-        ],
-      ),
-      // Footer in bottomNavigationBar
+      // Footer stored in bottomNavigationBar to stick to bottom above keyboard
       bottomNavigationBar: AnimatedPadding(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
@@ -892,8 +860,12 @@ class _SurgicalNoteWizardPageState
         ),
         child: SafeArea(
           top: false,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
+          child: Container(
+            decoration: BoxDecoration(
+              color: DocsoftColors.surface,
+              border: Border(top: BorderSide(color: DocsoftColors.border)),
+            ),
+            padding: const EdgeInsets.all(DocsoftSpacing.md),
             child: WizardNavigationButtons(
               currentStep: _currentStep,
               totalSteps: _totalSteps,
@@ -914,7 +886,69 @@ class _SurgicalNoteWizardPageState
             ? const Center(child: CircularProgressIndicator())
             : Column(
                 children: [
-                  // Patient header - collapses when keyboard is open
+                  // 1. Header (Custom App Bar)
+                  Container(
+                    decoration: BoxDecoration(
+                      color: DocsoftColors.surface,
+                      border: Border(
+                        bottom: BorderSide(color: DocsoftColors.border),
+                      ),
+                    ),
+                    padding: const EdgeInsets.fromLTRB(
+                      DocsoftSpacing.screenPadding,
+                      DocsoftSpacing.screenPadding,
+                      DocsoftSpacing.screenPadding,
+                      DocsoftSpacing.sm,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            DocsoftBackButton(
+                              onTap: () => Navigator.of(context).maybePop(),
+                              backgroundColor: DocsoftColors.primaryMuted,
+                              iconColor: DocsoftColors.primary,
+                            ),
+                            const SizedBox(width: DocsoftSpacing.sm),
+                            Expanded(
+                              child: Text(
+                                widget.isEditMode
+                                    ? 'Editar nota quirurgica'
+                                    : 'Nueva nota quirurgica',
+                                style: DocsoftTextStyles.appBarTitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            // Show static icon only if NO suggestions are active
+                            if (!_hasActiveSuggestions)
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  left: DocsoftSpacing.sm,
+                                ),
+                                child: Icon(
+                                  Icons.auto_awesome_outlined,
+                                  color: DocsoftColors.textTertiary,
+                                  size: 20,
+                                ),
+                              ),
+                          ],
+                        ),
+                        // Second Row for Chip if suggestions are active
+                        if (_hasActiveSuggestions) ...[
+                          const SizedBox(height: DocsoftSpacing.xs),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [_buildAIChip()],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+
+                  // 2. Patient Header (Collapsible)
                   ClipRect(
                     child: AnimatedSize(
                       duration: const Duration(milliseconds: 180),
@@ -922,64 +956,67 @@ class _SurgicalNoteWizardPageState
                       child: keyboardOpen
                           ? const SizedBox.shrink()
                           : _patient != null
-                              ? Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    16,
-                                    8,
-                                    16,
-                                    0,
-                                  ),
-                                  child: PatientHeader(
-                                    patient: _patient!,
-                                    date: _noteDate,
-                                    isEditing: widget.isEditMode,
-                                    onDateChanged: widget.isEditMode
-                                        ? null
-                                        : (date) {
-                                            setState(() {
-                                              _noteDate = date;
-                                            });
-                                          },
-                                  ),
-                                )
-                              : const SizedBox.shrink(),
+                          ? Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                DocsoftSpacing.screenPadding,
+                                DocsoftSpacing.sm,
+                                DocsoftSpacing.screenPadding,
+                                0,
+                              ),
+                              child: PatientHeader(
+                                patient: _patient!,
+                                date: _noteDate,
+                                isEditing: widget.isEditMode,
+                                onDateChanged: widget.isEditMode
+                                    ? null
+                                    : (date) {
+                                        setState(() {
+                                          _noteDate = date;
+                                        });
+                                      },
+                              ),
+                            )
+                          : const SizedBox.shrink(),
                     ),
                   ),
 
-                  // AI dictation banner - non-intrusive prompt
+                  // 3. AI Banner (Collapsible)
                   if (_shouldShowAiBanner(keyboardOpen))
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      padding: const EdgeInsets.fromLTRB(
+                        DocsoftSpacing.screenPadding,
+                        DocsoftSpacing.sm,
+                        DocsoftSpacing.screenPadding,
+                        0,
+                      ),
                       child: Card(
-                        elevation: 2,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .primaryContainer
-                            .withValues(alpha: 0.7),
+                        elevation: 0,
+                        color: DocsoftColors.primaryMuted,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(DocsoftRadii.md),
+                          side: BorderSide(
+                            color: DocsoftColors.primary.withValues(alpha: 0.2),
+                          ),
+                        ),
                         child: Padding(
-                          padding: const EdgeInsets.all(12),
+                          padding: const EdgeInsets.all(DocsoftSpacing.md),
                           child: Row(
                             children: [
                               Icon(
                                 Icons.auto_awesome,
-                                color: Theme.of(context).colorScheme.primary,
+                                color: DocsoftColors.primary,
                                 size: 24,
                               ),
-                              const SizedBox(width: 12),
+                              const SizedBox(width: DocsoftSpacing.md),
                               Expanded(
                                 child: Text(
                                   'Se detectó un dictado. La IA puede ayudarte a estructurar la nota quirúrgica.',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodyMedium
-                                      ?.copyWith(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onPrimaryContainer,
-                                      ),
+                                  style: DocsoftTextStyles.body.copyWith(
+                                    color: DocsoftColors.textPrimary,
+                                  ),
                                 ),
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: DocsoftSpacing.sm),
                               TextButton(
                                 onPressed: () {
                                   setState(() {
@@ -989,11 +1026,22 @@ class _SurgicalNoteWizardPageState
                                 child: const Text('Cerrar'),
                               ),
                               const SizedBox(width: 4),
-                              Flexible(
-                                child: FilledButton.tonal(
-                                  onPressed: _generateAISuggestions,
-                                  child: const Text('Generar'),
+                              FilledButton.tonal(
+                                onPressed: _generateAISuggestions,
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: DocsoftColors.primary,
+                                  foregroundColor: DocsoftColors.onPrimary,
                                 ),
+                                child: _isGeneratingSuggestions
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Text('Generar'),
                               ),
                             ],
                           ),
@@ -1001,7 +1049,7 @@ class _SurgicalNoteWizardPageState
                       ),
                     ),
 
-                  // Step indicator
+                  // 4. Progress Indicator
                   ClipRect(
                     child: AnimatedSize(
                       duration: const Duration(milliseconds: 180),
@@ -1013,7 +1061,12 @@ class _SurgicalNoteWizardPageState
                               stepTitle: _stepTitles[_currentStep],
                             )
                           : Padding(
-                              padding: const EdgeInsets.all(16),
+                              padding: const EdgeInsets.fromLTRB(
+                                DocsoftSpacing.md,
+                                DocsoftSpacing.sm,
+                                DocsoftSpacing.md,
+                                0,
+                              ),
                               child: WizardStepIndicator(
                                 currentStep: _currentStep,
                                 totalSteps: _totalSteps,
@@ -1024,19 +1077,7 @@ class _SurgicalNoteWizardPageState
                     ),
                   ),
 
-                  // AI state chip
-                  if (!keyboardOpen) ...[
-                    if (_buildAIStateChip() case final chip?)
-                      Align(
-                        alignment: Alignment.center,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: chip,
-                        ),
-                      ),
-                  ],
-
-                  // Step content (PageView inside Expanded)
+                  // 5. Step Content View (No Swipe)
                   Expanded(
                     child: Form(
                       key: _formKey,
@@ -1075,9 +1116,7 @@ class _SurgicalNoteWizardPageState
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.all(16),
           child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minHeight: constraints.maxHeight,
-            ),
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
             child: child,
           ),
         );
@@ -1101,17 +1140,20 @@ class _SurgicalNoteWizardPageState
             onDictate: () => _handleFieldDictation(_procedimientoController),
             quickActions: const [
               QuickAction(
-                  label: 'Septoplastia',
-                  text: 'Septoplastia',
-                  icon: Icons.local_hospital),
+                label: 'Septoplastia',
+                text: 'Septoplastia',
+                icon: Icons.local_hospital,
+              ),
               QuickAction(
-                  label: 'Amigdalectomia',
-                  text: 'Amigdalectomia',
-                  icon: Icons.local_hospital),
+                label: 'Amigdalectomia',
+                text: 'Amigdalectomia',
+                icon: Icons.local_hospital,
+              ),
               QuickAction(
-                  label: 'Timpanoplastia',
-                  text: 'Timpanoplastia',
-                  icon: Icons.local_hospital),
+                label: 'Timpanoplastia',
+                text: 'Timpanoplastia',
+                icon: Icons.local_hospital,
+              ),
             ],
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
@@ -1153,7 +1195,8 @@ class _SurgicalNoteWizardPageState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
-          _SurgicalSectionCard(
+          const SizedBox(height: 8),
+          DocsoftSectionCard(
             title: 'Técnica quirúrgica',
             icon: Icons.content_cut,
             highlighted: true,
@@ -1195,13 +1238,15 @@ class _SurgicalNoteWizardPageState
             onDictate: () => _handleFieldDictation(_hallazgosController),
             quickActions: const [
               QuickAction(
-                  label: 'Sin hallazgos',
-                  text: 'Sin hallazgos adicionales',
-                  icon: Icons.check),
+                label: 'Sin hallazgos',
+                text: 'Sin hallazgos adicionales',
+                icon: Icons.check,
+              ),
               QuickAction(
-                  label: 'Normal',
-                  text: 'Hallazgos dentro de lo esperado',
-                  icon: Icons.check_circle),
+                label: 'Normal',
+                text: 'Hallazgos dentro de lo esperado',
+                icon: Icons.check_circle,
+              ),
             ],
           ),
         ],
@@ -1226,13 +1271,15 @@ class _SurgicalNoteWizardPageState
             onDictate: () => _handleFieldDictation(_complicacionesController),
             quickActions: const [
               QuickAction(
-                  label: 'Ninguna',
-                  text: 'Sin complicaciones',
-                  icon: Icons.check_circle_outline),
+                label: 'Ninguna',
+                text: 'Sin complicaciones',
+                icon: Icons.check_circle_outline,
+              ),
               QuickAction(
-                  label: 'Sangrado',
-                  text: 'Sangrado controlado',
-                  icon: Icons.warning_amber),
+                label: 'Sangrado',
+                text: 'Sangrado controlado',
+                icon: Icons.warning_amber,
+              ),
             ],
           ),
         ],
@@ -1249,7 +1296,8 @@ class _SurgicalNoteWizardPageState
           const SizedBox(height: 8),
 
           // Diagnóstico postoperatorio
-          _SurgicalSectionCard(
+          // Diagnóstico postoperatorio
+          DocsoftSectionCard(
             title: 'Diagnóstico postoperatorio',
             icon: Icons.medical_information,
             highlighted: true,
@@ -1283,17 +1331,20 @@ class _SurgicalNoteWizardPageState
             onDictate: () => _handleFieldDictation(_observacionesController),
             quickActions: const [
               QuickAction(
-                  label: 'Reposo',
-                  text: 'Reposo relativo por',
-                  icon: Icons.bed),
+                label: 'Reposo',
+                text: 'Reposo relativo por',
+                icon: Icons.bed,
+              ),
               QuickAction(
-                  label: 'Cita',
-                  text: 'Cita de control en',
-                  icon: Icons.calendar_today),
+                label: 'Cita',
+                text: 'Cita de control en',
+                icon: Icons.calendar_today,
+              ),
               QuickAction(
-                  label: 'Medicacion',
-                  text: 'Continuar medicacion indicada',
-                  icon: Icons.medication),
+                label: 'Medicacion',
+                text: 'Continuar medicacion indicada',
+                icon: Icons.medication,
+              ),
             ],
           ),
         ],
@@ -1447,72 +1498,8 @@ class _SurgicalNoteWizardPageState
   }
 }
 
-/// Section card for surgical wizard steps
-class _SurgicalSectionCard extends StatelessWidget {
-  const _SurgicalSectionCard({
-    required this.title,
-    required this.icon,
-    required this.child,
-    this.highlighted = false,
-  });
-
-  final String title;
-  final IconData icon;
-  final Widget child;
-  final bool highlighted;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Card(
-      color: highlighted
-          ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
-          : null,
-      elevation: highlighted ? 2 : 1,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  icon,
-                  color: highlighted
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: highlighted ? theme.colorScheme.primary : null,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            child,
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// Action choices for dictation when field has existing content.
-enum _DictationAction {
-  replace,
-  append,
-  cancel,
-}
+enum _DictationAction { replace, append, cancel }
 
 /// Action choices for the dictation options sheet (long transcripts).
-enum _DictationOptionsAction {
-  applyToField,
-  generateAI,
-  cancel,
-}
+enum _DictationOptionsAction { applyToField, generateAI, cancel }

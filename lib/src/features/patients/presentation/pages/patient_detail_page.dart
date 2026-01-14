@@ -80,6 +80,7 @@ class PatientDetailPage extends StatelessWidget {
   Widget _buildBasicInfoCard() {
     return DocsoftSectionCard(
       title: 'Información básica',
+      icon: Icons.person_outline,
       action: IconButton(
         onPressed: onEdit,
         icon: const Icon(Icons.edit_outlined),
@@ -129,6 +130,7 @@ class PatientDetailPage extends StatelessWidget {
   Widget _buildClinicalSummaryCard() {
     return DocsoftSectionCard(
       title: 'Resumen clínico',
+      icon: Icons.history,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -266,6 +268,7 @@ class PatientDetailPage extends StatelessWidget {
   Widget _buildActionsCard() {
     return DocsoftSectionCard(
       title: 'Acciones rápidas',
+      icon: Icons.bolt_outlined,
       child: Column(
         children: [
           // Primary action: New voice note
