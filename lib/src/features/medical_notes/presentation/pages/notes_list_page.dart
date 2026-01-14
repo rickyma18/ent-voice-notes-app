@@ -152,15 +152,22 @@ class _NotesListPageState extends ConsumerState<NotesListPage> {
               },
             ),
             Expanded(
-              child: notesAsync.when(
-                loading: () => const _LoadingView(),
-                error: (error, _) =>
-                    _ErrorView(error: error, onRetry: _loadNotes),
-                data: (_) => _NotesList(
-                  notes: filteredNotesList,
-                  onTapNote: _handleTapNote,
-                  onDeleteNote: _handleDeleteNote,
-                  confirmDelete: () => _confirmDelete(context),
+              child: RefreshIndicator(
+                onRefresh: () async {
+                  await ref
+                      .read(notesListControllerProvider(_scope).notifier)
+                      .loadNotes();
+                },
+                child: notesAsync.when(
+                  loading: () => const _LoadingView(),
+                  error: (error, _) =>
+                      _ErrorView(error: error, onRetry: _loadNotes),
+                  data: (_) => _NotesList(
+                    notes: filteredNotesList,
+                    onTapNote: _handleTapNote,
+                    onDeleteNote: _handleDeleteNote,
+                    confirmDelete: () => _confirmDelete(context),
+                  ),
                 ),
               ),
             ),

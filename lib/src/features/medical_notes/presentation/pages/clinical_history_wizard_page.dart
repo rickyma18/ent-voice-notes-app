@@ -36,8 +36,8 @@ import '../../../../ui/docsoft_ui.dart';
 /// 4. Antecedentes personales patologicos
 /// 5. Padecimiento actual
 /// 6. Exploracion fisica ORL
-/// 7. Diagnostico y plan
-/// 8. Laboratorio y estudios
+/// 7. Laboratorio y estudios
+/// 8. Diagnostico y plan
 class ClinicalHistoryWizardPage extends ConsumerStatefulWidget {
   const ClinicalHistoryWizardPage({
     super.key,
@@ -159,8 +159,8 @@ class _ClinicalHistoryWizardPageState
     'Antecedentes personales patologicos',
     'Padecimiento actual',
     'Exploracion fisica ORL',
-    'Diagnostico y plan',
     'Laboratorio y estudios',
+    'Diagnostico y plan',
   ];
 
   int get _totalSteps => _stepTitles.length;
@@ -544,9 +544,11 @@ class _ClinicalHistoryWizardPageState
     try {
       final aiService = ref.read(noteAIServiceProvider);
 
-      // Use V2 structured extraction for better field mapping
-      final structuredV1 = await aiService.suggestStructuredFieldsV2(
+      // Use V3 with LOCAL medicalization + LLM extraction
+      // Feature flag: set enableMedicalization to false to rollback to V2 behavior
+      final structuredV1 = await aiService.suggestStructuredFieldsV3(
         _rawTranscript!,
+        enableMedicalization: true, // Set to false to disable medicalization
       );
 
       if (!mounted) return;
@@ -1097,7 +1099,7 @@ class _ClinicalHistoryWizardPageState
           'cuello',
           'laringoscopia',
         ];
-      case 6:
+      case 7:
         return ['diagnostico', 'planTratamiento'];
       default:
         return [];
@@ -2216,8 +2218,8 @@ class _ClinicalHistoryWizardPageState
                                 _buildStep3AntecedentesPatologicos(),
                                 _buildStep4PadecimientoActual(),
                                 _buildStep5ExploracionOrl(),
-                                _buildStep6DiagnosticoPlan(),
                                 _buildStep7Attachments(),
+                                _buildStep6DiagnosticoPlan(),
                               ],
                             ),
                           ),

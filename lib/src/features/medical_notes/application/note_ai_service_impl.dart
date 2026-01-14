@@ -9,6 +9,8 @@ import 'package:flutter/foundation.dart' show kReleaseMode;
 import '../../../core/logger/log.dart';
 import 'medical_lexicon_loader.dart';
 import 'medical_transcript_post_processor.dart';
+import 'medicalization/medicalization.dart';
+import 'medicalization/transcript_cleaner.dart';
 import 'note_ai_service.dart';
 import 'structured_fields_parser.dart';
 import 'structured_fields_prompt_v2.dart';
@@ -455,6 +457,301 @@ class NoteAIServiceImpl implements NoteAIService {
         'Error al generar campos estructurados: ${e.toString()}',
       );
     }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // V3: LOCAL MEDICALIZATION → LLM EXTRACTION
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// Medicalization service instance (lazy-initialized).
+  MedicalizationService? _medicalizationService;
+
+  /// Last medicalization output (for debugging/traceability).
+  MedicalizationOutput? _lastMedicalizationOutput;
+
+  /// Generates structured fields with LOCAL clinical medicalization.
+  ///
+  /// Pipeline:
+  /// 1. Raw transcript → LocalMedicalizationService (dictionary + matcher + negation)
+  /// 2. Medicalized text → LLM (v2 extraction prompt)
+  /// 3. LLM → Structured JSON (schema v1)
+  ///
+  /// The LLM only structures/formats - all term transformation is LOCAL and deterministic.
+  ///
+  /// Returns the same schema v1 JSON for backward compatibility with UI.
+  ///
+  /// Feature flag: Set [enableMedicalization] to false to skip local processing.
+  Future<Map<String, dynamic>> suggestStructuredFieldsV3(
+    String rawTranscript, {
+    bool enableMedicalization = true,
+  }) async {
+    try {
+      Log.info('🤖 [V3] Generating structured fields (LOCAL medicalization)');
+
+      if (rawTranscript.trim().isEmpty) {
+        throw NoteAIException(
+          'La transcripción está vacía. No se puede generar la nota.',
+        );
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // AUDIT: Preserve original transcript for clinical safety review
+      // ─────────────────────────────────────────────────────────────────────────
+      Log.info('📝 [AUDIT][V3] RAW_LENGTH=${rawTranscript.length}');
+      Log.info('📝 [AUDIT][V3] RAW_HASH=${rawTranscript.hashCode}');
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // STEP 1: LOCAL MEDICALIZATION (deterministic, no LLM)
+      // ─────────────────────────────────────────────────────────────────────────
+
+      if (enableMedicalization) {
+        // Initialize medicalization service (lazy, singleton)
+        _medicalizationService ??= MedicalizationServiceFactory.create();
+
+        // Apply local medicalization
+        final output = await _medicalizationService!.medicalize(rawTranscript);
+        _lastMedicalizationOutput = output;
+
+        // Log transformation stats
+        Log.info(
+          '📖 [V3] LOCAL medicalization: '
+          '${output.appliedMappings.length} terms replaced, '
+          '${output.negationsPreserved} negations preserved',
+        );
+
+        if (!kReleaseMode && output.appliedMappings.isNotEmpty) {
+          // Debug: log first 3 mappings applied
+          final preview = output.appliedMappings
+              .take(3)
+              .map(
+                (m) =>
+                    '"${m.original}"→"${m.clinical}"${m.isNegated ? " [NEG]" : ""}',
+              );
+          Log.info('📖 [V3][DEBUG] Sample: ${preview.join(", ")}');
+        }
+      } else {
+        Log.info('📖 [V3] Medicalization DISABLED, using raw transcript');
+        _lastMedicalizationOutput = null;
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // STEP 2: CLEAN NORMALIZED TRANSCRIPT (remove fillers/vacillations)
+      // ─────────────────────────────────────────────────────────────────────────
+      String? cleanedNormalized;
+      if (enableMedicalization && _lastMedicalizationOutput != null) {
+        // Clean the medicalized text to remove fillers before LLM
+        cleanedNormalized = cleanTranscriptForExtraction(
+          _lastMedicalizationOutput!.medicalizedText,
+        );
+
+        if (!kReleaseMode) {
+          final beforeLen = _lastMedicalizationOutput!.medicalizedText.length;
+          final afterLen = cleanedNormalized.length;
+          if (beforeLen != afterLen) {
+            Log.info(
+              '🧹 [V3] Transcript cleaned: $beforeLen → $afterLen chars '
+              '(removed ${beforeLen - afterLen} chars of fillers)',
+            );
+          }
+        }
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // STEP 3: LLM EXTRACTION WITH DUAL TRANSCRIPT
+      // - NORMALIZADO: Use for clinical terminology in output (cleaned)
+      // - ORIGINAL: Use as source of evidence / traceability (untouched)
+      // ─────────────────────────────────────────────────────────────────────────
+      final String userPrompt;
+
+      if (enableMedicalization && cleanedNormalized != null) {
+        // Pass BOTH transcripts to LLM (normalized is cleaned)
+        userPrompt = _buildDualTranscriptPrompt(
+          original: rawTranscript,
+          normalized: cleanedNormalized,
+        );
+      } else {
+        // Fallback to single transcript
+        userPrompt = StructuredFieldsPromptV2.buildUserPrompt(rawTranscript);
+      }
+
+      final response = await _openAIClient.generateStructuredFieldsV2(
+        systemPrompt: StructuredFieldsPromptV2.systemPrompt,
+        userPrompt: userPrompt,
+        temperature: LLMTemperatureSettings.extraction,
+      );
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // STEP 4: PARSE AND VALIDATE RESPONSE
+      // ─────────────────────────────────────────────────────────────────────────
+      var parsed = StructuredFieldsParser.tryParse(response);
+
+      if (parsed == null) {
+        Log.warning('⚠️ [V3] Initial parse failed, attempting repair retry');
+        parsed = await _attemptRepairRetry(response);
+      }
+
+      if (parsed == null) {
+        Log.error(
+          '❌ [V3] All parse attempts failed, falling back to empty schema',
+        );
+        parsed = getEmptySchemaV1();
+      }
+
+      // Validate structure
+      final validationErrors = StructuredFieldsParser.validate(parsed);
+      if (validationErrors.isNotEmpty) {
+        Log.warning(
+          '⚠️ [V3] Validation warnings: ${validationErrors.join(", ")}',
+        );
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // STEP 5: SANITIZE PARSED FIELDS (remove non-informative content)
+      // ─────────────────────────────────────────────────────────────────────────
+      // This deterministic post-processing removes:
+      // - "no sé", "no que yo sepa", "desconozco" from antecedentes
+      // - Empty/non-informative entries from arrays
+      // - Residual fillers from text fields
+      final sanitized = sanitizeStructuredFieldsV1(parsed);
+
+      if (!kReleaseMode) {
+        // Log any fields that were nulled by sanitizer
+        _logSanitizationChanges(parsed, sanitized);
+      }
+
+      Log.info(
+        '🤖 [V3] Generated medicalized fields: ${sanitized.keys.length} root keys',
+      );
+
+      return sanitized;
+    } on NoteAIException {
+      rethrow;
+    } catch (e) {
+      Log.error('🤖 [V3] Error generating structured fields: $e');
+      throw NoteAIException(
+        'Error al generar campos estructurados: ${e.toString()}',
+      );
+    }
+  }
+
+  /// Returns the last medicalization output for debugging/traceability.
+  ///
+  /// Returns null if medicalization was disabled or not yet run.
+  MedicalizationOutput? get lastMedicalizationOutput =>
+      _lastMedicalizationOutput;
+
+  /// Logs differences between parsed and sanitized fields (debug only).
+  void _logSanitizationChanges(
+    Map<String, dynamic> parsed,
+    Map<String, dynamic> sanitized,
+  ) {
+    final changes = <String>[];
+
+    // Check antecedentes subfields
+    if (parsed['antecedentes'] is Map && sanitized['antecedentes'] is Map) {
+      final parsedAnt = parsed['antecedentes'] as Map;
+      final sanitizedAnt = sanitized['antecedentes'] as Map;
+
+      for (final key in parsedAnt.keys) {
+        if (parsedAnt[key] != null && sanitizedAnt[key] == null) {
+          changes.add('antecedentes.$key');
+        }
+      }
+    }
+
+    // Check top-level fields
+    for (final key in ['motivo_consulta', 'padecimiento_actual', 'notas_adicionales']) {
+      if (parsed[key] != null && sanitized[key] == null) {
+        changes.add(key);
+      }
+    }
+
+    if (changes.isNotEmpty) {
+      Log.info('🧹 [V3] Sanitizer nulled fields: ${changes.join(", ")}');
+    }
+  }
+
+  /// Builds a user prompt that includes BOTH transcripts.
+  ///
+  /// - NORMALIZADO: Pre-processed text with clinical terminology applied locally
+  /// - ORIGINAL: Raw transcript for evidence/traceability
+  ///
+  /// Instructs the LLM to:
+  /// - Use NORMALIZADO for clinical terms in output
+  /// - Reference ORIGINAL when quoting evidence
+  String _buildDualTranscriptPrompt({
+    required String original,
+    required String normalized,
+  }) {
+    return '''
+TRANSCRIPCIÓN NORMALIZADA (usar para terminología clínica):
+"""
+$normalized
+"""
+
+TRANSCRIPCIÓN ORIGINAL (usar como fuente de evidencia):
+"""
+$original
+"""
+
+INSTRUCCIONES ESPECIALES:
+- Para ESCRIBIR el contenido de cada campo, usa la versión NORMALIZADA (ya tiene terminología clínica).
+- La TRANSCRIPCIÓN ORIGINAL es la fuente de verdad para HECHOS (síntomas, antecedentes, tiempos, medicamentos, dosis).
+- Si hay discrepancia entre ORIGINAL y NORMALIZADA, usa la NORMALIZADA SOLO para el término clínico equivalente, pero SOLO si el hecho existe explícitamente en la ORIGINAL.
+- Preserva todas las negaciones tal como aparecen ("niega", "sin", "no") y NO las conviertas en afirmaciones.
+
+REGLA DE VERACIDAD (CRÍTICA):
+- NO agregues ningún dato (síntoma, antecedente, medicamento, dosis, tiempo) que no esté explícito en la ORIGINAL.
+- Si una frase solo aparece en la NORMALIZADA pero NO está respaldada por la ORIGINAL, NO la uses.
+- Si hay duda o ambigüedad, conserva el texto original o usa null/[] según corresponda.
+
+REGLA ANTI-BASURA (CRÍTICA):
+- Frases de desconocimiento NO son contenido clínico. Si el paciente dice "no sé", "no que yo sepa", "desconozco", "ninguno", "nada" → usar null en ese campo, NO incluir esa frase como valor.
+- Muletillas y vacilaciones ("eh", "este", "mmm", "o sea", "pues", "sí no sí no", repeticiones) NO deben aparecer en el JSON final. Ignóralas completamente.
+- Si un campo quedaría con SOLO frases no-informativas → usar null.
+
+SCHEMA JSON REQUERIDO (incluir TODAS las claves):
+$kSchemaJsonExample
+
+INSTRUCCIONES DE MAPEO:
+
+1. motivo_consulta: Razón principal de la visita (síntoma guía).
+
+2. padecimiento_actual: Evolución temporal del problema (inicio, duración, progresión, tratamientos previos).
+
+3. antecedentes:
+   - heredofamiliares: Enfermedades en familia → null si "no sé"/"desconozco"
+   - no_patologicos: Hábitos (tabaco, alcohol, ejercicio) → null si "no sé"
+   - patologicos: Enfermedades crónicas del paciente → null si "ninguno"/"nada"
+   - alergias: Lista de alergias mencionadas → [] si "ninguna"/"no sé"
+   - medicamentos_habituales: Lista de medicamentos actuales → [] si "ninguno"
+   - quirurgicos: Cirugías previas → null si "ninguna"/"no que yo sepa"
+   - gineco_obstetricos: Solo si aplica → null si no aplica o desconoce
+
+4. exploracion_orl:
+   - otoscopia, rinoscopia, orofaringe, cuello, laringoscopia
+
+5. diagnostico:
+   - texto: El diagnóstico mencionado
+   - tipo: "definitivo"/"presuntivo"/"diferencial"
+
+6. plan_tratamiento: Indicaciones terapéuticas.
+
+7. estudios_indicados: Lista de estudios solicitados.
+
+8. notas_adicionales: Otra info relevante (NO incluir muletillas ni basura).
+
+9. contradicciones: Si el médico se corrigió.
+
+10. metadata: idioma:"es", fuente:"dictado", version_schema:"1.0.0"
+
+IMPORTANTE:
+- Si no se menciona un campo → usar null (o [] para arrays)
+- Si el paciente dice "no sé"/"desconozco" → usar null (NO poner esa frase)
+- Preservar negaciones clínicas REALES ("niega fiebre", "sin dolor") ≠ desconocimiento
+- NO agregar información que no esté en el dictado
+
+Responde SOLO con el JSON, sin texto adicional.''';
   }
 
   /// Attempts to repair invalid JSON by sending it back to GPT with repair prompt.

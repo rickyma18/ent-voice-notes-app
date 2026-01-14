@@ -287,9 +287,8 @@ class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
         .toList();
 
     widget.onApply(editedSections, ApplyMode.onlyEmpty);
-    if (widget.closeOnApply) {
-      widget.onCancel();
-    }
+    // Always close the sheet after applying selected suggestions
+    widget.onCancel();
   }
 
   /// Handles apply (replace-all mode).

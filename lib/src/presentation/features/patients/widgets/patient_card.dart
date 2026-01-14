@@ -85,9 +85,7 @@ class PatientCard extends StatelessWidget {
                   children: [
                     Text(
                       patient.name,
-                      style: DocsoftTextStyles.title.copyWith(
-                        fontSize: 17,
-                      ),
+                      style: DocsoftTextStyles.title.copyWith(fontSize: 17),
                     ),
                     const SizedBox(height: 4),
                     Row(
@@ -128,8 +126,7 @@ class PatientCard extends StatelessWidget {
           ),
 
           // Middle Section: Last Motive
-          if (patient.lastMotive != null &&
-              patient.lastMotive!.isNotEmpty) ...[
+          if (patient.lastMotive != null && patient.lastMotive!.isNotEmpty) ...[
             const SizedBox(height: 14),
             Text(
               'Último motivo: ${patient.lastMotive}',

@@ -88,6 +88,27 @@ abstract class NoteAIService {
   /// Ver structured_fields_schema_v1.dart para el schema completo.
   Future<Map<String, dynamic>> suggestStructuredFieldsV2(String rawTranscript);
 
+  /// Genera campos estructurados con medicalización LOCAL (V3).
+  ///
+  /// Pipeline:
+  /// 1. Aplica medicalización LOCAL determinista (colloquial → clínico)
+  /// 2. Envía texto medicalizado + original al LLM
+  /// 3. LLM extrae estructura usando schema v1
+  ///
+  /// [enableMedicalization]: Si es false, usa comportamiento V2 (sin medicalización).
+  ///
+  /// Retorna el mismo schema v1 que V2 (compatible con UI existente).
+  ///
+  /// Ventajas sobre V2:
+  /// - Terminología clínica consistente (diccionario local)
+  /// - Preservación de negaciones mejorada
+  /// - Trazabilidad (original + normalizado)
+  /// - Sin dependencia de LLM para transformación de términos
+  Future<Map<String, dynamic>> suggestStructuredFieldsV3(
+    String rawTranscript, {
+    bool enableMedicalization = true,
+  });
+
   /// Genera sugerencia de plan de tratamiento basándose en contexto clínico.
   ///
   /// NO requiere transcripción de dictado. Usa campos ya ingresados.
@@ -187,6 +208,15 @@ class NoteAIServiceStub implements NoteAIService {
         'version_schema': '1.0.0',
       },
     };
+  }
+
+  @override
+  Future<Map<String, dynamic>> suggestStructuredFieldsV3(
+    String rawTranscript, {
+    bool enableMedicalization = true,
+  }) async {
+    // Stub: delegate to V2 (no medicalization in stub)
+    return suggestStructuredFieldsV2(rawTranscript);
   }
 
   @override

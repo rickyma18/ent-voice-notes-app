@@ -3,6 +3,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 
 import '../../core/base/result.dart';
 import 'application/note_ai_service.dart';
@@ -153,7 +154,7 @@ OpenAIClient openAIClient(Ref ref) {
 NoteAIService noteAIService(NoteAIServiceRef ref) {
   return NoteAIServiceImpl(
     openAIClient: ref.watch(openAIClientProvider),
-    enablePhoneticMedicationMatching: true, // ✅ AQUÍ
+    enablePhoneticMedicationMatching: true,
   );
 }
 
