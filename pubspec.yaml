@@ -78,6 +78,7 @@ dependencies:
   google_fonts: ^6.3.3
   video_player: ^2.10.1
   flutter_dotenv: ^6.0.0
+  wakelock_plus: ^1.2.8
 
 dev_dependencies:
   flutter_test:

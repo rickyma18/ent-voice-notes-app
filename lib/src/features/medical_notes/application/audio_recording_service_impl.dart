@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:uuid/uuid.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../../core/logger/log.dart';
 import 'audio_recording_service.dart';
@@ -32,11 +33,9 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
   String? _currentRecordingPath;
   RecordingState _state = RecordingState.idle;
 
-  AudioRecordingServiceImpl({
-    AudioRecorder? recorder,
-    Uuid? uuid,
-  })  : _recorder = recorder ?? AudioRecorder(),
-        _uuid = uuid ?? const Uuid();
+  AudioRecordingServiceImpl({AudioRecorder? recorder, Uuid? uuid})
+    : _recorder = recorder ?? AudioRecorder(),
+      _uuid = uuid ?? const Uuid();
 
   @override
   RecordingState get state => _state;
@@ -51,7 +50,8 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
     final isActuallyRecording = await _recorder.isRecording();
     if (_state != RecordingState.idle || isActuallyRecording) {
       Log.warning(
-          '🎤 startRecording called but already recording (state: $_state, actual: $isActuallyRecording)');
+        '🎤 startRecording called but already recording (state: $_state, actual: $isActuallyRecording)',
+      );
       throw AudioRecordingException(
         'Ya hay una grabación en curso',
         reason: RecordingFailureReason.alreadyRecording,
@@ -87,12 +87,16 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
       // 4. Start recording
       await _recorder.start(
         const RecordConfig(
-          encoder: AudioEncoder.aacLc, // AAC format, compatible with iOS/Android
+          encoder:
+              AudioEncoder.aacLc, // AAC format, compatible with iOS/Android
           bitRate: 128000,
           sampleRate: 44100,
         ),
         path: _currentRecordingPath!,
       );
+
+      // Keep screen on while recording
+      await WakelockPlus.enable();
 
       _state = RecordingState.recording;
       Log.info('🎤 Recording started successfully');
@@ -101,6 +105,7 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
       Log.error('🎤 Error starting recording: $e');
       _state = RecordingState.idle;
       _currentRecordingPath = null;
+      await WakelockPlus.disable(); // Ensure screen lock is released on error
 
       if (e is AudioRecordingException) {
         rethrow;
@@ -116,7 +121,9 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
   @override
   Future<void> pauseRecording() async {
     if (_state != RecordingState.recording) {
-      Log.warning('🎤 pauseRecording called but not recording (state: $_state)');
+      Log.warning(
+        '🎤 pauseRecording called but not recording (state: $_state)',
+      );
       throw AudioRecordingException(
         'No hay grabación activa para pausar',
         reason: RecordingFailureReason.notRecording,
@@ -139,8 +146,7 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
   @override
   Future<void> resumeRecording() async {
     if (_state != RecordingState.paused) {
-      Log.warning(
-          '🎤 resumeRecording called but not paused (state: $_state)');
+      Log.warning('🎤 resumeRecording called but not paused (state: $_state)');
       throw AudioRecordingException(
         'No hay grabación pausada para reanudar',
         reason: RecordingFailureReason.notPaused,
@@ -169,13 +175,17 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
 
     if (_state == RecordingState.idle && !isActuallyRecording && !isPaused) {
       Log.warning(
-          '🎤 stopRecording called but not recording (state: $_state, actual: $isActuallyRecording)');
+        '🎤 stopRecording called but not recording (state: $_state, actual: $isActuallyRecording)',
+      );
       return null;
     }
 
     try {
       // 1. Stop the recorder
       final path = await _recorder.stop();
+
+      // Release screen lock
+      await WakelockPlus.disable();
 
       _state = RecordingState.idle;
 
@@ -239,6 +249,7 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
 
     try {
       await _recorder.stop();
+      await WakelockPlus.disable(); // Release screen lock
       _state = RecordingState.idle;
 
       // Delete the temp file if it exists
@@ -247,7 +258,8 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
         if (await file.exists()) {
           await file.delete();
           Log.info(
-              '🎤 Cancelled recording and deleted temp file: $_currentRecordingPath');
+            '🎤 Cancelled recording and deleted temp file: $_currentRecordingPath',
+          );
         }
         _currentRecordingPath = null;
       }
@@ -326,6 +338,7 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
       if (_state != RecordingState.idle || isActuallyRecording || isPaused) {
         Log.info('🎤 ensureStopped: Cleaning up orphaned recording state');
         await _recorder.stop();
+        await WakelockPlus.disable(); // Release screen lock
         _state = RecordingState.idle;
 
         // Delete any orphaned temp file

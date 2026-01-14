@@ -805,58 +805,48 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
   Widget _buildContextSelector() {
     return Column(
       children: [
-        // Chips row
+        // Context indicators row
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _buildContextChip(
+            _buildContextIndicator(
               icon: Icons.description_outlined,
               label: 'Nota médica',
             ),
-            const SizedBox(width: DocsoftSpacing.sm),
-            _buildContextChip(icon: Icons.forum_outlined, label: 'Entrevista'),
+            Container(
+              height: 12,
+              width: 1,
+              margin: const EdgeInsets.symmetric(horizontal: DocsoftSpacing.md),
+              color: DocsoftColors.border,
+            ),
+            _buildContextIndicator(
+              icon: Icons.forum_outlined,
+              label: 'Entrevista',
+            ),
           ],
         ),
         const SizedBox(height: DocsoftSpacing.sm),
-
-        // Helper text
-        Text(
-          'LA IA DETECTA EL CONTEXTO AUTOMÁTICAMENTE',
-          style: DocsoftTextStyles.caption.copyWith(
-            color: DocsoftColors.textTertiary,
-            fontSize: 11,
-            letterSpacing: 0.5,
-          ),
-        ),
       ],
     );
   }
 
-  Widget _buildContextChip({required IconData icon, required String label}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: DocsoftSpacing.md,
-        vertical: DocsoftSpacing.sm,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(DocsoftRadii.full),
-        border: Border.all(color: DocsoftColors.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: DocsoftColors.primary),
-          const SizedBox(width: DocsoftSpacing.xs),
-          Text(
-            label,
-            style: DocsoftTextStyles.caption.copyWith(
-              color: DocsoftColors.textPrimary,
-              fontWeight: FontWeight.w500,
-            ),
+  Widget _buildContextIndicator({
+    required IconData icon,
+    required String label,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: DocsoftColors.textSecondary),
+        const SizedBox(width: DocsoftSpacing.xs),
+        Text(
+          label,
+          style: DocsoftTextStyles.caption.copyWith(
+            color: DocsoftColors.textSecondary,
+            fontWeight: FontWeight.w500,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
