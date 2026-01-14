@@ -274,8 +274,8 @@ class PatientDetailPage extends StatelessWidget {
           // Primary action: New voice note
           DocsoftPrimaryButton(
             onPressed: onNewVoiceNote,
-            label: 'Nueva nota de voz',
-            icon: Icons.mic,
+            label: 'Crear nueva nota',
+            icon: Icons.note_add,
             fullWidth: true,
           ),
           const SizedBox(height: DocsoftSpacing.sm),

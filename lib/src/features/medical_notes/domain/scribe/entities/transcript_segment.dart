@@ -1,0 +1,30 @@
+import 'package:equatable/equatable.dart';
+
+/// A single segment of transcribed speech with speaker identification
+/// and timing information.
+class TranscriptSegment extends Equatable {
+  const TranscriptSegment({
+    required this.text,
+    required this.speaker,
+    required this.startMs,
+    required this.endMs,
+  });
+
+  /// The transcribed text content for this segment.
+  final String text;
+
+  /// Speaker identifier (e.g., "Doctor", "Patient", "SPEAKER_01").
+  final String speaker;
+
+  /// Start time of this segment in milliseconds from audio start.
+  final int startMs;
+
+  /// End time of this segment in milliseconds from audio start.
+  final int endMs;
+
+  /// Duration of this segment in milliseconds.
+  int get durationMs => endMs - startMs;
+
+  @override
+  List<Object?> get props => [text, speaker, startMs, endMs];
+}

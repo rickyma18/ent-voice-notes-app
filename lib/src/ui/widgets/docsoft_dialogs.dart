@@ -123,6 +123,44 @@ class DocsoftDialogs {
     );
   }
 
+  /// Confirma salir de una pantalla con cambios sin guardar.
+  ///
+  /// Previene pérdida accidental de información en pantallas críticas
+  /// (wizard, dictado, edición de nota).
+  ///
+  /// Returns:
+  /// - true: salir sin guardar (permite pop)
+  /// - false: continuar editando (cancela pop)
+  /// - null: dismissed
+  ///
+  /// Uso típico con PopScope:
+  /// ```dart
+  /// PopScope(
+  ///   canPop: !_hasUnsavedChanges,
+  ///   onPopInvoked: (didPop) async {
+  ///     if (didPop) return;
+  ///     final shouldExit = await DocsoftDialogs.confirmExitWithoutSaving(context);
+  ///     if (shouldExit == true && context.mounted) {
+  ///       Navigator.of(context).pop();
+  ///     }
+  ///   },
+  ///   child: Scaffold(...),
+  /// )
+  /// ```
+  static Future<bool?> confirmExitWithoutSaving(BuildContext context) {
+    return _showDialog(
+      context: context,
+      icon: Icons.warning_amber_rounded,
+      title: '¿Salir sin guardar?',
+      message:
+          'Tienes cambios sin guardar. '
+          'Si sales ahora, esta información se perderá.',
+      confirmLabel: 'Salir sin guardar',
+      cancelLabel: 'Continuar editando',
+      variant: DocsoftDialogVariant.warning,
+    );
+  }
+
   /// Internal method to show the dialog with animation.
   static Future<bool?> _showDialog({
     required BuildContext context,

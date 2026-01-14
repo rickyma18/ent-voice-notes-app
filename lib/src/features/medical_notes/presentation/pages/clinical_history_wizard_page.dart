@@ -1209,6 +1209,65 @@ class _ClinicalHistoryWizardPageState
     return hasDiagnostico || hasMotivo || hasPadecimiento;
   }
 
+  /// Checks if there are unsaved changes in the wizard.
+  ///
+  /// Returns true if any field has content that hasn't been saved yet.
+  bool get _hasUnsavedChanges {
+    // If we're editing an existing note, we can't easily detect changes
+    // without comparing to original values. For safety, assume changes exist.
+    if (widget.isEditMode) {
+      // Could implement deep comparison with widget.existingNote if needed
+      return true;
+    }
+
+    // For new notes, check if any field has content
+    final hasMotivo = _motivoController.text.trim().isNotEmpty;
+    final hasAntHeredofam = _antecedentesHeredofamiliaresController.text
+        .trim()
+        .isNotEmpty;
+    final hasAntNoPatol = _antecedentesNoPatologicosController.text
+        .trim()
+        .isNotEmpty;
+    final hasAntPatol = _antecedentesPatologicosController.text
+        .trim()
+        .isNotEmpty;
+    final hasPadecimiento = _padecimientoActualController.text
+        .trim()
+        .isNotEmpty;
+    final hasDiagnostico = _diagnosticoController.text.trim().isNotEmpty;
+    final hasPlan = _planController.text.trim().isNotEmpty;
+
+    // Check ORL controllers
+    final hasOrlContent = _orlControllers.values.any(
+      (controller) => controller.text.trim().isNotEmpty,
+    );
+
+    // Check vital signs
+    final hasVitals =
+        _weightController.text.trim().isNotEmpty ||
+        _heightController.text.trim().isNotEmpty ||
+        _bpSystolicController.text.trim().isNotEmpty ||
+        _bpDiastolicController.text.trim().isNotEmpty ||
+        _heartRateController.text.trim().isNotEmpty ||
+        _respiratoryRateController.text.trim().isNotEmpty ||
+        _temperatureController.text.trim().isNotEmpty ||
+        _spo2Controller.text.trim().isNotEmpty;
+
+    // Check attachments
+    final hasAttachments = _attachments.isNotEmpty;
+
+    return hasMotivo ||
+        hasAntHeredofam ||
+        hasAntNoPatol ||
+        hasAntPatol ||
+        hasPadecimiento ||
+        hasDiagnostico ||
+        hasPlan ||
+        hasOrlContent ||
+        hasVitals ||
+        hasAttachments;
+  }
+
   /// Generates treatment plan suggestion using AI.
   ///
   /// Uses context from: diagnostico (required), motivo, padecimiento, exploración ORL.
@@ -2036,207 +2095,226 @@ class _ClinicalHistoryWizardPageState
   Widget build(BuildContext context) {
     final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
-    return Scaffold(
-      backgroundColor: DocsoftColors.background,
-      resizeToAvoidBottomInset: true,
-      // Footer in bottomNavigationBar - takes its own layout space, never overlays
-      bottomNavigationBar: AnimatedPadding(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: WizardNavigationButtons(
-              currentStep: _currentStep,
-              totalSteps: _totalSteps,
-              onBack: _previousStep,
-              onNext: _nextStep,
-              onSave: () => _saveNote(),
-              isSaving: _isSaving,
-              canSaveAsDraft: true,
-              onSaveAsDraft: () => _saveNote(asDraft: true),
-              compact: keyboardOpen,
+    return PopScope(
+      canPop: !_hasUnsavedChanges,
+      onPopInvoked: (didPop) async {
+        // If pop already happened (no unsaved changes), do nothing
+        if (didPop) return;
+
+        // Show confirmation dialog
+        final shouldExit = await DocsoftDialogs.confirmExitWithoutSaving(
+          context,
+        );
+
+        // If user confirmed exit and context is still mounted, pop manually
+        if (shouldExit == true && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: DocsoftColors.background,
+        resizeToAvoidBottomInset: true,
+        // Footer in bottomNavigationBar - takes its own layout space, never overlays
+        bottomNavigationBar: AnimatedPadding(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: WizardNavigationButtons(
+                currentStep: _currentStep,
+                totalSteps: _totalSteps,
+                onBack: _previousStep,
+                onNext: _nextStep,
+                onSave: () => _saveNote(),
+                isSaving: _isSaving,
+                canSaveAsDraft: true,
+                onSaveAsDraft: () => _saveNote(asDraft: true),
+                compact: keyboardOpen,
+              ),
             ),
           ),
         ),
-      ),
-      body: Stack(
-        children: [
-          SafeArea(
-            bottom: false,
-            child: Column(
-              children: [
-                // Custom Header (replaces AppBar)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    DocsoftSpacing.screenPadding,
-                    DocsoftSpacing.screenPadding,
-                    DocsoftSpacing.screenPadding,
-                    DocsoftSpacing.sm,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          DocsoftBackButton(
-                            onTap: () => Navigator.of(context).maybePop(),
-                            backgroundColor: DocsoftColors.primaryMuted,
-                            iconColor: DocsoftColors.primary,
-                          ),
-                          const SizedBox(width: DocsoftSpacing.sm),
-                          Expanded(
-                            child: Text(
-                              widget.isEditMode
-                                  ? 'Editar historia clínica'
-                                  : 'Nueva historia clínica',
-                              style: DocsoftTextStyles.appBarTitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          // Show static icon only if NO suggestions are active and NO AI chip possible
-                          if (!_showAiChip)
-                            Padding(
-                              padding: const EdgeInsets.only(
-                                left: DocsoftSpacing.sm,
-                              ),
-                              child: Icon(
-                                Icons.auto_awesome_outlined,
-                                color: DocsoftColors.textTertiary,
-                                size: 20,
-                              ),
-                            ),
-                        ],
-                      ),
-                      // Second Row for Chip
-                      if (_showAiChip) ...[
-                        const SizedBox(height: DocsoftSpacing.xs),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [_buildAIChip()],
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-
-                if (_isLoadingPatient)
-                  const Expanded(
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else
-                  Expanded(
+        body: Stack(
+          children: [
+            SafeArea(
+              bottom: false,
+              child: Column(
+                children: [
+                  // Custom Header (replaces AppBar)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      DocsoftSpacing.screenPadding,
+                      DocsoftSpacing.screenPadding,
+                      DocsoftSpacing.screenPadding,
+                      DocsoftSpacing.sm,
+                    ),
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // Patient header - collapses when keyboard is open
-                        ClipRect(
-                          child: AnimatedSize(
-                            duration: const Duration(milliseconds: 180),
-                            curve: Curves.easeOut,
-                            child: keyboardOpen
-                                ? const SizedBox.shrink()
-                                : Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      16,
-                                      8,
-                                      16,
-                                      0,
-                                    ),
-                                    child: _buildPatientInfo(),
-                                  ),
-                          ),
+                        Row(
+                          children: [
+                            DocsoftBackButton(
+                              onTap: () => Navigator.of(context).maybePop(),
+                              backgroundColor: DocsoftColors.primaryMuted,
+                              iconColor: DocsoftColors.primary,
+                            ),
+                            const SizedBox(width: DocsoftSpacing.sm),
+                            Expanded(
+                              child: Text(
+                                widget.isEditMode
+                                    ? 'Editar historia clínica'
+                                    : 'Nueva historia clínica',
+                                style: DocsoftTextStyles.appBarTitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            // Show static icon only if NO suggestions are active and NO AI chip possible
+                            if (!_showAiChip)
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  left: DocsoftSpacing.sm,
+                                ),
+                                child: Icon(
+                                  Icons.auto_awesome_outlined,
+                                  color: DocsoftColors.textTertiary,
+                                  size: 20,
+                                ),
+                              ),
+                          ],
                         ),
-
-                        // Progress indicator - Stitch style
-                        if (!keyboardOpen)
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(
-                              DocsoftSpacing.md,
-                              DocsoftSpacing.sm,
-                              DocsoftSpacing.md,
-                              0,
-                            ),
-                            child: DocsoftWizardProgress(
-                              currentStep: _currentStep,
-                              totalSteps: _totalSteps,
-                            ),
-                          )
-                        else
-                          CompactStepIndicator(
-                            currentStep: _currentStep,
-                            totalSteps: _totalSteps,
-                            stepTitle: _stepTitles[_currentStep],
+                        // Second Row for Chip
+                        if (_showAiChip) ...[
+                          const SizedBox(height: DocsoftSpacing.xs),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [_buildAIChip()],
                           ),
-
-                        // AI dictation banner - Stitch style with states
-                        if (!keyboardOpen &&
-                            _dictationStatus == DictationStatus.available &&
-                            !_bannerDismissed)
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(
-                              DocsoftSpacing.md,
-                              DocsoftSpacing.md,
-                              DocsoftSpacing.md,
-                              0,
-                            ),
-                            child: DocsoftDictationBanner(
-                              status: _dictationStatus,
-                              isGenerating: _isGeneratingSuggestions,
-                              onGenerate: _generateAISuggestions,
-                              onDismiss: () {
-                                setState(() {
-                                  _bannerDismissed = true;
-                                  _dictationStatus = DictationStatus.none;
-                                });
-                              },
-                            ),
-                          ),
-
-                        // Step content (PageView inside Expanded)
-                        Expanded(
-                          child: Form(
-                            key: _formKey,
-                            child: PageView(
-                              controller: _pageController,
-                              physics: const NeverScrollableScrollPhysics(),
-                              onPageChanged: (page) {
-                                ScaffoldMessenger.of(context).clearSnackBars();
-                                setState(() {
-                                  _currentStep = page;
-                                });
-                              },
-                              children: [
-                                _buildStep0MotivoConsulta(),
-                                _buildStep1AntecedentesHeredofamiliares(),
-                                _buildStep2AntecedentesNoPatologicos(),
-                                _buildStep3AntecedentesPatologicos(),
-                                _buildStep4PadecimientoActual(),
-                                _buildStep5ExploracionOrl(),
-                                _buildStep7Attachments(),
-                                _buildStep6DiagnosticoPlan(),
-                              ],
-                            ),
-                          ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
-              ],
+
+                  if (_isLoadingPatient)
+                    const Expanded(
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else
+                    Expanded(
+                      child: Column(
+                        children: [
+                          // Patient header - collapses when keyboard is open
+                          ClipRect(
+                            child: AnimatedSize(
+                              duration: const Duration(milliseconds: 180),
+                              curve: Curves.easeOut,
+                              child: keyboardOpen
+                                  ? const SizedBox.shrink()
+                                  : Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        16,
+                                        8,
+                                        16,
+                                        0,
+                                      ),
+                                      child: _buildPatientInfo(),
+                                    ),
+                            ),
+                          ),
+
+                          // Progress indicator - Stitch style
+                          if (!keyboardOpen)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                DocsoftSpacing.md,
+                                DocsoftSpacing.sm,
+                                DocsoftSpacing.md,
+                                0,
+                              ),
+                              child: DocsoftWizardProgress(
+                                currentStep: _currentStep,
+                                totalSteps: _totalSteps,
+                              ),
+                            )
+                          else
+                            CompactStepIndicator(
+                              currentStep: _currentStep,
+                              totalSteps: _totalSteps,
+                              stepTitle: _stepTitles[_currentStep],
+                            ),
+
+                          // AI dictation banner - Stitch style with states
+                          if (!keyboardOpen &&
+                              _dictationStatus == DictationStatus.available &&
+                              !_bannerDismissed)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                DocsoftSpacing.md,
+                                DocsoftSpacing.md,
+                                DocsoftSpacing.md,
+                                0,
+                              ),
+                              child: DocsoftDictationBanner(
+                                status: _dictationStatus,
+                                isGenerating: _isGeneratingSuggestions,
+                                onGenerate: _generateAISuggestions,
+                                onDismiss: () {
+                                  setState(() {
+                                    _bannerDismissed = true;
+                                    _dictationStatus = DictationStatus.none;
+                                  });
+                                },
+                              ),
+                            ),
+
+                          // Step content (PageView inside Expanded)
+                          Expanded(
+                            child: Form(
+                              key: _formKey,
+                              child: PageView(
+                                controller: _pageController,
+                                physics: const NeverScrollableScrollPhysics(),
+                                onPageChanged: (page) {
+                                  ScaffoldMessenger.of(
+                                    context,
+                                  ).clearSnackBars();
+                                  setState(() {
+                                    _currentStep = page;
+                                  });
+                                },
+                                children: [
+                                  _buildStep0MotivoConsulta(),
+                                  _buildStep1AntecedentesHeredofamiliares(),
+                                  _buildStep2AntecedentesNoPatologicos(),
+                                  _buildStep3AntecedentesPatologicos(),
+                                  _buildStep4PadecimientoActual(),
+                                  _buildStep5ExploracionOrl(),
+                                  _buildStep7Attachments(),
+                                  _buildStep6DiagnosticoPlan(),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-          DocsoftAiGeneratingOverlay(
-            visible: _isGeneratingSuggestions,
-            allowInteraction: false,
-          ),
-        ],
-      ),
-    );
+            DocsoftAiGeneratingOverlay(
+              visible: _isGeneratingSuggestions,
+              allowInteraction: false,
+            ),
+          ],
+        ),
+      ), // Scaffold
+    ); // PopScope
   }
 
   bool get _hasActiveSuggestions =>
