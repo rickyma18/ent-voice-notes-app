@@ -1,7 +1,7 @@
 import '../../../../../core/base/failure.dart';
 import '../../../../../core/base/repository.dart';
 import '../../../../../core/base/result.dart';
-import '../entities/clinical_facts_dto.dart';
+import '../../../data/scribe/dtos/clinical_facts_dto.dart';
 
 /// Template configuration for SOAP note composition.
 class NoteTemplate {

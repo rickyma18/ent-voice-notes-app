@@ -1,7 +1,7 @@
 import '../../../../../core/base/failure.dart';
 import '../../../../../core/base/repository.dart';
 import '../../../../../core/base/result.dart';
-import '../entities/clinical_facts_dto.dart';
+import '../../../data/scribe/dtos/clinical_facts_dto.dart';
 import '../entities/transcript_with_speakers.dart';
 
 /// Context information to help guide clinical fact extraction.

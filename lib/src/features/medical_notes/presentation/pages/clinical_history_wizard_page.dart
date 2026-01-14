@@ -151,6 +151,45 @@ class _ClinicalHistoryWizardPageState
   // Upload state
   bool _isUploading = false;
 
+  // Bootstrap guard: prevents PopScope from triggering during initialization
+  bool _isWizardReady = false;
+
+  // Wizard snapshot for change detection
+  // Captures initial state after data load to detect real changes
+  String? _initialWizardSignature;
+
+  /// Generates a signature of the current wizard state.
+  ///
+  /// Used to detect if user has made changes since initial load.
+  /// Includes all relevant fields: text controllers, ORL, vitals, attachments.
+  String get _currentWizardSignature {
+    final parts = <String>[
+      _motivoController.text.trim(),
+      _antecedentesHeredofamiliaresController.text.trim(),
+      _antecedentesNoPatologicosController.text.trim(),
+      _antecedentesPatologicosController.text.trim(),
+      _padecimientoActualController.text.trim(),
+      _diagnosticoController.text.trim(),
+      _planController.text.trim(),
+      // ORL fields
+      ..._orlControllers.values.map((c) => c.text.trim()),
+      // Vital signs
+      _weightController.text.trim(),
+      _heightController.text.trim(),
+      _bpSystolicController.text.trim(),
+      _bpDiastolicController.text.trim(),
+      _heartRateController.text.trim(),
+      _respiratoryRateController.text.trim(),
+      _temperatureController.text.trim(),
+      _spo2Controller.text.trim(),
+      _prognosisController.text.trim(),
+      // Attachments (just count and IDs for signature)
+      _attachments.length.toString(),
+      ..._attachments.map((a) => a.id),
+    ];
+    return parts.join('|');
+  }
+
   // Step definitions
   static const List<String> _stepTitles = [
     'Motivo de consulta',
@@ -236,6 +275,20 @@ class _ClinicalHistoryWizardPageState
         _parseAndApplyVitalSignsFromTranscript(_rawTranscript!);
       });
     }
+
+    // Capture initial wizard state for change detection
+    // Must be done after all prefill operations complete
+    // For new notes: captures empty state (or transcript-filled vitals)
+    // For edit mode: captures loaded note data
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Wait one more frame to ensure vital signs parsing completes
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        setState(() {
+          _initialWizardSignature = _currentWizardSignature;
+          _isWizardReady = true; // Enable PopScope guards
+        });
+      });
+    });
 
     // Load patient info
     _loadPatient();
@@ -1211,61 +1264,13 @@ class _ClinicalHistoryWizardPageState
 
   /// Checks if there are unsaved changes in the wizard.
   ///
-  /// Returns true if any field has content that hasn't been saved yet.
+  /// Compares current wizard state against initial snapshot.
+  /// Works for both new notes and edit mode.
   bool get _hasUnsavedChanges {
-    // If we're editing an existing note, we can't easily detect changes
-    // without comparing to original values. For safety, assume changes exist.
-    if (widget.isEditMode) {
-      // Could implement deep comparison with widget.existingNote if needed
-      return true;
-    }
+    // During bootstrap, no baseline yet - assume no changes
+    if (_initialWizardSignature == null) return false;
 
-    // For new notes, check if any field has content
-    final hasMotivo = _motivoController.text.trim().isNotEmpty;
-    final hasAntHeredofam = _antecedentesHeredofamiliaresController.text
-        .trim()
-        .isNotEmpty;
-    final hasAntNoPatol = _antecedentesNoPatologicosController.text
-        .trim()
-        .isNotEmpty;
-    final hasAntPatol = _antecedentesPatologicosController.text
-        .trim()
-        .isNotEmpty;
-    final hasPadecimiento = _padecimientoActualController.text
-        .trim()
-        .isNotEmpty;
-    final hasDiagnostico = _diagnosticoController.text.trim().isNotEmpty;
-    final hasPlan = _planController.text.trim().isNotEmpty;
-
-    // Check ORL controllers
-    final hasOrlContent = _orlControllers.values.any(
-      (controller) => controller.text.trim().isNotEmpty,
-    );
-
-    // Check vital signs
-    final hasVitals =
-        _weightController.text.trim().isNotEmpty ||
-        _heightController.text.trim().isNotEmpty ||
-        _bpSystolicController.text.trim().isNotEmpty ||
-        _bpDiastolicController.text.trim().isNotEmpty ||
-        _heartRateController.text.trim().isNotEmpty ||
-        _respiratoryRateController.text.trim().isNotEmpty ||
-        _temperatureController.text.trim().isNotEmpty ||
-        _spo2Controller.text.trim().isNotEmpty;
-
-    // Check attachments
-    final hasAttachments = _attachments.isNotEmpty;
-
-    return hasMotivo ||
-        hasAntHeredofam ||
-        hasAntNoPatol ||
-        hasAntPatol ||
-        hasPadecimiento ||
-        hasDiagnostico ||
-        hasPlan ||
-        hasOrlContent ||
-        hasVitals ||
-        hasAttachments;
+    return _currentWizardSignature != _initialWizardSignature;
   }
 
   /// Generates treatment plan suggestion using AI.
@@ -2096,12 +2101,17 @@ class _ClinicalHistoryWizardPageState
     final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
     return PopScope(
-      canPop: !_hasUnsavedChanges,
+      // Bootstrap guard: block pops until wizard is fully initialized
+      // This prevents auto-close during data load/prefill
+      canPop: _isWizardReady && !_hasUnsavedChanges,
       onPopInvoked: (didPop) async {
-        // If pop already happened (no unsaved changes), do nothing
+        // If pop already happened (wizard ready + no changes), do nothing
         if (didPop) return;
 
-        // Show confirmation dialog
+        // During bootstrap, ignore back presses to prevent flicker/auto-close
+        if (!_isWizardReady) return;
+
+        // Wizard is ready and has unsaved changes - show confirmation dialog
         final shouldExit = await DocsoftDialogs.confirmExitWithoutSaving(
           context,
         );

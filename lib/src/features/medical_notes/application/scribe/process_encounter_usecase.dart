@@ -4,7 +4,7 @@ import 'package:equatable/equatable.dart';
 
 import '../../../../core/base/failure.dart';
 import '../../../../core/base/result.dart';
-import '../../domain/scribe/entities/clinical_facts_dto.dart';
+import '../../data/scribe/dtos/clinical_facts_dto.dart';
 import '../../domain/scribe/entities/transcript_with_speakers.dart';
 import '../../domain/scribe/repositories/encounter_extractor_repository.dart';
 import '../../domain/scribe/repositories/note_composer_repository.dart';

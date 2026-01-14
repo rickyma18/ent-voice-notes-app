@@ -1,7 +1,6 @@
 // Medical Scribe Domain Layer Exports
 
 // Entities
-export 'entities/clinical_facts_dto.dart';
 export 'entities/evidence.dart';
 export 'entities/transcript_segment.dart';
 export 'entities/transcript_with_speakers.dart';
