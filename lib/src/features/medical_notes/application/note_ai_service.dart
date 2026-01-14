@@ -69,9 +69,7 @@ abstract class NoteAIService {
   /// }
   ///
   /// Claude luego implementará el modelo LLM que rellene esto.
-  Future<Map<String, String>> suggestStructuredFields(
-    String rawTranscript,
-  );
+  Future<Map<String, String>> suggestStructuredFields(String rawTranscript);
 
   /// Genera campos estructurados usando schema v1.
   ///
@@ -88,9 +86,7 @@ abstract class NoteAIService {
   /// - Incluye retry automático si JSON es inválido
   ///
   /// Ver structured_fields_schema_v1.dart para el schema completo.
-  Future<Map<String, dynamic>> suggestStructuredFieldsV2(
-    String rawTranscript,
-  );
+  Future<Map<String, dynamic>> suggestStructuredFieldsV2(String rawTranscript);
 
   /// Genera sugerencia de plan de tratamiento basándose en contexto clínico.
   ///
@@ -111,6 +107,18 @@ abstract class NoteAIService {
     String? padecimientoActual,
     String? exploracionOrl,
   });
+
+  /// Genera campos estructurados para nota quirúrgica (Surgical Wizard).
+  ///
+  /// JSON estricto con claves específicas para cirugía:
+  /// - procedimientoRealizado
+  /// - diagnosticoPreoperatorio
+  /// - tecnicaQuirurgica
+  /// - hallazgosIntraoperatorios
+  /// - complicaciones
+  /// - diagnosticoPostoperatorio
+  /// - planPostoperatorio
+  Future<Map<String, String>> suggestSurgicalFields(String rawTranscript);
 }
 
 /// Implementación de prueba (stub).
@@ -198,5 +206,21 @@ Plan de tratamiento simulado para: $diagnostico
 
 (Sugerencia IA: revisar contra guías clínicas y criterio médico)
 ''';
+  }
+
+  @override
+  Future<Map<String, String>> suggestSurgicalFields(
+    String rawTranscript,
+  ) async {
+    await Future.delayed(const Duration(milliseconds: 600));
+    return {
+      'procedimientoRealizado': 'Procedimiento simulado',
+      'diagnosticoPreoperatorio': 'Diagnóstico preop simulado',
+      'tecnicaQuirurgica': 'Técnica quirúrgica simulada...',
+      'hallazgosIntraoperatorios': 'Hallazgos simulados',
+      'complicaciones': '',
+      'diagnosticoPostoperatorio': 'Diagnóstico postop simulado',
+      'planPostoperatorio': 'Plan postop simulado',
+    };
   }
 }

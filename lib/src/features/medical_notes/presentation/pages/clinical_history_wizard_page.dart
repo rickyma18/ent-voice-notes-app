@@ -940,7 +940,7 @@ class _ClinicalHistoryWizardPageState
       // Use isEffectivelyEmpty to include placeholders as "empty"
       final shouldApply =
           mode == ApplyMode.replace ||
-          (mode == ApplyMode.onlyEmpty && section.isEffectivelyEmpty);
+          (mode == ApplyMode.onlyEmpty && _isEffectivelyEmptyNow(section.id));
 
       if (shouldApply) {
         _setControllerValue(section.id, section.suggestion);
@@ -2275,9 +2275,25 @@ class _ClinicalHistoryWizardPageState
   }
 
   void _reopenSuggestionsSheet() {
-    if (_lastSuggestionSections != null && _lastLegacySuggestions != null) {
-      _showSuggestionsSheet(_lastSuggestionSections!, _lastLegacySuggestions!);
-    }
+    if (_structuredFieldsV1 == null) return;
+
+    // Rebuild sections with CURRENT controller values
+    final rebuiltAll = _buildSuggestionsFromStructuredV1(_structuredFieldsV1!);
+
+    // If last sheet was step-filtered, preserve that scope
+    final lastIds = _lastSuggestionSections?.map((s) => s.id).toSet();
+    final rebuilt = (lastIds == null || lastIds.isEmpty)
+        ? rebuiltAll
+        : rebuiltAll
+              .where((s) => lastIds.contains(s.id))
+              .toList(growable: false);
+
+    final legacy = LegacyFieldsAdapter.toLegacy(_structuredFieldsV1!);
+
+    _lastSuggestionSections = rebuilt;
+    _lastLegacySuggestions = legacy;
+
+    _showSuggestionsSheet(rebuilt, legacy);
   }
 
   // ---------------------------------------------------------------------------
@@ -2301,6 +2317,46 @@ class _ClinicalHistoryWizardPageState
         );
       },
     );
+  }
+
+  String _currentValueForSectionId(String sectionId) {
+    switch (sectionId) {
+      case 'motivoConsulta':
+        return _motivoController.text;
+      case 'heredofamiliares':
+        return _antecedentesHeredofamiliaresController.text;
+      case 'noPatologicos':
+        return _antecedentesNoPatologicosController.text;
+      case 'patologicos':
+        return _antecedentesPatologicosController.text;
+      case 'padecimientoActual':
+        return _padecimientoActualController.text;
+      case 'otoscopia':
+        return _orlControllers['otoscopia']?.text ?? '';
+      case 'rinoscopia':
+        return _orlControllers['rinoscopia']?.text ?? '';
+      case 'orofaringe':
+        return _orlControllers['orofaringe']?.text ?? '';
+      case 'cuello':
+        return _orlControllers['cuello']?.text ?? '';
+      case 'laringoscopia':
+        return _orlControllers['laringoscopia']?.text ?? '';
+      case 'diagnostico':
+        return _diagnosticoController.text;
+      case 'planTratamiento':
+        return _planController.text;
+      default:
+        return '';
+    }
+  }
+
+  bool _isEffectivelyEmptyNow(String sectionId) {
+    final txt = _currentValueForSectionId(sectionId).trim();
+    if (txt.isEmpty) return true;
+    // Si quieres respetar placeholders como “Niega DM”, usa tu misma lógica
+    // (puedes extraerla a un util compartido o duplicar la regla aquí)
+    if (txt.length > 25) return false;
+    return AISuggestionSection.isPlaceholderContent(txt.toLowerCase());
   }
 
   // Step 0: Motivo de consulta

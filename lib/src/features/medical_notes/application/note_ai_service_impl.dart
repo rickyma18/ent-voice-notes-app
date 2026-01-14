@@ -34,9 +34,9 @@ class NoteAIServiceImpl implements NoteAIService {
     required OpenAIClient openAIClient,
     MedicalLexiconLoader? lexiconLoader,
     bool enablePhoneticMedicationMatching = false,
-  })  : _openAIClient = openAIClient,
-        _lexiconLoader = lexiconLoader ?? MedicalLexiconLoader(),
-        _enablePhoneticMedicationMatching = enablePhoneticMedicationMatching {
+  }) : _openAIClient = openAIClient,
+       _lexiconLoader = lexiconLoader ?? MedicalLexiconLoader(),
+       _enablePhoneticMedicationMatching = enablePhoneticMedicationMatching {
     // A) Log Phase 1.5 status at construction time
     Log.info(
       '🔧 Phase 1.5 phonetic medication matching: '
@@ -77,6 +77,16 @@ class NoteAIServiceImpl implements NoteAIService {
     'notaAdicional',
   };
 
+  static const _allowedSurgicalFields = {
+    'procedimientoRealizado',
+    'diagnosticoPreoperatorio',
+    'tecnicaQuirurgica',
+    'hallazgosIntraoperatorios',
+    'complicaciones',
+    'diagnosticoPostoperatorio',
+    'planPostoperatorio',
+  };
+
   @override
   Future<String> transcribeAudio(String filePath) async {
     // ─────────────────────────────────────────────────────────────────────────
@@ -98,9 +108,7 @@ class NoteAIServiceImpl implements NoteAIService {
       // Validate file exists
       final file = File(filePath);
       if (!await file.exists()) {
-        throw NoteAIException(
-          'El archivo de audio no existe: $filePath',
-        );
+        throw NoteAIException('El archivo de audio no existe: $filePath');
       }
 
       // Validate file size (OpenAI limit is 25MB)
@@ -113,9 +121,7 @@ class NoteAIServiceImpl implements NoteAIService {
       }
 
       if (fileSize == 0) {
-        throw NoteAIException(
-          'El archivo de audio está vacío',
-        );
+        throw NoteAIException('El archivo de audio está vacío');
       }
 
       Log.info('🎙️ File validated: $fileSize bytes');
@@ -135,7 +141,9 @@ class NoteAIServiceImpl implements NoteAIService {
 
       while (attempt <= _maxRetries) {
         try {
-          Log.info('🎙️ Whisper API call - attempt ${attempt + 1} of ${_maxRetries + 1}');
+          Log.info(
+            '🎙️ Whisper API call - attempt ${attempt + 1} of ${_maxRetries + 1}',
+          );
 
           rawTranscript = await _openAIClient.transcribeAudio(
             filePath,
@@ -155,7 +163,8 @@ class NoteAIServiceImpl implements NoteAIService {
           // ─────────────────────────────────────────────────────────────────────
           // DETECT RATE LIMIT vs OTHER ERRORS
           // ─────────────────────────────────────────────────────────────────────
-          final isRateLimit = errorMsg.contains('429') ||
+          final isRateLimit =
+              errorMsg.contains('429') ||
               errorMsg.contains('rate limit') ||
               errorMsg.contains('rate_limit') ||
               errorMsg.contains('too many requests') ||
@@ -179,7 +188,9 @@ class NoteAIServiceImpl implements NoteAIService {
           }
 
           // All retries exhausted
-          Log.error('❌ All ${_maxRetries + 1} attempts failed due to rate limit');
+          Log.error(
+            '❌ All ${_maxRetries + 1} attempts failed due to rate limit',
+          );
           break;
         }
       }
@@ -252,9 +263,7 @@ class NoteAIServiceImpl implements NoteAIService {
       rethrow;
     } catch (e) {
       Log.error('🎙️ Error transcribing audio: $e');
-      throw NoteAIException(
-        'Error al transcribir el audio: ${e.toString()}',
-      );
+      throw NoteAIException('Error al transcribir el audio: ${e.toString()}');
     } finally {
       // ─────────────────────────────────────────────────────────────────────────
       // ALWAYS release the lock
@@ -316,6 +325,60 @@ class NoteAIServiceImpl implements NoteAIService {
   }
 
   @override
+  Future<Map<String, String>> suggestSurgicalFields(
+    String rawTranscript,
+  ) async {
+    try {
+      Log.info('🤖 Generating SURGICAL structured fields');
+
+      if (rawTranscript.trim().isEmpty) {
+        throw NoteAIException(
+          'La transcripción está vacía. No se puede generar la nota quirúrgica.',
+        );
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // AUDIT
+      // ─────────────────────────────────────────────────────────────────────────
+      Log.info('📝 [AUDIT][SURGICAL] LENGTH=${rawTranscript.length}');
+      if (!kReleaseMode) {
+        final preview = rawTranscript.length > 150
+            ? '${rawTranscript.substring(0, 150)}...'
+            : rawTranscript;
+        Log.info('📝 [AUDIT][SURGICAL][DEBUG] PREVIEW="$preview"');
+      }
+
+      // Build the LLM prompt SPECIALIZED for SURGERY
+      final prompt = _buildSurgicalFieldsPrompt(rawTranscript);
+
+      // Call GPT-4 API
+      final response = await _openAIClient.generateStructuredFields(prompt);
+
+      // Parse and validate using SURGICAL allowed keys
+      final fields = _parseAndValidateFields(
+        response,
+        allowedKeys: _allowedSurgicalFields,
+      );
+
+      if (fields.containsKey('complicaciones')) {
+        fields['complicaciones'] = _sanitizeComplications(
+          fields['complicaciones'] ?? '',
+        );
+      }
+
+      Log.info('🤖 Generated surgical fields: ${fields.keys.join(", ")}');
+      return fields;
+    } on NoteAIException {
+      rethrow;
+    } catch (e) {
+      Log.error('🤖 Error generating surgical fields: $e');
+      throw NoteAIException(
+        'Error al generar campos quirúrgicos: ${e.toString()}',
+      );
+    }
+  }
+
+  @override
   Future<Map<String, dynamic>> suggestStructuredFieldsV2(
     String rawTranscript,
   ) async {
@@ -341,7 +404,9 @@ class NoteAIServiceImpl implements NoteAIService {
       }
 
       // Build prompts using v2 extraction-only prompt
-      final userPrompt = StructuredFieldsPromptV2.buildUserPrompt(rawTranscript);
+      final userPrompt = StructuredFieldsPromptV2.buildUserPrompt(
+        rawTranscript,
+      );
 
       // ─────────────────────────────────────────────────────────────────────────
       // CALL GPT-4 API WITH STRUCTURED EXTRACTION
@@ -363,14 +428,18 @@ class NoteAIServiceImpl implements NoteAIService {
       }
 
       if (parsed == null) {
-        Log.error('❌ [V2] All parse attempts failed, falling back to empty schema');
+        Log.error(
+          '❌ [V2] All parse attempts failed, falling back to empty schema',
+        );
         parsed = getEmptySchemaV1();
       }
 
       // Validate structure
       final validationErrors = StructuredFieldsParser.validate(parsed);
       if (validationErrors.isNotEmpty) {
-        Log.warning('⚠️ [V2] Validation warnings: ${validationErrors.join(", ")}');
+        Log.warning(
+          '⚠️ [V2] Validation warnings: ${validationErrors.join(", ")}',
+        );
       }
 
       Log.info(
@@ -395,14 +464,17 @@ class NoteAIServiceImpl implements NoteAIService {
     try {
       Log.info('🔧 [V2] Attempting JSON repair retry');
 
-      final errors = <String>['JSON parsing failed or missing required structure'];
+      final errors = <String>[
+        'JSON parsing failed or missing required structure',
+      ];
       final repairPrompt = StructuredFieldsPromptV2.buildRepairPrompt(
         invalidJson,
         errors,
       );
 
       final response = await _openAIClient.generateStructuredFieldsV2(
-        systemPrompt: 'Eres un corrector de JSON. Corrige el JSON para que cumpla el schema.',
+        systemPrompt:
+            'Eres un corrector de JSON. Corrige el JSON para que cumpla el schema.',
         userPrompt: repairPrompt,
         temperature: LLMTemperatureSettings.repair,
       );
@@ -471,6 +543,98 @@ $rawTranscript
 JSON:''';
   }
 
+  /// Builds prompt for SURGICAL NOTE.
+  /// Specialized for extracting surgery-specific fields.
+  String _buildSurgicalFieldsPrompt(String rawTranscript) {
+    return '''
+Asistente experto en documentación quirúrgica ORL.
+Tarea: Extraer un JSON ESTRICTO a partir del dictado. NO inventes datos.
+
+REGLAS ESTRICTAS (anti-alucinación):
+0) EVIDENCIA: Solo llenes un campo si hay evidencia explícita en el dictado.
+   - Si no hay evidencia, usa "".
+   - NO completes con frases estándar ("sepsia", "campos", "hemostasia") si no se dictaron.
+
+1) SEPARAR ACCIÓN vs OBSERVACIÓN (MUY IMPORTANTE):
+   - ACCIÓN (lo que se HIZO) -> tecnicaQuirurgica
+   - OBSERVACIÓN (lo que se VIO) -> hallazgosIntraoperatorios
+   - Si una oración contiene ambas, DIVIDE la información:
+     Ej: "Al elevar colgajo se observa desviación y se reseca cartílago"
+     -> tecnica: "Elevación de colgajo. Resección de cartílago."
+     -> hallazgos: "Desviación septal."
+
+2) PROCEDIMIENTO REALIZADO:
+   - Si se menciona explícitamente, úsalo.
+   - Si NO se menciona, SOLO infiere si es inequívoco por la técnica.
+     En ese caso escribe: "<procedimiento> (inferido)".
+   - Si no es inequívoco, deja "".
+
+3) DIAGNÓSTICO PREOP:
+   - Extrae la razón de la cirugía si se dictó (ej: "Desviación septal obstructiva").
+   - Si no se dictó, "".
+
+4) TÉCNICA QUIRÚRGICA (LO QUE SE HIZO):
+   - Incluye: incisiones, disecciones, resecciones, suturas, cauterio, instrumentación,
+     materiales (Vicryl, Silastic), infiltración/anestésico local, colocación de férula/taponamiento.
+   - Si dice "técnica habitual" o "técnica estándar", transcribir tal cual. NO expandas.
+
+5) HALLAZGOS INTRAOPERATORIOS (LO QUE SE VIO):
+   - Incluye: anatomía normal o alterada, patología, secreción, pólipos, colesteatoma, etc.
+   - Incluye hallazgos negativos relevantes: "sin masas", "todo libre", "no se palpan adenoides".
+   - Sangrado estimado (ej: "50 cc") va aquí si se menciona.
+
+6) COMPLICACIONES:
+   - Solo incidentes/eventos adversos explícitos (desgarro, lesión, sangrado de vaso, bradicardia, etc).
+   - Si el dictado dice "sin complicaciones", "sin incidentes", "sin eventualidades", "sin novedad",
+     "saldo blanco", entonces complicaciones = "" (vacío).
+
+7) DIAGNÓSTICO POSTOP:
+   - SOLO si se dictó explícitamente. NO repitas preop si no se mencionó.
+   - Si no se dictó, "".
+
+8) PLAN POSTOP:
+   - Indicaciones de alta, antibióticos, taponamiento, curación, cita, patología, recuperación, etc.
+   - Si no se dictó, "".
+
+FORMATO:
+- Devuelve SOLO un JSON válido (sin markdown, sin texto extra).
+- Usa exactamente estas claves, TODAS presentes ("" si no hay datos):
+
+{
+  "procedimientoRealizado": "",
+  "diagnosticoPreoperatorio": "",
+  "tecnicaQuirurgica": "",
+  "hallazgosIntraoperatorios": "",
+  "complicaciones": "",
+  "diagnosticoPostoperatorio": "",
+  "planPostoperatorio": ""
+}
+
+TRANSCRIPCIÓN:
+"""
+$rawTranscript
+"""
+''';
+  }
+
+  String _sanitizeComplications(String value) {
+    final v = value.trim().toLowerCase();
+    if (v.isEmpty) return '';
+    const negatives = [
+      'sin complicaciones',
+      'sin incidentes',
+      'sin eventualidades',
+      'sin novedad',
+      'saldo blanco',
+      'ninguna',
+      'no hubo complicaciones',
+    ];
+    for (final n in negatives) {
+      if (v.contains(n)) return '';
+    }
+    return value.trim();
+  }
+
   @override
   Future<String> suggestTreatmentPlan({
     required String diagnostico,
@@ -499,9 +663,7 @@ JSON:''';
       final response = await _openAIClient.generateTreatmentPlan(prompt);
 
       if (response.trim().isEmpty) {
-        throw NoteAIException(
-          'No se pudo generar un plan. Intenta de nuevo.',
-        );
+        throw NoteAIException('No se pudo generar un plan. Intenta de nuevo.');
       }
 
       Log.info('💊 Treatment plan generated: ${response.length} chars');
@@ -571,7 +733,10 @@ PLAN:''';
   ///
   /// Filters out any fields not in [_allowedFields].
   /// Ensures all values are strings.
-  Map<String, String> _parseAndValidateFields(String response) {
+  Map<String, String> _parseAndValidateFields(
+    String response, {
+    Set<String> allowedKeys = _allowedFields,
+  }) {
     try {
       // Clean the response (remove markdown code blocks if present)
       String cleaned = response.trim();
@@ -602,7 +767,7 @@ PLAN:''';
         final value = entry.value;
 
         // Only keep allowed fields
-        if (!_allowedFields.contains(key)) {
+        if (!allowedKeys.contains(key)) {
           Log.warning('🤖 Filtering out invalid field: $key');
           continue;
         }
@@ -628,18 +793,14 @@ PLAN:''';
 /// Encapsulates all OpenAI API communication.
 /// Uses Dio for HTTP requests.
 class OpenAIClient {
-  OpenAIClient({
-    required this.apiKey,
-    Dio? dio,
-  }) : _dio = dio ?? Dio();
+  OpenAIClient({required this.apiKey, Dio? dio}) : _dio = dio ?? Dio();
 
   final String apiKey;
   final Dio _dio;
 
   static const _whisperEndpoint =
       'https://api.openai.com/v1/audio/transcriptions';
-  static const _chatEndpoint =
-      'https://api.openai.com/v1/chat/completions';
+  static const _chatEndpoint = 'https://api.openai.com/v1/chat/completions';
 
   /// Whisper model to use for transcription.
   /// whisper-1 is the latest available model.
@@ -685,9 +846,7 @@ class OpenAIClient {
         _whisperEndpoint,
         data: formData,
         options: Options(
-          headers: {
-            'Authorization': 'Bearer $apiKey',
-          },
+          headers: {'Authorization': 'Bearer $apiKey'},
           validateStatus: (status) => status! < 500,
         ),
       );
@@ -706,9 +865,7 @@ class OpenAIClient {
       } else {
         final errorMsg =
             response.data?['error']?['message'] ?? 'Error desconocido';
-        throw NoteAIException(
-          'Error de OpenAI: $errorMsg',
-        );
+        throw NoteAIException('Error de OpenAI: $errorMsg');
       }
     } on DioException catch (e) {
       if (e.type == DioExceptionType.connectionTimeout ||
@@ -742,15 +899,13 @@ class OpenAIClient {
         'messages': [
           {
             'role': 'system',
-            'content': 'Eres un asistente médico ORL. '
+            'content':
+                'Eres un asistente médico ORL. '
                 'Tu trabajo: 1) Corregir errores STT (medicamentos, dosis), '
                 '2) Estructurar en JSON. Solo corrige con alta certeza. '
                 'Nunca inventes datos.',
           },
-          {
-            'role': 'user',
-            'content': prompt,
-          },
+          {'role': 'user', 'content': prompt},
         ],
         'temperature': 0.3, // Lower temperature for more deterministic output
         'max_tokens': 2000,
@@ -783,9 +938,7 @@ class OpenAIClient {
       } else {
         final errorMsg =
             response.data?['error']?['message'] ?? 'Error desconocido';
-        throw NoteAIException(
-          'Error de OpenAI: $errorMsg',
-        );
+        throw NoteAIException('Error de OpenAI: $errorMsg');
       }
     } on DioException catch (e) {
       if (e.type == DioExceptionType.connectionTimeout ||
@@ -818,14 +971,8 @@ class OpenAIClient {
       final requestBody = {
         'model': _gptModel,
         'messages': [
-          {
-            'role': 'system',
-            'content': systemPrompt,
-          },
-          {
-            'role': 'user',
-            'content': userPrompt,
-          },
+          {'role': 'system', 'content': systemPrompt},
+          {'role': 'user', 'content': userPrompt},
         ],
         'temperature': temperature,
         'max_tokens': 3000, // Increased for larger structured output
@@ -858,9 +1005,7 @@ class OpenAIClient {
       } else {
         final errorMsg =
             response.data?['error']?['message'] ?? 'Error desconocido';
-        throw NoteAIException(
-          'Error de OpenAI: $errorMsg',
-        );
+        throw NoteAIException('Error de OpenAI: $errorMsg');
       }
     } on DioException catch (e) {
       if (e.type == DioExceptionType.connectionTimeout ||
@@ -890,15 +1035,13 @@ class OpenAIClient {
         'messages': [
           {
             'role': 'system',
-            'content': 'Eres un asistente médico ORL. '
+            'content':
+                'Eres un asistente médico ORL. '
                 'Generas planes de tratamiento concisos y seguros. '
                 'Nunca inventes datos del paciente (alergias, peso, edad). '
                 'Usa dosis genéricas si faltan datos.',
           },
-          {
-            'role': 'user',
-            'content': prompt,
-          },
+          {'role': 'user', 'content': prompt},
         ],
         'temperature': 0.4,
         'max_tokens': 500, // Short response for treatment plan
@@ -930,9 +1073,7 @@ class OpenAIClient {
       } else {
         final errorMsg =
             response.data?['error']?['message'] ?? 'Error desconocido';
-        throw NoteAIException(
-          'Error de OpenAI: $errorMsg',
-        );
+        throw NoteAIException('Error de OpenAI: $errorMsg');
       }
     } on DioException catch (e) {
       if (e.type == DioExceptionType.connectionTimeout ||

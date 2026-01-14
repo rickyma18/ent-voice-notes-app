@@ -2,6 +2,7 @@
 
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -11,31 +12,43 @@ import '../../domain/entities/medical_note_entity.dart';
 /// Builds a PDF document from a MedicalNoteEntity.
 ///
 /// The PDF follows a clinical format with:
-/// - Header with patient info, date, and note type
+/// - Premium header with DocSoft branding (logo on page 1, symbol on 2+)
 /// - All clinical sections in order
 /// - Vital signs (if present)
 /// - Surgical data (if applicable)
 /// - Medications, studies, attachments (listed)
-/// - Footer with generation timestamp
+/// - Medical signature block at the end
+/// - Footer with generation timestamp and page numbers
 class MedicalNotePdfBuilder {
   MedicalNotePdfBuilder({
     required this.note,
     this.patientName,
+    this.doctorName,
+    this.doctorLicense,
   });
 
   final MedicalNoteEntity note;
   final String? patientName;
+  final String? doctorName;
+  final String? doctorLicense;
 
   static final _dateFormat = DateFormat('dd/MM/yyyy');
   static final _timeFormat = DateFormat('HH:mm');
   static final _fullDateFormat = DateFormat('dd/MM/yyyy HH:mm');
 
+  // Branding images loaded from assets
+  pw.MemoryImage? _logoHorizontal;
+  pw.MemoryImage? _symbol;
+
   /// Generates the PDF document bytes.
   Future<Uint8List> build() async {
+    // Load branding assets
+    await _loadBrandingAssets();
+
     final pdf = pw.Document(
       title: 'Historia Clínica',
-      author: 'Sistema de Notas Médicas',
-      creator: 'Medical Notes App',
+      author: 'DocSoft - Sistema de Notas Médicas',
+      creator: 'DocSoft Medical Notes',
     );
 
     pdf.addPage(
@@ -51,6 +64,40 @@ class MedicalNotePdfBuilder {
     return pdf.save();
   }
 
+  /// Loads branding assets from rootBundle.
+  /// If loading fails, the PDF will still generate without logos.
+  Future<void> _loadBrandingAssets() async {
+    // Try to load the horizontal logo
+    try {
+      final logoData = await rootBundle.load(
+        'assets/branding/symbol/docsoft_symbol.png',
+      );
+      _logoHorizontal = pw.MemoryImage(logoData.buffer.asUint8List());
+    } catch (_) {
+      // Fallback: try to load the symbol instead
+      try {
+        final symbolData = await rootBundle.load(
+          'assets/branding/symbol/docsoft_symbol.png',
+        );
+        _logoHorizontal = pw.MemoryImage(symbolData.buffer.asUint8List());
+      } catch (_) {
+        // Logo not available, will render without branding
+        _logoHorizontal = null;
+      }
+    }
+
+    // Try to load the symbol
+    try {
+      final symbolData = await rootBundle.load(
+        'assets/branding/symbol/docsoft_symbol.png',
+      );
+      _symbol = pw.MemoryImage(symbolData.buffer.asUint8List());
+    } catch (_) {
+      // Symbol not available
+      _symbol = null;
+    }
+  }
+
   /// Generates the suggested filename for the PDF.
   String get suggestedFileName {
     final sanitizedPatient = (patientName ?? 'Paciente')
@@ -61,53 +108,124 @@ class MedicalNotePdfBuilder {
   }
 
   pw.Widget _buildHeader(pw.Context context) {
+    final isFirstPage = context.pageNumber == 1;
+
+    if (isFirstPage) {
+      return _buildFirstPageHeader();
+    } else {
+      return _buildSubsequentPageHeader();
+    }
+  }
+
+  /// Premium header for the first page with full branding.
+  pw.Widget _buildFirstPageHeader() {
     return pw.Container(
       decoration: const pw.BoxDecoration(
         border: pw.Border(
-          bottom: pw.BorderSide(color: PdfColors.grey400, width: 1),
+          bottom: pw.BorderSide(color: PdfColors.grey300, width: 1),
         ),
       ),
-      padding: const pw.EdgeInsets.only(bottom: 10),
+      padding: const pw.EdgeInsets.only(bottom: 12),
       margin: const pw.EdgeInsets.only(bottom: 20),
       child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: pw.CrossAxisAlignment.center,
         children: [
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                'HISTORIA CLÍNICA',
-                style: pw.TextStyle(
-                  fontSize: 16,
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColors.grey800,
-                ),
-              ),
-              pw.SizedBox(height: 4),
-              pw.Text(
-                note.type.displayName.toUpperCase(),
-                style: const pw.TextStyle(
-                  fontSize: 10,
-                  color: PdfColors.grey600,
-                ),
-              ),
-            ],
+          // Left: Logo or fallback text
+          pw.Expanded(
+            flex: 2,
+            child: _logoHorizontal != null
+                ? pw.Image(_logoHorizontal!, height: 26)
+                : pw.Text(
+                    'DocSoft',
+                    style: pw.TextStyle(
+                      fontSize: 18,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.grey700,
+                    ),
+                  ),
           ),
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.end,
-            children: [
-              pw.Text(
-                patientName ?? 'Paciente',
-                style: pw.TextStyle(
-                  fontSize: 12,
-                  fontWeight: pw.FontWeight.bold,
+          // Center: Title and note type
+          pw.Expanded(
+            flex: 3,
+            child: pw.Column(
+              children: [
+                pw.Text(
+                  'HISTORIA CLÍNICA',
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.grey800,
+                    letterSpacing: 0.5,
+                  ),
                 ),
-              ),
-              pw.Text(
-                'Fecha: ${_dateFormat.format(note.createdAt)}',
-                style: const pw.TextStyle(fontSize: 10),
-              ),
-            ],
+                pw.SizedBox(height: 3),
+                pw.Text(
+                  note.type.displayName,
+                  style: const pw.TextStyle(
+                    fontSize: 9,
+                    color: PdfColors.grey600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Right: Patient and date
+          pw.Expanded(
+            flex: 2,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                pw.Text(
+                  patientName ?? 'Paciente',
+                  style: pw.TextStyle(
+                    fontSize: 11,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.grey800,
+                  ),
+                ),
+                pw.SizedBox(height: 2),
+                pw.Text(
+                  _dateFormat.format(note.createdAt),
+                  style: const pw.TextStyle(
+                    fontSize: 9,
+                    color: PdfColors.grey600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Compact header for subsequent pages (page 2+).
+  pw.Widget _buildSubsequentPageHeader() {
+    final formattedDate = _dateFormat.format(note.createdAt);
+    final displayPatient = patientName ?? 'Paciente';
+
+    return pw.Container(
+      decoration: const pw.BoxDecoration(
+        border: pw.Border(
+          bottom: pw.BorderSide(color: PdfColors.grey200, width: 0.5),
+        ),
+      ),
+      padding: const pw.EdgeInsets.only(bottom: 8),
+      margin: const pw.EdgeInsets.only(bottom: 16),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.center,
+        children: [
+          // Symbol (if available)
+          if (_symbol != null) ...[
+            pw.Image(_symbol!, height: 14),
+            pw.SizedBox(width: 8),
+          ],
+          // Compact info line
+          pw.Expanded(
+            child: pw.Text(
+              'Historia clínica · $displayPatient · $formattedDate',
+              style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+            ),
           ),
         ],
       ),
@@ -130,9 +248,26 @@ class MedicalNotePdfBuilder {
             'Generado: ${_fullDateFormat.format(DateTime.now())}',
             style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey500),
           ),
-          pw.Text(
-            'Página ${context.pageNumber} de ${context.pagesCount}',
-            style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey500),
+          pw.Row(
+            mainAxisSize: pw.MainAxisSize.min,
+            children: [
+              pw.Text(
+                'DocSoft',
+                style: pw.TextStyle(
+                  fontSize: 8,
+                  color: PdfColors.grey400,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.SizedBox(width: 12),
+              pw.Text(
+                'Página ${context.pageNumber} de ${context.pagesCount}',
+                style: const pw.TextStyle(
+                  fontSize: 8,
+                  color: PdfColors.grey500,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -149,7 +284,9 @@ class MedicalNotePdfBuilder {
     // Main clinical sections
     widgets.add(_buildSection('Motivo de Consulta', note.motivoConsulta));
     widgets.add(_buildSection('Antecedentes', note.antecedentes));
-    widgets.add(_buildSection('Exploración Física ORL', note.exploracionFisicaOrl));
+    widgets.add(
+      _buildSection('Exploración Física ORL', note.exploracionFisicaOrl),
+    );
 
     // Vital signs
     if (_hasVitalSigns) {
@@ -158,7 +295,9 @@ class MedicalNotePdfBuilder {
 
     // Diagnosis and plan (highlighted)
     widgets.add(_buildHighlightedSection('Diagnóstico', note.diagnostico));
-    widgets.add(_buildHighlightedSection('Plan de Tratamiento', note.planTratamiento));
+    widgets.add(
+      _buildHighlightedSection('Plan de Tratamiento', note.planTratamiento),
+    );
 
     // Prognosis
     if (note.prognosis != null && note.prognosis!.isNotEmpty) {
@@ -205,8 +344,65 @@ class MedicalNotePdfBuilder {
       widgets.add(_buildTagsSection());
     }
 
+    // Medical signature block at the end
+    widgets.add(pw.SizedBox(height: 24));
+    widgets.add(_buildSignatureBlock());
 
     return widgets;
+  }
+
+  /// Builds the medical signature block at the end of the document.
+  pw.Widget _buildSignatureBlock() {
+    final hasDoctor = doctorName != null && doctorName!.isNotEmpty;
+    final hasLicense = doctorLicense != null && doctorLicense!.isNotEmpty;
+
+    return pw.Container(
+      margin: const pw.EdgeInsets.only(top: 16),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          // Section title
+          pw.Text(
+            'Firma médica',
+            style: pw.TextStyle(
+              fontSize: 11,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.grey700,
+            ),
+          ),
+          pw.SizedBox(height: 24),
+          // Signature line
+          pw.Center(
+            child: pw.Column(
+              children: [
+                // Horizontal signature line
+                pw.Container(width: 200, height: 0.5, color: PdfColors.grey600),
+                pw.SizedBox(height: 8),
+                // Doctor name or placeholder
+                pw.Text(
+                  hasDoctor ? doctorName! : '_________________________',
+                  style: pw.TextStyle(
+                    fontSize: 10,
+                    fontWeight: hasDoctor ? pw.FontWeight.bold : null,
+                    color: PdfColors.grey800,
+                  ),
+                ),
+                pw.SizedBox(height: 4),
+                // License or DocSoft branding
+                pw.Text(
+                  hasLicense ? 'Cédula: $doctorLicense' : 'DocSoft',
+                  style: pw.TextStyle(
+                    fontSize: 9,
+                    color: PdfColors.grey600,
+                    fontStyle: hasLicense ? null : pw.FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   pw.Widget _buildInfoCard() {
@@ -222,8 +418,14 @@ class MedicalNotePdfBuilder {
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                _buildInfoRow('Paciente', patientName ?? 'ID: ${note.patientId}'),
-                _buildInfoRow('Fecha de Consulta', _fullDateFormat.format(note.createdAt)),
+                _buildInfoRow(
+                  'Paciente',
+                  patientName ?? 'ID: ${note.patientId}',
+                ),
+                _buildInfoRow(
+                  'Fecha de Consulta',
+                  _fullDateFormat.format(note.createdAt),
+                ),
                 _buildInfoRow('Estado', note.status.displayName),
               ],
             ),
@@ -233,8 +435,14 @@ class MedicalNotePdfBuilder {
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 _buildInfoRow('Tipo', note.type.displayName),
-                _buildInfoRow('Última Actualización', _fullDateFormat.format(note.updatedAt)),
-                _buildInfoRow('ID Nota', note.id.substring(0, note.id.length > 8 ? 8 : note.id.length)),
+                _buildInfoRow(
+                  'Última Actualización',
+                  _fullDateFormat.format(note.updatedAt),
+                ),
+                _buildInfoRow(
+                  'ID Nota',
+                  note.id.substring(0, note.id.length > 8 ? 8 : note.id.length),
+                ),
               ],
             ),
           ),
@@ -261,10 +469,7 @@ class MedicalNotePdfBuilder {
             ),
           ),
           pw.Expanded(
-            child: pw.Text(
-              value,
-              style: const pw.TextStyle(fontSize: 9),
-            ),
+            child: pw.Text(value, style: const pw.TextStyle(fontSize: 9)),
           ),
         ],
       ),
@@ -359,10 +564,13 @@ class MedicalNotePdfBuilder {
     if (note.weightKg != null) vitals.add('Peso: ${note.weightKg} kg');
     if (note.heightCm != null) vitals.add('Talla: ${note.heightCm} cm');
     if (note.bpSystolic != null || note.bpDiastolic != null) {
-      vitals.add('PA: ${note.bpSystolic ?? '-'}/${note.bpDiastolic ?? '-'} mmHg');
+      vitals.add(
+        'PA: ${note.bpSystolic ?? '-'}/${note.bpDiastolic ?? '-'} mmHg',
+      );
     }
     if (note.heartRate != null) vitals.add('FC: ${note.heartRate} lpm');
-    if (note.respiratoryRate != null) vitals.add('FR: ${note.respiratoryRate} rpm');
+    if (note.respiratoryRate != null)
+      vitals.add('FR: ${note.respiratoryRate} rpm');
     if (note.temperatureC != null) vitals.add('Temp: ${note.temperatureC} °C');
     if (note.spo2 != null) vitals.add('SpO2: ${note.spo2}%');
 
@@ -426,13 +634,21 @@ class MedicalNotePdfBuilder {
           if (data.observaciones.isNotEmpty)
             _buildSurgicalField('Observaciones', data.observaciones),
           if (data.complicaciones.isNotEmpty)
-            _buildSurgicalField('Complicaciones', data.complicaciones, isWarning: true),
+            _buildSurgicalField(
+              'Complicaciones',
+              data.complicaciones,
+              isWarning: true,
+            ),
         ],
       ),
     );
   }
 
-  pw.Widget _buildSurgicalField(String label, String value, {bool isWarning = false}) {
+  pw.Widget _buildSurgicalField(
+    String label,
+    String value, {
+    bool isWarning = false,
+  }) {
     return pw.Container(
       margin: const pw.EdgeInsets.only(bottom: 6),
       child: pw.Column(
@@ -482,13 +698,15 @@ class MedicalNotePdfBuilder {
             ),
           ),
           pw.SizedBox(height: 6),
-          ...note.medicamentosRecetados.map((med) => pw.Padding(
-                padding: const pw.EdgeInsets.only(left: 11, bottom: 4),
-                child: pw.Text(
-                  '• ${med.nombre} - ${med.dosis} | ${med.frecuencia} por ${med.duracion}',
-                  style: const pw.TextStyle(fontSize: 9),
-                ),
-              )),
+          ...note.medicamentosRecetados.map(
+            (med) => pw.Padding(
+              padding: const pw.EdgeInsets.only(left: 11, bottom: 4),
+              child: pw.Text(
+                '• ${med.nombre} - ${med.dosis} | ${med.frecuencia} por ${med.duracion}',
+                style: const pw.TextStyle(fontSize: 9),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -517,13 +735,15 @@ class MedicalNotePdfBuilder {
             ),
           ),
           pw.SizedBox(height: 6),
-          ...note.estudiosIndicados.map((study) => pw.Padding(
-                padding: const pw.EdgeInsets.only(left: 11, bottom: 4),
-                child: pw.Text(
-                  '• ${study.tipo}: ${study.descripcion}',
-                  style: const pw.TextStyle(fontSize: 9),
-                ),
-              )),
+          ...note.estudiosIndicados.map(
+            (study) => pw.Padding(
+              padding: const pw.EdgeInsets.only(left: 11, bottom: 4),
+              child: pw.Text(
+                '• ${study.tipo}: ${study.descripcion}',
+                style: const pw.TextStyle(fontSize: 9),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -552,13 +772,15 @@ class MedicalNotePdfBuilder {
             ),
           ),
           pw.SizedBox(height: 6),
-          ...note.attachments.map((att) => pw.Padding(
-                padding: const pw.EdgeInsets.only(left: 11, bottom: 4),
-                child: pw.Text(
-                  '• ${att.nombre} (${att.tipo.displayName})',
-                  style: const pw.TextStyle(fontSize: 9),
-                ),
-              )),
+          ...note.attachments.map(
+            (att) => pw.Padding(
+              padding: const pw.EdgeInsets.only(left: 11, bottom: 4),
+              child: pw.Text(
+                '• ${att.nombre} (${att.tipo.displayName})',
+                style: const pw.TextStyle(fontSize: 9),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -598,18 +820,23 @@ class MedicalNotePdfBuilder {
         spacing: 8,
         runSpacing: 4,
         children: note.tags
-            .map((tag) => pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColors.grey200,
-                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
+            .map(
+              (tag) => pw.Container(
+                padding: const pw.EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 2,
+                ),
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.grey200,
+                  borderRadius: const pw.BorderRadius.all(
+                    pw.Radius.circular(10),
                   ),
-                  child: pw.Text(tag, style: const pw.TextStyle(fontSize: 8)),
-                ))
+                ),
+                child: pw.Text(tag, style: const pw.TextStyle(fontSize: 8)),
+              ),
+            )
             .toList(),
       ),
     );
   }
-
-
 }

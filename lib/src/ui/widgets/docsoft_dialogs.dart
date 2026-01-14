@@ -96,6 +96,33 @@ class DocsoftDialogs {
     );
   }
 
+  /// Confirma reemplazar TODOS los campos con sugerencias de IA.
+  ///
+  /// Acción destructiva: sobrescribe texto existente.
+  /// Returns:
+  /// - true: confirmar
+  /// - false: cancelar
+  /// - null: dismissed
+  static Future<bool?> showReplaceAllAiSuggestionsDialog(
+    BuildContext context, {
+    int? fieldsAffected,
+  }) {
+    final extra = (fieldsAffected != null && fieldsAffected > 0)
+        ? '\n\nSe reemplazarán $fieldsAffected campos.'
+        : '';
+
+    return _showDialog(
+      context: context,
+      icon: Icons.warning_rounded,
+      title: '¿Reemplazar todo con IA?',
+      message:
+          'Esto sobrescribirá la información que ya escribiste en los campos.'
+          ' Esta acción no se puede deshacer.$extra',
+      confirmLabel: 'Reemplazar todo',
+      variant: DocsoftDialogVariant.warning,
+    );
+  }
+
   /// Internal method to show the dialog with animation.
   static Future<bool?> _showDialog({
     required BuildContext context,

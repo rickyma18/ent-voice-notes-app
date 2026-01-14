@@ -49,7 +49,7 @@ class AISuggestionSection {
     // Longer content is likely real clinical data, not a placeholder
     if (trimmed.length > 25) return false;
 
-    return _isPlaceholderContent(trimmed.toLowerCase());
+    return isPlaceholderContent(trimmed.toLowerCase());
   }
 
   /// Whether the field has a placeholder that will be treated as empty.
@@ -65,7 +65,7 @@ class AISuggestionSection {
   /// Key distinction:
   /// - "Niega DM" → abbreviation placeholder ✅
   /// - "Niega fiebre" → real clinical finding ❌
-  static bool _isPlaceholderContent(String text) {
+  static bool isPlaceholderContent(String text) {
     // Exact phrase matches - clearly placeholders
     const exactMatches = {
       'sin datos',
@@ -107,16 +107,10 @@ class AISuggestionSection {
 }
 
 /// Apply mode for suggestions.
-enum ApplyMode {
-  onlyEmpty,
-  replace,
-}
+enum ApplyMode { onlyEmpty, replace }
 
 /// Filter mode for viewing suggestions.
-enum _FilterMode {
-  all,
-  review,
-}
+enum _FilterMode { all, review }
 
 /// Bottom sheet that displays AI-generated suggestions and allows the doctor
 /// to review and apply them to wizard fields.
@@ -144,11 +138,11 @@ class AISuggestionsSheet extends StatefulWidget {
   /// Called when user applies suggestions (either empty-only or replace-all).
   /// Receives the edited sections list and the apply mode.
   final void Function(List<AISuggestionSection> editedSections, ApplyMode mode)
-      onApply;
+  onApply;
 
   /// Called when user applies a single section.
   final void Function(AISuggestionSection editedSection, ApplyMode mode)
-      onApplySection;
+  onApplySection;
   final VoidCallback onCancel;
 
   /// ScrollController from the DraggableScrollableSheet
@@ -165,8 +159,13 @@ class AISuggestionsSheet extends StatefulWidget {
   static Future<void> show({
     required BuildContext context,
     required List<AISuggestionSection> sections,
-    required void Function(List<AISuggestionSection> editedSections, ApplyMode mode) onApply,
-    required void Function(AISuggestionSection editedSection, ApplyMode mode) onApplySection,
+    required void Function(
+      List<AISuggestionSection> editedSections,
+      ApplyMode mode,
+    )
+    onApply,
+    required void Function(AISuggestionSection editedSection, ApplyMode mode)
+    onApplySection,
     GlobalKey<ScaffoldMessengerState>? messengerKey,
   }) {
     return showModalBottomSheet<void>(
@@ -269,10 +268,8 @@ class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
     showDialog<String>(
       context: context,
       useRootNavigator: true,
-      builder: (ctx) => _EditSuggestionDialog(
-        label: section.label,
-        initialText: currentText,
-      ),
+      builder: (ctx) =>
+          _EditSuggestionDialog(label: section.label, initialText: currentText),
     ).then((newText) {
       if (!mounted) return;
       if (newText != null && newText.isNotEmpty) {
@@ -285,14 +282,23 @@ class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
 
   /// Handles apply for safe sections only.
   void _handleApplySafe() {
-    final editedSections = _buildEditedSections();
+    final editedSections = _buildEditedSections()
+        .where((s) => _selectedSections.contains(s.id))
+        .toList();
+
     widget.onApply(editedSections, ApplyMode.onlyEmpty);
+    if (widget.closeOnApply) {
+      widget.onCancel();
+    }
   }
 
   /// Handles apply (replace-all mode).
   void _handleReplaceAll() {
     final editedSections = _buildEditedSections();
     widget.onApply(editedSections, ApplyMode.replace);
+    if (widget.closeOnApply) {
+      widget.onCancel();
+    }
   }
 
   /// Handles apply for a single section.
@@ -323,10 +329,9 @@ class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
   Widget build(BuildContext context) {
     final effectiveSections = _effectiveSections;
     final totalCount = effectiveSections.where((s) => s.hasContent).length;
-    final safeCount =
-        effectiveSections.where((s) => s.isEffectivelyEmpty && s.hasContent).length;
-    final reviewCount =
-        effectiveSections.where((s) => s.wouldOverwrite).length;
+    // Count ONLY selected suggestions for the button
+    final selectedCount = _selectedSections.length;
+    final reviewCount = effectiveSections.where((s) => s.wouldOverwrite).length;
 
     return Container(
       decoration: BoxDecoration(
@@ -348,221 +353,196 @@ class _AISuggestionsSheetState extends State<AISuggestionsSheet> {
             ),
           ),
 
-              // Header - Stitch style
-              Padding(
-                padding: const EdgeInsets.all(DocsoftSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          // Header - Stitch style
+          Padding(
+            padding: const EdgeInsets.all(DocsoftSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Asistente IA',
-                            style: DocsoftTextStyles.title.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                    Expanded(
+                      child: Text(
+                        'Asistente IA',
+                        style: DocsoftTextStyles.title.copyWith(
+                          fontWeight: FontWeight.bold,
                         ),
-                        IconButton(
-                          onPressed: widget.onCancel,
-                          icon: Icon(
-                            Icons.close,
-                            color: DocsoftColors.textSecondary,
-                          ),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        ),
-                      ],
+                      ),
                     ),
-                    const SizedBox(height: DocsoftSpacing.xs),
-                    Text(
-                      'Encontramos $totalCount sugerencias basadas en la transcripción.',
-                      style: DocsoftTextStyles.body.copyWith(
+                    IconButton(
+                      onPressed: widget.onCancel,
+                      icon: Icon(
+                        Icons.close,
                         color: DocsoftColors.textSecondary,
                       ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
                     ),
                   ],
                 ),
-              ),
-
-              // Segmented control - Stitch style
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: DocsoftSpacing.md,
-                ),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: DocsoftSegmentedControl(
-                    segments: [
-                      const DocsoftSegment(label: 'Todas'),
-                      DocsoftSegment(
-                        label: 'Revisar',
-                        badge: reviewCount > 0 ? reviewCount.toString() : null,
-                        badgeColor: DocsoftColors.warning,
-                      ),
-                    ],
-                    selectedIndex: _filterMode == _FilterMode.all ? 0 : 1,
-                    onChanged: (index) {
-                      setState(() {
-                        _filterMode =
-                            index == 0 ? _FilterMode.all : _FilterMode.review;
-                      });
-                    },
+                const SizedBox(height: DocsoftSpacing.xs),
+                Text(
+                  'Encontramos $totalCount sugerencias basadas en la transcripción.',
+                  style: DocsoftTextStyles.body.copyWith(
+                    color: DocsoftColors.textSecondary,
                   ),
                 ),
-              ),
-
-              const SizedBox(height: DocsoftSpacing.md),
-
-              // Sections list
-              Expanded(
-                child: ListView.separated(
-                  controller: widget.scrollController,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: DocsoftSpacing.md,
-                  ),
-                  itemCount: _filteredSections.length,
-                  separatorBuilder: (_, __) => Divider(
-                    color: DocsoftColors.divider,
-                    height: DocsoftSpacing.lg,
-                  ),
-                  itemBuilder: (context, index) {
-                    final section = _filteredSections[index];
-                    final isSelected = _selectedSections.contains(section.id);
-                    return _SuggestionCard(
-                      section: section,
-                      isSelected: isSelected,
-                      onToggleSelect: () => _toggleSelection(section.id),
-                      onEdit: () => _onEditSuggestion(section),
-                    );
-                  },
-                ),
-              ),
-
-              // Bottom actions - Stitch style
-              Container(
-                padding: EdgeInsets.fromLTRB(
-                  DocsoftSpacing.md,
-                  DocsoftSpacing.md,
-                  DocsoftSpacing.md,
-                  DocsoftSpacing.md + MediaQuery.of(context).padding.bottom,
-                ),
-                decoration: BoxDecoration(
-                  color: DocsoftColors.surface,
-                  boxShadow: [
-                    BoxShadow(
-                      color: DocsoftColors.shadowLight,
-                      blurRadius: 8,
-                      offset: const Offset(0, -2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Primary: Apply safe suggestions
-                    if (safeCount > 0)
-                      SizedBox(
-                        height: 52,
-                        child: ElevatedButton(
-                          onPressed: _handleApplySafe,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: DocsoftColors.primary,
-                            foregroundColor: DocsoftColors.onPrimary,
-                            elevation: 2,
-                            shadowColor:
-                                DocsoftColors.primary.withValues(alpha: 0.3),
-                            shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(DocsoftRadii.md),
-                            ),
-                          ),
-                          child: Text(
-                            'Aplicar sugerencias seguras ($safeCount)',
-                            style: DocsoftTextStyles.button.copyWith(
-                              color: DocsoftColors.onPrimary,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
-                      ),
-
-                    // Secondary: Replace all (with warning)
-                    if (reviewCount > 0) ...[
-                      const SizedBox(height: DocsoftSpacing.sm + 4),
-                      TextButton(
-                        onPressed: () => _confirmReplaceAll(context),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'Reemplazar todo ($totalCount)',
-                              style: DocsoftTextStyles.body.copyWith(
-                                color: DocsoftColors.textSecondary,
-                              ),
-                            ),
-                            const SizedBox(width: DocsoftSpacing.xs),
-                            Icon(
-                              Icons.warning_amber,
-                              size: 18,
-                              color: DocsoftColors.warning,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-
-                    // Tertiary: Cancel
-                    TextButton(
-                      onPressed: widget.onCancel,
-                      child: Text(
-                        'Cancelar',
-                        style: DocsoftTextStyles.body.copyWith(
-                          color: DocsoftColors.textTertiary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-  }
-
-  void _confirmReplaceAll(BuildContext context) {
-    showDialog<bool>(
-      context: context,
-      useRootNavigator: true,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirmar reemplazo'),
-        content: const Text(
-          'Esto sobrescribirá los campos que ya tienen contenido. '
-          'Podrás deshacer esta acción después de aplicar.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: DocsoftColors.warning,
-              foregroundColor: DocsoftColors.onWarning,
+              ],
             ),
-            child: const Text('Reemplazar todo'),
+          ),
+
+          // Segmented control - Stitch style
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: DocsoftSpacing.md),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: DocsoftSegmentedControl(
+                segments: [
+                  const DocsoftSegment(label: 'Todas'),
+                  DocsoftSegment(
+                    label: 'Revisar',
+                    badge: reviewCount > 0 ? reviewCount.toString() : null,
+                    badgeColor: DocsoftColors.warning,
+                  ),
+                ],
+                selectedIndex: _filterMode == _FilterMode.all ? 0 : 1,
+                onChanged: (index) {
+                  setState(() {
+                    _filterMode = index == 0
+                        ? _FilterMode.all
+                        : _FilterMode.review;
+                  });
+                },
+              ),
+            ),
+          ),
+
+          const SizedBox(height: DocsoftSpacing.md),
+
+          // Sections list
+          Expanded(
+            child: ListView.separated(
+              controller: widget.scrollController,
+              padding: const EdgeInsets.symmetric(
+                horizontal: DocsoftSpacing.md,
+              ),
+              itemCount: _filteredSections.length,
+              separatorBuilder: (_, __) => Divider(
+                color: DocsoftColors.divider,
+                height: DocsoftSpacing.lg,
+              ),
+              itemBuilder: (context, index) {
+                final section = _filteredSections[index];
+                final isSelected = _selectedSections.contains(section.id);
+                return _SuggestionCard(
+                  section: section,
+                  isSelected: isSelected,
+                  onToggleSelect: () => _toggleSelection(section.id),
+                  onEdit: () => _onEditSuggestion(section),
+                  onApply: (mode) => _handleApplySection(section.id, mode),
+                );
+              },
+            ),
+          ),
+
+          // Bottom actions - Stitch style
+          Container(
+            padding: EdgeInsets.fromLTRB(
+              DocsoftSpacing.md,
+              DocsoftSpacing.md,
+              DocsoftSpacing.md,
+              DocsoftSpacing.md + MediaQuery.of(context).padding.bottom,
+            ),
+            decoration: BoxDecoration(
+              color: DocsoftColors.surface,
+              boxShadow: [
+                BoxShadow(
+                  color: DocsoftColors.shadowLight,
+                  blurRadius: 8,
+                  offset: const Offset(0, -2),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Primary: Apply SELECTED suggestions
+                if (totalCount > 0)
+                  SizedBox(
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: selectedCount > 0 ? _handleApplySafe : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: DocsoftColors.primary,
+                        foregroundColor: DocsoftColors.onPrimary,
+                        elevation: 2,
+                        shadowColor: DocsoftColors.primary.withValues(
+                          alpha: 0.3,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(DocsoftRadii.md),
+                        ),
+                        disabledBackgroundColor: DocsoftColors.surfaceAlt,
+                        disabledForegroundColor: DocsoftColors.textTertiary,
+                      ),
+                      child: Text(
+                        selectedCount > 0
+                            ? 'Aplicar seleccionadas ($selectedCount)'
+                            : 'Selecciona sugerencias',
+                        style: DocsoftTextStyles.button.copyWith(
+                          fontSize: 16,
+                          color: selectedCount > 0
+                              ? DocsoftColors.onPrimary
+                              : DocsoftColors.textTertiary,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // Secondary: Replace all (with warning)
+                if (reviewCount > 0) ...[
+                  const SizedBox(height: DocsoftSpacing.sm + 4),
+                  DocsoftOutlinedButton(
+                    onPressed: () => _confirmReplaceAll(context),
+                    label: 'Reemplazar todo ($totalCount)',
+                    icon: Icons.warning_amber,
+                    textColor: DocsoftColors.warning,
+                    borderColor: DocsoftColors.warning,
+                    fullWidth: true,
+                  ),
+                ],
+
+                // Tertiary: Cancel
+                TextButton(
+                  onPressed: widget.onCancel,
+                  child: Text(
+                    'Cancelar',
+                    style: DocsoftTextStyles.body.copyWith(
+                      color: DocsoftColors.textTertiary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
-    ).then((confirmed) {
-      if (!mounted) return;
-      if (confirmed == true) {
-        _handleReplaceAll();
-      }
-    });
+    );
+  }
+
+  Future<void> _confirmReplaceAll(BuildContext context) async {
+    final fieldsAffected = _effectiveSections.where((s) => s.hasContent).length;
+
+    final confirmed = await DocsoftDialogs.showReplaceAllAiSuggestionsDialog(
+      context,
+      fieldsAffected: fieldsAffected,
+    );
+
+    if (!mounted) return;
+    if (confirmed == true) {
+      _handleReplaceAll();
+    }
   }
 }
 
@@ -573,12 +553,14 @@ class _SuggestionCard extends StatelessWidget {
     required this.isSelected,
     required this.onToggleSelect,
     required this.onEdit,
+    required this.onApply,
   });
 
   final AISuggestionSection section;
   final bool isSelected;
   final VoidCallback onToggleSelect;
   final VoidCallback onEdit;
+  final void Function(ApplyMode mode) onApply;
 
   @override
   Widget build(BuildContext context) {
@@ -623,6 +605,8 @@ class _SuggestionCard extends StatelessWidget {
           isSelected: isSelected,
           onToggleSelect: onToggleSelect,
           onEdit: onEdit,
+          section: section,
+          onApply: onApply,
         ),
       ],
     );
@@ -631,10 +615,7 @@ class _SuggestionCard extends StatelessWidget {
 
 /// Status badge (REVISAR / SEGURO).
 class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({
-    required this.label,
-    required this.isWarning,
-  });
+  const _StatusBadge({required this.label, required this.isWarning});
 
   final String label;
   final bool isWarning;
@@ -739,12 +720,16 @@ class _SuggestionBlock extends StatelessWidget {
     required this.isSelected,
     required this.onToggleSelect,
     required this.onEdit,
+    required this.section,
+    required this.onApply,
   });
 
   final String value;
   final bool isSelected;
   final VoidCallback onToggleSelect;
   final VoidCallback onEdit;
+  final AISuggestionSection section;
+  final void Function(ApplyMode mode) onApply;
 
   // Teal surface colors for AI suggestion
   static const Color _bgColor = Color(0xFFECFDF5); // teal-50
@@ -766,11 +751,7 @@ class _SuggestionBlock extends StatelessWidget {
           // Header with label and actions
           Row(
             children: [
-              Icon(
-                Icons.auto_awesome,
-                size: 14,
-                color: DocsoftColors.primary,
-              ),
+              Icon(Icons.auto_awesome, size: 14, color: DocsoftColors.primary),
               const SizedBox(width: DocsoftSpacing.xs),
               Text(
                 'SUGERENCIA IA',
@@ -840,10 +821,7 @@ class _SuggestionBlock extends StatelessWidget {
 
 /// Dialog for editing a suggestion text.
 class _EditSuggestionDialog extends StatefulWidget {
-  const _EditSuggestionDialog({
-    required this.label,
-    required this.initialText,
-  });
+  const _EditSuggestionDialog({required this.label, required this.initialText});
 
   final String label;
   final String initialText;

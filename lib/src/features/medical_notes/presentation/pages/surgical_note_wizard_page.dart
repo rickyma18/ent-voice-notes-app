@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
+import 'package:intl/intl.dart';
 
 import '../../../../core/base/result.dart';
 import '../../../../ui/docsoft_ui.dart';
@@ -240,13 +241,6 @@ class _SurgicalNoteWizardPageState
   bool get _canGenerateSuggestions =>
       _hasDictation && !_isGeneratingSuggestions;
 
-  /// Whether the AI banner should be shown.
-  bool _shouldShowAiBanner(bool keyboardOpen) =>
-      !keyboardOpen &&
-      _hasDictation &&
-      !_isGeneratingSuggestions &&
-      !_bannerDismissed;
-
   /// Whether the post-dictation options sheet should be shown.
   bool _shouldShowPostDictationSheet(String transcript) =>
       transcript.length > 80 &&
@@ -264,6 +258,7 @@ class _SurgicalNoteWizardPageState
     int count = 0;
     if (_procedimientoController.text.trim().isEmpty) count++;
     if (_diagnosticoPreopController.text.trim().isEmpty) count++;
+    if (_tecnicaQuirurgicaController.text.trim().isEmpty) count++;
     if (_diagnosticoPostopController.text.trim().isEmpty) count++;
     return count;
   }
@@ -278,7 +273,7 @@ class _SurgicalNoteWizardPageState
 
     try {
       final aiService = ref.read(noteAIServiceProvider);
-      final suggestions = await aiService.suggestStructuredFields(
+      final suggestions = await aiService.suggestSurgicalFields(
         _rawTranscript!,
       );
 
@@ -292,7 +287,7 @@ class _SurgicalNoteWizardPageState
       final sections = _buildSuggestionsForSheet(suggestions);
 
       if (sections.isEmpty || sections.every((s) => !s.hasContent)) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _activeMessenger.showSnackBar(
           const SnackBar(
             content: Text(
               'No se encontraron datos clínicos claros para sugerir campos.',
@@ -316,7 +311,7 @@ class _SurgicalNoteWizardPageState
         setState(() {
           _isGeneratingSuggestions = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
+        _activeMessenger.showSnackBar(
           SnackBar(
             content: Text('Error al generar sugerencias: $e'),
             backgroundColor: Colors.red,
@@ -338,20 +333,44 @@ class _SurgicalNoteWizardPageState
       AISuggestionSection(
         id: 'procedimiento',
         label: 'Procedimiento e indicación',
-        suggestion: suggestions['motivoConsulta'] ?? '',
+        suggestion: suggestions['procedimientoRealizado'] ?? '',
         currentValue: _procedimientoController.text,
       ),
       AISuggestionSection(
         id: 'diagnosticoPreop',
         label: 'Diagnóstico preoperatorio',
-        suggestion: suggestions['diagnostico'] ?? '',
+        suggestion: suggestions['diagnosticoPreoperatorio'] ?? '',
         currentValue: _diagnosticoPreopController.text,
       ),
       AISuggestionSection(
+        id: 'tecnicaQuirurgica',
+        label: 'Técnica quirúrgica',
+        suggestion: suggestions['tecnicaQuirurgica'] ?? '',
+        currentValue: _tecnicaQuirurgicaController.text,
+      ),
+      AISuggestionSection(
+        id: 'hallazgos',
+        label: 'Hallazgos intraoperatorios',
+        suggestion: suggestions['hallazgosIntraoperatorios'] ?? '',
+        currentValue: _hallazgosController.text,
+      ),
+      AISuggestionSection(
+        id: 'complicaciones',
+        label: 'Complicaciones',
+        suggestion: suggestions['complicaciones'] ?? '',
+        currentValue: _complicacionesController.text,
+      ),
+      AISuggestionSection(
         id: 'diagnosticoPostop',
-        label: 'Diagnóstico postoperatorio y plan',
-        suggestion: suggestions['planTratamiento'] ?? '',
+        label: 'Diagnóstico postoperatorio',
+        suggestion: suggestions['diagnosticoPostoperatorio'] ?? '',
         currentValue: _diagnosticoPostopController.text,
+      ),
+      AISuggestionSection(
+        id: 'observaciones',
+        label: 'Observaciones / Plan',
+        suggestion: suggestions['planPostoperatorio'] ?? '',
+        currentValue: _observacionesController.text,
       ),
     ];
   }
@@ -452,6 +471,18 @@ class _SurgicalNoteWizardPageState
       case 'diagnosticoPostop':
         _diagnosticoPostopController.text = value;
         break;
+      case 'tecnicaQuirurgica':
+        _tecnicaQuirurgicaController.text = value;
+        break;
+      case 'hallazgos':
+        _hallazgosController.text = value;
+        break;
+      case 'complicaciones':
+        _complicacionesController.text = value;
+        break;
+      case 'observaciones':
+        _observacionesController.text = value;
+        break;
       default:
         debugPrint('Unknown sectionId: $sectionId');
     }
@@ -494,22 +525,95 @@ class _SurgicalNoteWizardPageState
       _lastSuggestionSections != null &&
       _lastSuggestionSections!.any((s) => s.hasContent);
 
-  Widget _buildAIChip() {
-    final count =
-        _lastSuggestionSections?.where((s) => s.hasContent).length ?? 0;
+  bool get _canUseAiChip =>
+      _hasDictation && !_isGeneratingSuggestions && !_suggestionsGenerated;
 
-    return DocsoftStatusChip(
-      label: 'Sugerencias ($count)',
-      icon: Icons.auto_awesome,
-      variant: DocsoftStatusChipVariant.success,
-      onTap: _reopenSuggestionsSheet,
-    );
+  bool get _showAiChip => _hasActiveSuggestions || _canUseAiChip;
+
+  Widget _buildAIChip() {
+    // 1. Sugerencias listas (Prioridad: alta)
+    if (_hasActiveSuggestions) {
+      final count =
+          _lastSuggestionSections?.where((s) => s.hasContent).length ?? 0;
+
+      return DocsoftStatusChip(
+        label: 'Sugerencias ($count)',
+        icon: Icons.auto_awesome,
+        variant: DocsoftStatusChipVariant.success,
+        onTap: _reopenSuggestionsSheet,
+      );
+    }
+
+    // 2. Dictado disponible / Usar IA (Prioridad: media)
+    if (_canUseAiChip) {
+      return DocsoftStatusChip(
+        label: 'Usar IA',
+        icon: Icons.auto_awesome_outlined,
+        variant: DocsoftStatusChipVariant.subtle,
+        onTap: _generateAISuggestions,
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+
+  // ---------------------------------------------------------------------------
+  // AI Suggestions Helpers
+  // ---------------------------------------------------------------------------
+
+  /// Rebuilds the suggestion sections with the LIVE current values from controllers.
+  /// This ensures that if the user edited manually, the sheet sees the new values.
+  ///
+  /// Preserves the original AI suggestion text.
+  List<AISuggestionSection> _rebuildSectionsWithLiveCurrentValues(
+    List<AISuggestionSection> cachedSections,
+  ) {
+    return cachedSections.map((section) {
+      final currentText = _getCurrentValueForSection(section.id);
+      return AISuggestionSection(
+        id: section.id,
+        label: section.label,
+        suggestion: section.suggestion,
+        currentValue: currentText,
+      );
+    }).toList();
+  }
+
+  /// Gets the current text from the controller corresponding to the section ID.
+  String _getCurrentValueForSection(String sectionId) {
+    switch (sectionId) {
+      case 'procedimiento':
+        return _procedimientoController.text;
+      case 'diagnosticoPreop':
+        return _diagnosticoPreopController.text;
+      case 'diagnosticoPostop':
+        return _diagnosticoPostopController.text;
+      case 'tecnicaQuirurgica':
+        return _tecnicaQuirurgicaController.text;
+      case 'hallazgos':
+        return _hallazgosController.text;
+      case 'complicaciones':
+        return _complicacionesController.text;
+      case 'observaciones':
+        return _observacionesController.text;
+      default:
+        // Fail safe, though all IDs should be covered
+        return '';
+    }
   }
 
   void _reopenSuggestionsSheet() {
-    if (_lastSuggestionSections != null) {
-      _showSuggestionsSheet(_lastSuggestionSections!);
-    }
+    if (_lastSuggestionSections == null) return;
+
+    // Rebuild with current controller values so "Aplicar solo a vacíos" works correctly
+    final liveSections = _rebuildSectionsWithLiveCurrentValues(
+      _lastSuggestionSections!,
+    );
+
+    // Update the cache with the live versions (optional, but consistent)
+    _lastSuggestionSections = liveSections;
+
+    _showSuggestionsSheet(liveSections);
   }
 
   // ---------------------------------------------------------------------------
@@ -634,12 +738,14 @@ class _SurgicalNoteWizardPageState
           controller.selection = TextSelection.fromPosition(
             TextPosition(offset: controller.text.length),
           );
+          break;
         case _DictationAction.append:
           final newText = '${controller.text.trimRight()}\n$transcript';
           controller.text = newText;
           controller.selection = TextSelection.fromPosition(
             TextPosition(offset: controller.text.length),
           );
+          break;
         case _DictationAction.cancel:
           break;
       }
@@ -712,19 +818,25 @@ class _SurgicalNoteWizardPageState
   Future<void> _saveNote({bool asDraft = false}) async {
     // Validate required fields
     if (!asDraft) {
-      if (_procedimientoController.text.trim().isEmpty) {
-        _showValidationError('El procedimiento es requerido');
-        _goToStep(0);
-        return;
-      }
-      if (_tecnicaQuirurgicaController.text.trim().isEmpty) {
-        _showValidationError('La técnica quirúrgica es requerida');
-        _goToStep(2);
-        return;
-      }
-      if (_diagnosticoPostopController.text.trim().isEmpty) {
-        _showValidationError('El diagnóstico postoperatorio es requerido');
-        _goToStep(5);
+      final isValid = _formKey.currentState?.validate() ?? false;
+      if (!isValid) {
+        if (_procedimientoController.text.trim().isEmpty) {
+          _showValidationError('El procedimiento es requerido');
+          _goToStep(0);
+          return;
+        }
+        if (_tecnicaQuirurgicaController.text.trim().isEmpty) {
+          _showValidationError('La técnica quirúrgica es requerida');
+          _goToStep(2);
+          return;
+        }
+        if (_diagnosticoPostopController.text.trim().isEmpty) {
+          _showValidationError('El diagnóstico postoperatorio es requerido');
+          _goToStep(5);
+          return;
+        }
+        // Fallback for other errors
+        _showValidationError('Por favor revisa los campos requeridos');
         return;
       }
     }
@@ -757,7 +869,7 @@ class _SurgicalNoteWizardPageState
           exploracionFisicaOrl: '', // Not used in surgical wizard
           diagnostico: _diagnosticoPreopController.text.trim(),
           planTratamiento: _diagnosticoPostopController.text.trim(),
-          status: asDraft ? NoteStatus.draft : existingNote.status,
+          status: asDraft ? NoteStatus.draft : NoteStatus.signed,
           attachments: _attachments,
           surgicalData: surgicalData,
         );
@@ -779,7 +891,7 @@ class _SurgicalNoteWizardPageState
           diagnostico: _diagnosticoPreopController.text.trim(),
           planTratamiento: _diagnosticoPostopController.text.trim(),
           rawTranscript: _rawTranscript ?? '',
-          status: asDraft ? NoteStatus.draft : NoteStatus.draft,
+          status: asDraft ? NoteStatus.draft : NoteStatus.signed,
           medicamentosRecetados: const [],
           estudiosIndicados: const [],
           proximaCita: null,
@@ -880,230 +992,357 @@ class _SurgicalNoteWizardPageState
           ),
         ),
       ),
-      body: SafeArea(
-        bottom: false,
-        child: _isLoadingPatient
-            ? const Center(child: CircularProgressIndicator())
-            : Column(
-                children: [
-                  // 1. Header (Custom App Bar)
-                  Container(
-                    decoration: BoxDecoration(
-                      color: DocsoftColors.surface,
-                      border: Border(
-                        bottom: BorderSide(color: DocsoftColors.border),
-                      ),
-                    ),
-                    padding: const EdgeInsets.fromLTRB(
-                      DocsoftSpacing.screenPadding,
-                      DocsoftSpacing.screenPadding,
-                      DocsoftSpacing.screenPadding,
-                      DocsoftSpacing.sm,
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
+      body: Stack(
+        children: [
+          SafeArea(
+            bottom: false,
+            child: _isLoadingPatient
+                ? const Center(child: CircularProgressIndicator())
+                : Column(
+                    children: [
+                      // 1. Header (Custom App Bar)
+                      Container(
+                        decoration: BoxDecoration(
+                          color: DocsoftColors.surface,
+                          border: Border(
+                            bottom: BorderSide(color: DocsoftColors.border),
+                          ),
+                        ),
+                        padding: const EdgeInsets.fromLTRB(
+                          DocsoftSpacing.screenPadding,
+                          DocsoftSpacing.screenPadding,
+                          DocsoftSpacing.screenPadding,
+                          DocsoftSpacing.sm,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            DocsoftBackButton(
-                              onTap: () => Navigator.of(context).maybePop(),
-                              backgroundColor: DocsoftColors.primaryMuted,
-                              iconColor: DocsoftColors.primary,
-                            ),
-                            const SizedBox(width: DocsoftSpacing.sm),
-                            Expanded(
-                              child: Text(
-                                widget.isEditMode
-                                    ? 'Editar nota quirurgica'
-                                    : 'Nueva nota quirurgica',
-                                style: DocsoftTextStyles.appBarTitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            // Show static icon only if NO suggestions are active
-                            if (!_hasActiveSuggestions)
-                              Padding(
-                                padding: const EdgeInsets.only(
-                                  left: DocsoftSpacing.sm,
+                            Row(
+                              children: [
+                                DocsoftBackButton(
+                                  onTap: () => Navigator.of(context).maybePop(),
+                                  backgroundColor: DocsoftColors.primaryMuted,
+                                  iconColor: DocsoftColors.primary,
                                 ),
-                                child: Icon(
-                                  Icons.auto_awesome_outlined,
-                                  color: DocsoftColors.textTertiary,
-                                  size: 20,
-                                ),
-                              ),
-                          ],
-                        ),
-                        // Second Row for Chip if suggestions are active
-                        if (_hasActiveSuggestions) ...[
-                          const SizedBox(height: DocsoftSpacing.xs),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [_buildAIChip()],
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-
-                  // 2. Patient Header (Collapsible)
-                  ClipRect(
-                    child: AnimatedSize(
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOut,
-                      child: keyboardOpen
-                          ? const SizedBox.shrink()
-                          : _patient != null
-                          ? Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                DocsoftSpacing.screenPadding,
-                                DocsoftSpacing.sm,
-                                DocsoftSpacing.screenPadding,
-                                0,
-                              ),
-                              child: PatientHeader(
-                                patient: _patient!,
-                                date: _noteDate,
-                                isEditing: widget.isEditMode,
-                                onDateChanged: widget.isEditMode
-                                    ? null
-                                    : (date) {
-                                        setState(() {
-                                          _noteDate = date;
-                                        });
-                                      },
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                  ),
-
-                  // 3. AI Banner (Collapsible)
-                  if (_shouldShowAiBanner(keyboardOpen))
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        DocsoftSpacing.screenPadding,
-                        DocsoftSpacing.sm,
-                        DocsoftSpacing.screenPadding,
-                        0,
-                      ),
-                      child: Card(
-                        elevation: 0,
-                        color: DocsoftColors.primaryMuted,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(DocsoftRadii.md),
-                          side: BorderSide(
-                            color: DocsoftColors.primary.withValues(alpha: 0.2),
-                          ),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(DocsoftSpacing.md),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.auto_awesome,
-                                color: DocsoftColors.primary,
-                                size: 24,
-                              ),
-                              const SizedBox(width: DocsoftSpacing.md),
-                              Expanded(
-                                child: Text(
-                                  'Se detectó un dictado. La IA puede ayudarte a estructurar la nota quirúrgica.',
-                                  style: DocsoftTextStyles.body.copyWith(
-                                    color: DocsoftColors.textPrimary,
+                                const SizedBox(width: DocsoftSpacing.sm),
+                                Expanded(
+                                  child: Text(
+                                    widget.isEditMode
+                                        ? 'Editar nota quirurgica'
+                                        : 'Nueva nota quirurgica',
+                                    style: DocsoftTextStyles.appBarTitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
+                                // Show static icon only if NO suggestions are active and chip is hidden
+                                if (!_showAiChip)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: DocsoftSpacing.sm,
+                                    ),
+                                    child: Icon(
+                                      Icons.auto_awesome_outlined,
+                                      color: DocsoftColors.textTertiary,
+                                      size: 20,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            // Second Row for Chip if suggestions are active or available
+                            if (_showAiChip) ...[
+                              const SizedBox(height: DocsoftSpacing.xs),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [_buildAIChip()],
                               ),
-                              const SizedBox(width: DocsoftSpacing.sm),
-                              TextButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _bannerDismissed = true;
-                                  });
-                                },
-                                child: const Text('Cerrar'),
-                              ),
-                              const SizedBox(width: 4),
-                              FilledButton.tonal(
-                                onPressed: _generateAISuggestions,
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: DocsoftColors.primary,
-                                  foregroundColor: DocsoftColors.onPrimary,
+                            ],
+                          ],
+                        ),
+                      ),
+
+                      // 2. Patient Header (Collapsible)
+                      ClipRect(
+                        child: AnimatedSize(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOut,
+                          child: keyboardOpen
+                              ? const SizedBox.shrink()
+                              : Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    8,
+                                    16,
+                                    0,
+                                  ),
+                                  child: _buildPatientInfo(),
                                 ),
-                                child: _isGeneratingSuggestions
-                                    ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : const Text('Generar'),
-                              ),
+                        ),
+                      ),
+
+                      // 3. AI Banner
+                      if (!keyboardOpen &&
+                          (_hasDictation
+                                  ? DictationStatus.available
+                                  : DictationStatus.none) ==
+                              DictationStatus.available &&
+                          !_bannerDismissed)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            DocsoftSpacing.md,
+                            DocsoftSpacing.md,
+                            DocsoftSpacing.md,
+                            0,
+                          ),
+                          child: DocsoftDictationBanner(
+                            status: _hasDictation
+                                ? DictationStatus.available
+                                : DictationStatus.none,
+                            isGenerating: _isGeneratingSuggestions,
+                            onGenerate: _generateAISuggestions,
+                            onDismiss: () {
+                              setState(() {
+                                _bannerDismissed = true;
+                              });
+                            },
+                          ),
+                        ),
+
+                      // 4. Progress Indicator
+                      if (!keyboardOpen)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            DocsoftSpacing.md,
+                            DocsoftSpacing.sm,
+                            DocsoftSpacing.md,
+                            0,
+                          ),
+                          child: DocsoftWizardProgress(
+                            currentStep: _currentStep,
+                            totalSteps: _totalSteps,
+                          ),
+                        )
+                      else
+                        CompactStepIndicator(
+                          currentStep: _currentStep,
+                          totalSteps: _totalSteps,
+                          stepTitle: _stepTitles[_currentStep],
+                        ),
+
+                      // 5. Step Content View (No Swipe)
+                      Expanded(
+                        child: Form(
+                          key: _formKey,
+                          child: PageView(
+                            controller: _pageController,
+                            physics: const NeverScrollableScrollPhysics(),
+                            onPageChanged: (page) {
+                              ScaffoldMessenger.of(context).clearSnackBars();
+                              setState(() {
+                                _currentStep = page;
+                              });
+                            },
+                            children: [
+                              _buildStep0Procedimiento(),
+                              _buildStep1DiagnosticoPreop(),
+                              _buildStep2TecnicaQuirurgica(),
+                              _buildStep3Hallazgos(),
+                              _buildStep4Complicaciones(),
+                              _buildStep5DiagnosticoPostop(),
+                              _buildStep6Attachments(),
                             ],
                           ),
                         ),
                       ),
-                    ),
-
-                  // 4. Progress Indicator
-                  ClipRect(
-                    child: AnimatedSize(
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOut,
-                      child: keyboardOpen
-                          ? CompactStepIndicator(
-                              currentStep: _currentStep,
-                              totalSteps: _totalSteps,
-                              stepTitle: _stepTitles[_currentStep],
-                            )
-                          : Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                DocsoftSpacing.md,
-                                DocsoftSpacing.sm,
-                                DocsoftSpacing.md,
-                                0,
-                              ),
-                              child: WizardStepIndicator(
-                                currentStep: _currentStep,
-                                totalSteps: _totalSteps,
-                                stepTitles: _stepTitles,
-                                onStepTapped: _goToStep,
-                              ),
-                            ),
-                    ),
+                    ],
                   ),
+          ),
 
-                  // 5. Step Content View (No Swipe)
-                  Expanded(
-                    child: Form(
-                      key: _formKey,
-                      child: PageView(
-                        controller: _pageController,
-                        physics: const NeverScrollableScrollPhysics(),
-                        onPageChanged: (page) {
-                          ScaffoldMessenger.of(context).clearSnackBars();
-                          setState(() {
-                            _currentStep = page;
-                          });
-                        },
-                        children: [
-                          _buildStep0Procedimiento(),
-                          _buildStep1DiagnosticoPreop(),
-                          _buildStep2TecnicaQuirurgica(),
-                          _buildStep3Hallazgos(),
-                          _buildStep4Complicaciones(),
-                          _buildStep5DiagnosticoPostop(),
-                          _buildStep6Attachments(),
-                        ],
+          DocsoftAiGeneratingOverlay(
+            visible: _isGeneratingSuggestions,
+            allowInteraction: false,
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getInitials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts[0][0].toUpperCase();
+    return '${parts[0][0]}${parts[parts.length - 1][0]}'.toUpperCase();
+  }
+
+  Widget _buildPatientInfo() {
+    if (_patient == null) return const SizedBox.shrink();
+
+    final dateFormat = DateFormat('dd/MM/yyyy');
+    final patient = _patient!;
+
+    return Container(
+      padding: const EdgeInsets.all(DocsoftSpacing.md),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [DocsoftColors.primary, DocsoftColors.primaryDark],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(DocsoftRadii.xl),
+        boxShadow: [
+          BoxShadow(
+            color: DocsoftColors.primary.withValues(alpha: 0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Avatar with initials
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: DocsoftColors.overlayOnPrimary,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.2),
+                width: 2,
+              ),
+            ),
+            child: Center(
+              child: Text(
+                _getInitials(patient.fullName),
+                style: DocsoftTextStyles.title.copyWith(
+                  color: DocsoftColors.onPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: DocsoftSpacing.md),
+
+          // Patient info
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  patient.fullName,
+                  style: DocsoftTextStyles.subtitle.copyWith(
+                    color: DocsoftColors.onPrimary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: DocsoftSpacing.xs),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.cake_outlined,
+                      size: 14,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${patient.age} años',
+                      style: DocsoftTextStyles.caption.copyWith(
+                        color: Colors.white.withValues(alpha: 0.9),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: DocsoftSpacing.sm),
+                    Text(
+                      '•',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    const SizedBox(width: DocsoftSpacing.sm),
+                    Icon(
+                      patient.sex.toUpperCase() == 'M'
+                          ? Icons.male
+                          : Icons.female,
+                      size: 14,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        patient.sexDisplay,
+                        style: DocsoftTextStyles.caption.copyWith(
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: DocsoftSpacing.xs),
+
+          // Date badge
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 130),
+            child: GestureDetector(
+              onTap: widget.isEditMode
+                  ? null
+                  : () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: _noteDate,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) {
+                        setState(() => _noteDate = picked);
+                      }
+                    },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: DocsoftSpacing.xs,
+                  vertical: DocsoftSpacing.xs,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(DocsoftRadii.sm),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.calendar_today,
+                      size: 14,
+                      color: DocsoftColors.textSecondary,
+                    ),
+                    const SizedBox(width: DocsoftSpacing.xs),
+                    Text(
+                      dateFormat.format(_noteDate),
+                      style: DocsoftTextStyles.caption.copyWith(
+                        color: DocsoftColors.textPrimary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (!widget.isEditMode) ...[
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.edit,
+                        size: 10,
+                        color: DocsoftColors.textTertiary,
+                      ),
+                    ],
+                  ],
+                ),
               ),
+            ),
+          ),
+        ],
       ),
     );
   }
