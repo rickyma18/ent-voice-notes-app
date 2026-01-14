@@ -660,7 +660,11 @@ class NoteAIServiceImpl implements NoteAIService {
     }
 
     // Check top-level fields
-    for (final key in ['motivo_consulta', 'padecimiento_actual', 'notas_adicionales']) {
+    for (final key in [
+      'motivo_consulta',
+      'padecimiento_actual',
+      'notas_adicionales',
+    ]) {
       if (parsed[key] != null && sanitized[key] == null) {
         changes.add(key);
       }
@@ -1359,6 +1363,72 @@ class OpenAIClient {
       if (response.statusCode == 200) {
         final content = response.data['choices'][0]['message']['content'];
         return content.toString().trim();
+      } else if (response.statusCode == 401) {
+        throw NoteAIException(
+          'Error de autenticación con OpenAI. Verifica tu API key.',
+        );
+      } else if (response.statusCode == 429) {
+        throw NoteAIException(
+          'Límite de solicitudes excedido. Intenta más tarde.',
+        );
+      } else {
+        final errorMsg =
+            response.data?['error']?['message'] ?? 'Error desconocido';
+        throw NoteAIException('Error de OpenAI: $errorMsg');
+      }
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout) {
+        throw NoteAIException(
+          'Tiempo de espera agotado. Verifica tu conexión a internet.',
+        );
+      } else if (e.type == DioExceptionType.connectionError) {
+        throw NoteAIException(
+          'No se pudo conectar con OpenAI. Verifica tu conexión a internet.',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  /// Generates plain text response using Chat Completion API.
+  ///
+  /// Flexible method that supports custom [model], [temperature], and
+  /// separate [systemPrompt] and [userPrompt].
+  ///
+  /// Does NOT enforce JSON mode or specific response format.
+  /// Returns the assistant's content string directly.
+  Future<String> generateText({
+    required String systemPrompt,
+    required String userPrompt,
+    String model = 'gpt-4o',
+    double temperature = 0.2,
+  }) async {
+    try {
+      final requestBody = {
+        'model': model,
+        'messages': [
+          {'role': 'system', 'content': systemPrompt},
+          {'role': 'user', 'content': userPrompt},
+        ],
+        'temperature': temperature,
+      };
+
+      final response = await _dio.post(
+        _chatEndpoint,
+        data: requestBody,
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $apiKey',
+            'Content-Type': 'application/json',
+          },
+          validateStatus: (status) => status! < 500,
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final content = response.data['choices'][0]['message']['content'];
+        return content.toString();
       } else if (response.statusCode == 401) {
         throw NoteAIException(
           'Error de autenticación con OpenAI. Verifica tu API key.',

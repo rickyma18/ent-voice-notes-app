@@ -2,4 +2,5 @@
 
 export 'process_encounter_usecase.dart';
 export 'prompt_templates/extractor_prompts.dart';
+export 'prompt_templates/composer_prompts.dart';
 export 'validation/validation.dart';

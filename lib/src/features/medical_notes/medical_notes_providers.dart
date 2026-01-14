@@ -3,7 +3,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:flutter/foundation.dart' show kReleaseMode;
 
 import '../../core/base/result.dart';
 import 'application/note_ai_service.dart';
@@ -32,6 +31,13 @@ import 'domain/usecases/get_medical_note_by_id_use_case.dart';
 import 'domain/usecases/add_attachment_to_medical_note_use_case.dart';
 import 'domain/entities/medical_note_entity.dart';
 import '../../presentation/core/application_state/current_doctor_provider/current_doctor_provider.dart';
+
+// Scribe (Pipeline) Imports
+import 'data/scribe/scribe.dart'; // Impls & DTOs
+import 'application/scribe/scribe.dart'; // UseCases & Prompts
+import 'domain/scribe/repositories/transcription_repository.dart';
+import 'domain/scribe/repositories/encounter_extractor_repository.dart';
+import 'domain/scribe/repositories/note_composer_repository.dart';
 
 part 'medical_notes_providers.g.dart';
 
@@ -291,5 +297,59 @@ AddAttachmentToMedicalNoteUseCase addAttachmentToMedicalNoteUseCase(
   return AddAttachmentToMedicalNoteUseCase(
     ref.watch(medicalNotesRepositoryProvider),
     ref.watch(attachmentsRepositoryProvider),
+  );
+}
+
+// =============================================================================
+// Scribe Pipeline Providers (Stage 2 & 3)
+// =============================================================================
+
+@riverpod
+OpenAIExtractorClient openAIExtractorClient(OpenAIExtractorClientRef ref) {
+  return OpenAIExtractorClient(openAIClient: ref.watch(openAIClientProvider));
+}
+
+@riverpod
+EncounterExtractorRepository encounterExtractorRepository(
+  EncounterExtractorRepositoryRef ref,
+) {
+  return EncounterExtractorRepositoryImpl(
+    client: ref.watch(openAIExtractorClientProvider),
+  );
+}
+
+@riverpod
+OpenAIComposerClient openAIComposerClient(OpenAIComposerClientRef ref) {
+  return OpenAIComposerClient(openAIClient: ref.watch(openAIClientProvider));
+}
+
+@riverpod
+NoteComposerRepository noteComposerRepository(NoteComposerRepositoryRef ref) {
+  return NoteComposerRepositoryImpl(
+    client: ref.watch(openAIComposerClientProvider),
+  );
+}
+
+/// Transcription Repository Provider (Stage 1)
+/// Currently unimplemented/mocked as PR focuses on Stage 3 Composer.
+@riverpod
+TranscriptionRepository transcriptionRepository(
+  TranscriptionRepositoryRef ref,
+) {
+  // TODO: Implement Stage 1 TranscriptionRepositoryImpl
+  throw UnimplementedError(
+    'Stage 1 Transcription Repository not yet implemented. '
+    'Verify transcription strategy.',
+  );
+}
+
+@riverpod
+ProcessEncounterUseCase processEncounterUseCase(
+  ProcessEncounterUseCaseRef ref,
+) {
+  return ProcessEncounterUseCase(
+    transcriptionRepository: ref.watch(transcriptionRepositoryProvider),
+    extractorRepository: ref.watch(encounterExtractorRepositoryProvider),
+    composerRepository: ref.watch(noteComposerRepositoryProvider),
   );
 }

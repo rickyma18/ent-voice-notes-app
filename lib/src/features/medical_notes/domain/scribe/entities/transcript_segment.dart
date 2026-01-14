@@ -6,8 +6,8 @@ class TranscriptSegment extends Equatable {
   const TranscriptSegment({
     required this.text,
     required this.speaker,
-    required this.startMs,
-    required this.endMs,
+    this.startMs,
+    this.endMs,
   });
 
   /// The transcribed text content for this segment.
@@ -17,13 +17,18 @@ class TranscriptSegment extends Equatable {
   final String speaker;
 
   /// Start time of this segment in milliseconds from audio start.
-  final int startMs;
+  final int? startMs;
 
   /// End time of this segment in milliseconds from audio start.
-  final int endMs;
+  final int? endMs;
 
   /// Duration of this segment in milliseconds.
-  int get durationMs => endMs - startMs;
+  int? get durationMs {
+    if (endMs != null && startMs != null) {
+      return endMs! - startMs!;
+    }
+    return null;
+  }
 
   @override
   List<Object?> get props => [text, speaker, startMs, endMs];
