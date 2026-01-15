@@ -4,10 +4,12 @@ import '../../domain/entities/medical_note_entity.dart';
 import '../../domain/entities/medical_note_type.dart';
 import '../../domain/entities/medication_entity.dart';
 import '../../domain/entities/note_status.dart';
+import '../../domain/entities/signature_data_entity.dart';
 import '../../domain/entities/study_entity.dart';
 import '../../domain/entities/surgical_note_data_entity.dart';
 import 'attachment_model.dart';
 import 'medication_model.dart';
+import 'signature_data_model.dart';
 import 'study_model.dart';
 import 'surgical_note_data_model.dart';
 
@@ -44,6 +46,7 @@ class MedicalNoteModel extends MedicalNoteEntity {
     super.tags,
     super.isFavorite,
     super.surgicalData,
+    super.signatureData,
   });
 
   factory MedicalNoteModel.fromJson(Map<String, dynamic> json) {
@@ -55,6 +58,14 @@ class MedicalNoteModel extends MedicalNoteEntity {
     if (json['surgical_data'] != null && json['surgical_data'] is Map) {
       surgicalData = SurgicalNoteDataModel.fromJson(
         json['surgical_data'] as Map<String, dynamic>,
+      );
+    }
+
+    // Parse signature data only if present
+    SignatureDataModel? signatureData;
+    if (json['signature_data'] != null && json['signature_data'] is Map) {
+      signatureData = SignatureDataModel.fromJson(
+        json['signature_data'] as Map<String, dynamic>,
       );
     }
 
@@ -115,6 +126,8 @@ class MedicalNoteModel extends MedicalNoteEntity {
       isFavorite: json['is_favorite'] as bool? ?? false,
       // Surgical note specific data
       surgicalData: surgicalData,
+      // Signature data (only for signed notes)
+      signatureData: signatureData,
     );
   }
 
@@ -166,6 +179,12 @@ class MedicalNoteModel extends MedicalNoteEntity {
           SurgicalNoteDataModel.fromEntity(surgicalData!).toJson();
     }
 
+    // Only include signature_data for signed notes
+    if (signatureData != null) {
+      data['signature_data'] =
+          SignatureDataModel.fromEntity(signatureData!).toJson();
+    }
+
     return data;
   }
 
@@ -202,6 +221,7 @@ class MedicalNoteModel extends MedicalNoteEntity {
       tags: entity.tags,
       isFavorite: entity.isFavorite,
       surgicalData: entity.surgicalData,
+      signatureData: entity.signatureData,
     );
   }
 
@@ -276,6 +296,17 @@ class MedicalNoteModel extends MedicalNoteEntity {
               hallazgos: surgicalData!.hallazgos,
               observaciones: surgicalData!.observaciones,
               complicaciones: surgicalData!.complicaciones,
+            )
+          : null,
+      signatureData: signatureData != null
+          ? SignatureDataEntity(
+              signedAt: signatureData!.signedAt,
+              signedByDoctorId: signatureData!.signedByDoctorId,
+              signedByDoctorDisplayName:
+                  signatureData!.signedByDoctorDisplayName,
+              signatureSnapshotUrl: signatureData!.signatureSnapshotUrl,
+              signedPdfUrl: signatureData!.signedPdfUrl,
+              signatureMethod: signatureData!.signatureMethod,
             )
           : null,
     );

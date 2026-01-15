@@ -1,14 +1,18 @@
 import 'dart:io';
 
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../../core/base/failure.dart';
 import '../../../../core/base/result.dart';
+import '../../../../core/logger/log.dart';
 import '../../data/scribe/dtos/clinical_facts_dto.dart';
+import '../../domain/scribe/entities/transcript_segment.dart';
 import '../../domain/scribe/entities/transcript_with_speakers.dart';
 import '../../domain/scribe/repositories/encounter_extractor_repository.dart';
 import '../../domain/scribe/repositories/note_composer_repository.dart';
 import '../../domain/scribe/repositories/transcription_repository.dart';
+import '../medicalization/medicalization_service.dart';
 
 /// Result of the complete medical scribe pipeline.
 class MedicalScribeResult extends Equatable {
@@ -17,6 +21,7 @@ class MedicalScribeResult extends Equatable {
     required this.facts,
     required this.soapText,
     required this.timings,
+    this.negatedFindings = const [],
   });
 
   /// The transcribed audio with speaker diarization.
@@ -31,8 +36,18 @@ class MedicalScribeResult extends Equatable {
   /// Timing information for each stage of the pipeline.
   final PipelineTimings timings;
 
+  /// List of clinical findings that were explicitly negated in the transcript.
+  /// Example: ['fiebre', 'tos', 'mocos', 'alergias']
+  final List<String> negatedFindings;
+
   @override
-  List<Object?> get props => [transcript, facts, soapText, timings];
+  List<Object?> get props => [
+    transcript,
+    facts,
+    soapText,
+    timings,
+    negatedFindings,
+  ];
 }
 
 /// Timing information for pipeline stages.
@@ -41,10 +56,14 @@ class PipelineTimings extends Equatable {
     required this.transcriptionMs,
     required this.extractionMs,
     required this.compositionMs,
+    this.medicalizationMs = 0,
   });
 
   /// Time spent on audio transcription (Stage 1).
   final int transcriptionMs;
+
+  /// Time spent on medicalization (Stage 1.5).
+  final int medicalizationMs;
 
   /// Time spent on clinical fact extraction (Stage 2).
   final int extractionMs;
@@ -53,10 +72,16 @@ class PipelineTimings extends Equatable {
   final int compositionMs;
 
   /// Total pipeline execution time.
-  int get totalMs => transcriptionMs + extractionMs + compositionMs;
+  int get totalMs =>
+      transcriptionMs + medicalizationMs + extractionMs + compositionMs;
 
   @override
-  List<Object?> get props => [transcriptionMs, extractionMs, compositionMs];
+  List<Object?> get props => [
+    transcriptionMs,
+    medicalizationMs,
+    extractionMs,
+    compositionMs,
+  ];
 }
 
 /// Options for the medical scribe pipeline.
@@ -76,6 +101,7 @@ class ProcessEncounterOptions {
 ///
 /// Pipeline stages:
 /// 1. **Transcribe**: Convert audio to text with speaker diarization
+/// 1.5 **Medicalize**: Transform colloquial terms to clinical terminology
 /// 2. **Extract**: Analyze transcript to extract clinical facts
 /// 3. **Compose**: Generate formatted SOAP note from facts
 final class ProcessEncounterUseCase {
@@ -83,11 +109,13 @@ final class ProcessEncounterUseCase {
     required this.transcriptionRepository,
     required this.extractorRepository,
     required this.composerRepository,
+    required this.medicalizationService,
   });
 
   final TranscriptionRepository transcriptionRepository;
   final EncounterExtractorRepository extractorRepository;
   final NoteComposerRepository composerRepository;
+  final MedicalizationService medicalizationService;
 
   /// Processes a medical encounter audio file through the full pipeline.
   ///
@@ -112,53 +140,331 @@ final class ProcessEncounterUseCase {
         final transcribeEnd = DateTime.now().millisecondsSinceEpoch;
         final transcriptionMs = transcribeEnd - transcribeStart;
 
-        // Stage 2: Extract clinical facts
-        final extractStart = DateTime.now().millisecondsSinceEpoch;
-        final extractResult = await extractorRepository.extract(
-          transcript,
-          context: options.extractionContext,
+        // Continue with shared pipeline logic
+        return _processTranscript(
+          transcript: transcript,
+          transcriptionMs: transcriptionMs,
+          options: options,
+        );
+      },
+      error: (failure) => Result<MedicalScribeResult, Failure>.error(failure),
+    );
+  }
+
+  /// Processes a pre-transcribed text through the pipeline (SKIPS STT).
+  ///
+  /// Use this when the transcript is already available (e.g., from UI STT).
+  /// This avoids double transcription and saves ~3-5s latency.
+  ///
+  /// [transcriptText] - The raw transcript text.
+  /// [options] - Optional configuration for each pipeline stage.
+  ///
+  /// Returns [MedicalScribeResult] containing transcript, facts, SOAP text,
+  /// and timing information.
+  Future<Result<MedicalScribeResult, Failure>> callFromTranscript(
+    String transcriptText, {
+    ProcessEncounterOptions options = const ProcessEncounterOptions(),
+  }) async {
+    Log.info('[Scribe] Using pre-transcribed text (skipping STT)');
+
+    // Create a synthetic TranscriptWithSpeakers from the text
+    final transcript = TranscriptWithSpeakers(
+      segments: [
+        TranscriptSegment(
+          text: transcriptText,
+          speaker: 'Patient', // Default speaker
+        ),
+      ],
+      language: options.transcriptionOptions.language ?? 'es',
+      durationMs: null,
+    );
+
+    // Continue with the rest of the pipeline (medicalization -> extraction -> composition)
+    return _processTranscript(
+      transcript: transcript,
+      transcriptionMs: 0, // No STT performed
+      options: options,
+    );
+  }
+
+  /// Internal method that processes a transcript through the remaining pipeline stages.
+  ///
+  /// Shared between [call] (with STT) and [callFromTranscript] (without STT).
+  Future<Result<MedicalScribeResult, Failure>> _processTranscript({
+    required TranscriptWithSpeakers transcript,
+    required int transcriptionMs,
+    required ProcessEncounterOptions options,
+  }) async {
+    // ─────────────────────────────────────────────────────────────────
+    // Stage 1.5: Medicalization (colloquial -> clinical terminology)
+    // ─────────────────────────────────────────────────────────────────
+    final medicalizationStart = DateTime.now().millisecondsSinceEpoch;
+    final rawText = transcript.fullText;
+    final medicalized = await medicalizationService.medicalize(rawText);
+    final medicalizationEnd = DateTime.now().millisecondsSinceEpoch;
+    final medicalizationMs = medicalizationEnd - medicalizationStart;
+
+    // Sanitize negatedFindings: remove junk, normalize, dedupe
+    final sanitizedNegatedFindings = _sanitizeNegatedFindings(
+      medicalized.negatedFindings,
+    );
+
+    // Log medicalization stats (no emojis in production logging)
+    Log.info(
+      '[Medicalization] applied=${medicalized.appliedMappings.length}, '
+      'negations=${medicalized.negationsPreserved}, '
+      'negatedFindings=${sanitizedNegatedFindings.length}, '
+      'len=${rawText.length}->${medicalized.medicalizedText.length}, '
+      'ms=$medicalizationMs',
+    );
+
+    // Debug: log applied mappings and negated findings for QA
+    if (kDebugMode) {
+      if (medicalized.appliedMappings.isNotEmpty) {
+        final preview = medicalized.appliedMappings
+            .take(10)
+            .map((m) => '"${m.original}" -> "${m.clinical}"');
+        Log.debug('[Medicalization] Preview: ${preview.join(', ')}');
+      }
+      if (sanitizedNegatedFindings.isNotEmpty) {
+        Log.debug(
+          '[Medicalization] Negated: ${sanitizedNegatedFindings.join(', ')}',
+        );
+      }
+    }
+
+    // Build new TranscriptWithSpeakers with medicalized text for extractor
+    final medicalizedTranscript = TranscriptWithSpeakers(
+      segments: [
+        TranscriptSegment(
+          text: medicalized.medicalizedText,
+          speaker: transcript.segments.isNotEmpty
+              ? transcript.segments.first.speaker
+              : 'unknown',
+        ),
+      ],
+      language: transcript.language,
+      durationMs: transcript.durationMs,
+    );
+
+    // Stage 2: Extract clinical facts (using medicalized transcript)
+    final extractStart = DateTime.now().millisecondsSinceEpoch;
+    final extractResult = await extractorRepository.extract(
+      medicalizedTranscript,
+      context: options.extractionContext,
+    );
+
+    return extractResult.when(
+      success: (extractedFacts) async {
+        final extractEnd = DateTime.now().millisecondsSinceEpoch;
+        final extractionMs = extractEnd - extractStart;
+
+        // ─────────────────────────────────────────────────────────────
+        // Stage 2.5: Apply fallback for missing diagnosis/plan
+        // ─────────────────────────────────────────────────────────────
+        // If extractor returned empty assessment/plan but we have
+        // chief complaint or HPI, apply conservative fallback values.
+        final facts = _applyExtractorFallback(
+          extractedFacts,
+          hasNegatedFindings: sanitizedNegatedFindings.isNotEmpty,
+          negatedFindings: sanitizedNegatedFindings,
         );
 
-        return extractResult.when(
-          success: (facts) async {
-            final extractEnd = DateTime.now().millisecondsSinceEpoch;
-            final extractionMs = extractEnd - extractStart;
+        // Stage 3: Compose SOAP note
+        final composeStart = DateTime.now().millisecondsSinceEpoch;
+        final composeResult = await composerRepository.composeSoap(
+          facts,
+          template: options.noteTemplate,
+        );
 
-            // Stage 3: Compose SOAP note
-            final composeStart = DateTime.now().millisecondsSinceEpoch;
-            final composeResult = await composerRepository.composeSoap(
-              facts,
-              template: options.noteTemplate,
-            );
+        return composeResult.when(
+          success: (soapText) {
+            final composeEnd = DateTime.now().millisecondsSinceEpoch;
+            final compositionMs = composeEnd - composeStart;
 
-            return composeResult.when(
-              success: (soapText) {
-                final composeEnd = DateTime.now().millisecondsSinceEpoch;
-                final compositionMs = composeEnd - composeStart;
-
-                return Result.success(
-                  MedicalScribeResult(
-                    transcript: transcript,
-                    facts: facts,
-                    soapText: soapText,
-                    timings: PipelineTimings(
-                      transcriptionMs: transcriptionMs,
-                      extractionMs: extractionMs,
-                      compositionMs: compositionMs,
-                    ),
-                  ),
-                );
-              },
-              error: (failure) =>
-                  Result<MedicalScribeResult, Failure>.error(failure),
+            return Result.success(
+              MedicalScribeResult(
+                // Return original transcript (not medicalized) for traceability
+                transcript: transcript,
+                facts: facts,
+                soapText: soapText,
+                timings: PipelineTimings(
+                  transcriptionMs: transcriptionMs,
+                  medicalizationMs: medicalizationMs,
+                  extractionMs: extractionMs,
+                  compositionMs: compositionMs,
+                ),
+                negatedFindings: sanitizedNegatedFindings,
+              ),
             );
           },
           error: (failure) =>
               Result<MedicalScribeResult, Failure>.error(failure),
         );
       },
-      error: (failure) =>
-          Result<MedicalScribeResult, Failure>.error(failure),
+      error: (failure) => Result<MedicalScribeResult, Failure>.error(failure),
     );
+  }
+
+  /// Applies fallback values when extractor returns empty critical fields.
+  ///
+  /// This ensures the composer ALWAYS has meaningful data to work with,
+  /// even if the LLM didn't extract a diagnosis or plan.
+  ClinicalFactsDTO _applyExtractorFallback(
+    ClinicalFactsDTO facts, {
+    required bool hasNegatedFindings,
+    required List<String> negatedFindings,
+  }) {
+    // Check if we have enough data to justify a fallback
+    final hasChiefComplaint = facts.chiefComplaint.text != null;
+    final hasHPI = facts.hpi.narrative != null;
+
+    // If no substantive data, don't force fallbacks
+    if (!hasChiefComplaint && !hasHPI) {
+      return facts;
+    }
+
+    // Apply fallback for empty assessment
+    var updatedAssessment = facts.assessment;
+    if (facts.assessment.primary == null &&
+        facts.assessment.differential.isEmpty) {
+      Log.info('[Scribe] Applying fallback for empty assessment');
+      updatedAssessment = AssessmentSection(
+        primary: 'Diagnóstico diferido - pendiente exploración física',
+        differential: const [],
+        evidence: const [],
+      );
+    }
+
+    // Apply fallback for empty plan
+    var updatedPlan = facts.plan;
+    if (facts.plan.treatments.isEmpty && facts.plan.diagnostics.isEmpty) {
+      Log.info('[Scribe] Applying fallback for empty plan');
+      updatedPlan = PlanSection(
+        diagnostics: const [],
+        treatments: const ['Manejo sintomático según hallazgos de exploración'],
+        referrals: const [],
+        education: const [
+          'Signos de alarma: fiebre alta persistente, dificultad respiratoria, deterioro general',
+        ],
+        followUp: 'Revalorar tras exploración física completa',
+        evidence: const [],
+      );
+    }
+
+    // Add negated findings to ROS negatives if not already present
+    var updatedROS = facts.ros;
+    if (negatedFindings.isNotEmpty) {
+      final existingNegatives = facts.ros.negatives
+          .map((n) => n.toLowerCase())
+          .toSet();
+      final newNegatives = <String>[...facts.ros.negatives];
+
+      for (final finding in negatedFindings) {
+        if (!existingNegatives.contains(finding.toLowerCase())) {
+          // Add formatted string like "niega fiebre"
+          newNegatives.add('niega $finding');
+        }
+      }
+
+      if (newNegatives.length > facts.ros.negatives.length) {
+        updatedROS = ROSSection(
+          positives: facts.ros.positives,
+          negatives: newNegatives,
+          evidence: facts.ros.evidence,
+        );
+      }
+    }
+
+    // Only create new DTO if something changed
+    if (updatedAssessment != facts.assessment ||
+        updatedPlan != facts.plan ||
+        updatedROS != facts.ros) {
+      return ClinicalFactsDTO(
+        metadata: facts.metadata,
+        patient: facts.patient,
+        chiefComplaint: facts.chiefComplaint,
+        hpi: facts.hpi,
+        ros: updatedROS,
+        pmh: facts.pmh,
+        medications: facts.medications,
+        allergies: facts.allergies,
+        physicalExam: facts.physicalExam,
+        assessment: updatedAssessment,
+        plan: updatedPlan,
+        missingInfo: facts.missingInfo,
+        ambiguousInfo: facts.ambiguousInfo,
+      );
+    }
+
+    return facts;
+  }
+
+  /// Sanitizes negated findings by normalizing, deduplicating, and filtering.
+  ///
+  /// Removes junk like:
+  /// - Partial phrases: "alérgico a", "tomo medicamentos"
+  /// - Generic terms: "medicamentos", "nada"
+  /// - Stopwords and articles
+  ///
+  /// Maps variants to canonical forms:
+  /// - "alérgico", "alérgica" -> "alergias"
+  /// - "moco", "mocos" -> "rinorrea"
+  List<String> _sanitizeNegatedFindings(List<String> raw) {
+    // Terms to completely exclude (too generic or partial phrases)
+    const excludeExact = <String>{
+      'nada',
+      'medicamentos',
+      'tomo medicamentos',
+      'alérgico a',
+      'alérgica a',
+      'tenido',
+      'tomo',
+      'soy',
+      'he',
+      'a',
+      'de',
+      'la',
+      'el',
+    };
+
+    // Mapping from variants to canonical clinical terms
+    const canonicalMap = <String, String>{
+      'alérgico': 'alergias',
+      'alérgica': 'alergias',
+      'moco': 'rinorrea',
+      'mocos': 'rinorrea',
+      'vomito': 'vómitos',
+      'vómito': 'vómitos',
+    };
+
+    final result = <String>{};
+
+    for (var finding in raw) {
+      // Normalize: lowercase, trim
+      finding = finding.toLowerCase().trim();
+
+      // Skip empty or too short
+      if (finding.isEmpty || finding.length < 3) continue;
+
+      // Skip if in exclude list
+      if (excludeExact.contains(finding)) continue;
+
+      // Skip if contains generic patterns
+      if (finding.contains('tomo ') ||
+          finding.contains(' a ') ||
+          finding.endsWith(' a'))
+        continue;
+
+      // Map to canonical form if available
+      if (canonicalMap.containsKey(finding)) {
+        finding = canonicalMap[finding]!;
+      }
+
+      // Add to result (Set handles deduplication)
+      result.add(finding);
+    }
+
+    return result.toList();
   }
 }

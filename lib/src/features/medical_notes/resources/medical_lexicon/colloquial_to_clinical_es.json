@@ -312,6 +312,10 @@
     "no tengo": {
       "clinical": "niega",
       "note": null
+    },
+    "sin": {
+      "clinical": "niega",
+      "note": "Transformación directa de negación para combinación con síntomas"
     }
   }
 }

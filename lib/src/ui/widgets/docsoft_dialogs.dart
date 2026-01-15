@@ -139,7 +139,8 @@ class DocsoftDialogs {
   ///   canPop: !_hasUnsavedChanges,
   ///   onPopInvoked: (didPop) async {
   ///     if (didPop) return;
-  ///     final shouldExit = await DocsoftDialogs.confirmExitWithoutSaving(context);
+  ///     final shouldExit =
+  ///         await DocsoftDialogs.confirmExitWithoutSaving(context);
   ///     if (shouldExit == true && context.mounted) {
   ///       Navigator.of(context).pop();
   ///     }
@@ -161,6 +162,26 @@ class DocsoftDialogs {
     );
   }
 
+  /// Shows a error dialog with a single confirm button.
+  ///
+  /// Used for reporting errors to the user.
+  static Future<void> showError({
+    required BuildContext context,
+    required String title,
+    required String message,
+    String confirmLabel = 'Entendido',
+  }) {
+    return _showDialog(
+      context: context,
+      icon: Icons.error_rounded,
+      title: title,
+      message: message,
+      confirmLabel: confirmLabel,
+      cancelLabel: null,
+      variant: DocsoftDialogVariant.destructive,
+    );
+  }
+
   /// Internal method to show the dialog with animation.
   static Future<bool?> _showDialog({
     required BuildContext context,
@@ -168,7 +189,7 @@ class DocsoftDialogs {
     required String title,
     required String message,
     required String confirmLabel,
-    String cancelLabel = 'Cancelar',
+    String? cancelLabel = 'Cancelar',
     required DocsoftDialogVariant variant,
   }) {
     return showGeneralDialog<bool?>(

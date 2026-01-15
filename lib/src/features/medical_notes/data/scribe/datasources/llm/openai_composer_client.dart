@@ -12,13 +12,17 @@ import '../../../../application/note_ai_service_impl.dart';
 class OpenAIComposerClient {
   OpenAIComposerClient({
     required OpenAIClient openAIClient,
-    this.defaultModel = 'gpt-4o',
-    this.defaultTemperature = 0.3,
+    this.defaultModel = 'gpt-4o-mini', // Fast model - sufficient for formatting
+    this.defaultTemperature = 0.1, // Low variance for consistent output
+    this.defaultMaxTokens = 800, // SOAP note = 400-600 tokens typical
+    this.timeoutSeconds = 30, // Fast failover
   }) : _openAIClient = openAIClient;
 
   final OpenAIClient _openAIClient;
   final String defaultModel;
   final double defaultTemperature;
+  final int defaultMaxTokens;
+  final int timeoutSeconds;
 
   /// Composes a SOAP note from clinical facts using the LLM.
   ///
@@ -26,23 +30,38 @@ class OpenAIComposerClient {
   /// [userPrompt] - User prompt containing the clinical facts and format.
   /// [model] - OpenAI model to use. Defaults to [defaultModel].
   /// [temperature] - Temperature setting (0.0-1.0). Defaults to [defaultTemperature].
+  /// [maxTokens] - Maximum output tokens. Defaults to [defaultMaxTokens].
   ///
   /// Returns the raw assistant response string (the composed note text).
   ///
-  /// Throws [ComposerClientException] on API errors.
+  /// Throws [ComposerClientException] on API errors or timeout.
   Future<String> composeSoapRaw({
     required String systemPrompt,
     required String userPrompt,
     String? model,
     double? temperature,
+    int? maxTokens,
   }) async {
     try {
-      final response = await _openAIClient.generateText(
-        systemPrompt: systemPrompt,
-        userPrompt: userPrompt,
-        model: model ?? defaultModel,
-        temperature: temperature ?? defaultTemperature,
-      );
+      final effectiveModel = model ?? defaultModel;
+      final effectiveMaxTokens = maxTokens ?? defaultMaxTokens;
+
+      final response = await _openAIClient
+          .generateText(
+            systemPrompt: systemPrompt,
+            userPrompt: userPrompt,
+            model: effectiveModel,
+            temperature: temperature ?? defaultTemperature,
+            maxTokens: effectiveMaxTokens,
+          )
+          .timeout(
+            Duration(seconds: timeoutSeconds),
+            onTimeout: () {
+              throw ComposerClientException(
+                'Composition timeout after ${timeoutSeconds}s',
+              );
+            },
+          );
 
       return response;
     } on NoteAIException catch (e) {
@@ -52,6 +71,7 @@ class OpenAIComposerClient {
         'Network error during composition: ${e.message}',
       );
     } catch (e) {
+      if (e is ComposerClientException) rethrow;
       throw ComposerClientException('Composition failed: $e');
     }
   }

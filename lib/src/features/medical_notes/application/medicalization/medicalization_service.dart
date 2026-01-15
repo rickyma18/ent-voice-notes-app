@@ -31,6 +31,7 @@ class MedicalizationOutput {
     required this.appliedMappings,
     required this.spans,
     required this.negationsPreserved,
+    this.negatedFindings = const [],
   });
 
   /// The original unmodified text.
@@ -45,11 +46,19 @@ class MedicalizationOutput {
   /// Spans linking medicalized terms back to original text.
   final List<TextSpan> spans;
 
-  /// Count of negations that were preserved.
+  /// Count of negations that were preserved (mappings skipped).
   final int negationsPreserved;
+
+  /// List of clinical findings that were explicitly NEGATED in the text.
+  /// Example: "no fiebre" -> ['fiebre'], "niega tos y mocos" -> ['tos', 'mocos']
+  /// This captures negations even when there's no mapping for the term.
+  final List<String> negatedFindings;
 
   /// Returns true if any transformations were applied.
   bool get hasChanges => appliedMappings.isNotEmpty;
+
+  /// Returns true if any negations were detected (with or without mappings).
+  bool get hasNegations => negationsPreserved > 0 || negatedFindings.isNotEmpty;
 }
 
 /// Represents a single applied mapping.
@@ -171,6 +180,7 @@ class LocalMedicalizationService implements MedicalizationService {
         appliedMappings: [],
         spans: [],
         negationsPreserved: 0,
+        negatedFindings: [],
       );
     }
 
@@ -180,15 +190,27 @@ class LocalMedicalizationService implements MedicalizationService {
     // Step 1: Detect negation positions with improved clause-based detection
     final negationRanges = _detectNegationRanges(rawText);
 
-    // Step 2: Apply mappings with offset tracking (NON-CASCADING)
+    // Step 2: Extract negated clinical findings (independent of mappings)
+    final negatedFindings = _extractNegatedFindings(rawText, negationRanges);
+
+    // Step 3: Apply mappings with offset tracking (NON-CASCADING)
     final result = _applyMappings(rawText, negationRanges);
 
     Log.info(
-      '📖 [LocalMedicalization] Applied ${result.appliedMappings.length} mappings, '
-      'preserved ${result.negationsPreserved} negations',
+      '[LocalMedicalization] Applied ${result.appliedMappings.length} mappings, '
+      'preserved ${result.negationsPreserved} negations, '
+      'detected ${negatedFindings.length} negated findings',
     );
 
-    return result;
+    // Return result with extracted negatedFindings
+    return MedicalizationOutput(
+      originalText: result.originalText,
+      medicalizedText: result.medicalizedText,
+      appliedMappings: result.appliedMappings,
+      spans: result.spans,
+      negationsPreserved: result.negationsPreserved,
+      negatedFindings: negatedFindings,
+    );
   }
 
   @override
@@ -248,18 +270,17 @@ class LocalMedicalizationService implements MedicalizationService {
     // Use full mappings to get category information
     final fullMappings = await _glossary.getFullMappings();
 
-    _sortedMappings =
-        fullMappings.entries
-            .map(
-              (e) => _SortedMapping(
-                colloquial: e.key,
-                clinical: e.value.clinical,
-                pattern: _buildWordBoundaryPattern(e.key),
-                priority: _getCategoryPriority(e.value.category),
-                category: e.value.category,
-              ),
-            )
-            .toList();
+    _sortedMappings = fullMappings.entries
+        .map(
+          (e) => _SortedMapping(
+            colloquial: e.key,
+            clinical: e.value.clinical,
+            pattern: _buildWordBoundaryPattern(e.key),
+            priority: _getCategoryPriority(e.value.category),
+            category: e.value.category,
+          ),
+        )
+        .toList();
 
     // Pre-sort by length descending (will be re-sorted during matching)
     _sortedMappings!.sort(
@@ -267,7 +288,7 @@ class LocalMedicalizationService implements MedicalizationService {
     );
 
     Log.info(
-      '📖 [LocalMedicalization] Loaded ${_sortedMappings!.length} mappings '
+      '[LocalMedicalization] Loaded ${_sortedMappings!.length} mappings '
       '(clinical: ${_sortedMappings!.where((m) => m.priority == _priorityClinical).length}, '
       'voice_transforms: ${_sortedMappings!.where((m) => m.priority == _priorityVoiceTransforms).length})',
     );
@@ -366,6 +387,165 @@ class LocalMedicalizationService implements MedicalizationService {
     }
 
     return endPos;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // NEGATED FINDINGS EXTRACTION (Independent of mappings)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// Common clinical symptom terms that we want to detect when negated.
+  /// These are NOT mappings - they're terms we look for after negation words.
+  static final Set<String> _commonClinicalTerms = {
+    // General symptoms
+    'fiebre',
+    'tos',
+    'dolor',
+    'cefalea',
+    'mareo',
+    'náuseas',
+    'vómito',
+    'vómitos',
+    'diarrea', 'estreñimiento', 'fatiga', 'cansancio', 'debilidad',
+    // ENT symptoms
+    'mocos', 'moco', 'rinorrea', 'congestión', 'estornudos', 'picazón',
+    'odinofagia', 'disfagia', 'otalgia', 'otorrea', 'disfonía', 'ronquera',
+    // Allergies patterns
+    'alérgico', 'alérgica', 'alergias', 'alergia',
+    // Medications
+    'medicamentos', 'medicinas', 'pastillas', 'tratamiento',
+    // Other common
+    'sangrado', 'herida', 'lesión', 'inflamación', 'hinchazón',
+  };
+
+  /// Pattern to extract negated terms in Spanish.
+  /// Matches: "no [tengo|he tenido|tiene|presenta] TERM"
+  /// or "niega TERM" / "sin TERM" / "tampoco TERM"
+  static final RegExp _negatedTermPattern = RegExp(
+    r'\b(?:no(?:\s+(?:tengo|tiene|presenta|he\s+tenido|ha\s+tenido|soy|es))?\s+|niega\s+|sin\s+|tampoco\s+|ni\s+)([a-záéíóúüñ]+(?:\s+(?:de\s+)?[a-záéíóúüñ]+)?)',
+    caseSensitive: false,
+  );
+
+  /// Extracts clinical terms that are explicitly negated in the text.
+  ///
+  /// Returns a list of unique negated clinical terms found.
+  /// Example: "no he tenido fiebre, no tos, sin mocos"
+  ///          -> ['fiebre', 'tos', 'mocos']
+  List<String> _extractNegatedFindings(
+    String text,
+    List<_NegationRange> negationRanges,
+  ) {
+    final findings = <String>{};
+
+    // For each negation range, extract the words that follow
+    for (final range in negationRanges) {
+      // Get the text in the negation window
+      final windowText = text.substring(
+        range.negationEnd,
+        range.windowEnd.clamp(range.negationEnd, text.length),
+      );
+
+      // Split by common separators and extract words
+      final words = windowText
+          .split(RegExp(r'[,\s]+'))
+          .map((w) => w.toLowerCase().trim())
+          .where((w) => w.isNotEmpty && w.length > 2);
+
+      for (final word in words) {
+        // Check if it's a known clinical term or looks like one
+        if (_commonClinicalTerms.contains(word)) {
+          findings.add(word);
+        }
+        // Also catch patterns like "alérgico a nada" -> "alérgico"
+        for (final term in _commonClinicalTerms) {
+          if (word.contains(term)) {
+            findings.add(term);
+            break;
+          }
+        }
+      }
+    }
+
+    // Also use regex pattern for more structured detection
+    for (final match in _negatedTermPattern.allMatches(text.toLowerCase())) {
+      final captured = match.group(1)?.trim();
+      if (captured != null && captured.isNotEmpty) {
+        // Check if the captured term is or contains a clinical term
+        for (final term in _commonClinicalTerms) {
+          if (captured.contains(term) || term.contains(captured)) {
+            findings.add(term);
+            break;
+          }
+        }
+        // Also add the raw captured term if it's reasonably clinical-looking
+        if (captured.length >= 3 && !_isStopWord(captured)) {
+          findings.add(captured);
+        }
+      }
+    }
+
+    return findings.toList();
+  }
+
+  /// Checks if a word is a common stop word (not clinically meaningful).
+  bool _isStopWord(String word) {
+    const stopWords = {
+      'que',
+      'de',
+      'la',
+      'el',
+      'en',
+      'es',
+      'un',
+      'una',
+      'los',
+      'las',
+      'por',
+      'con',
+      'para',
+      'del',
+      'al',
+      'se',
+      'lo',
+      'como',
+      'más',
+      'pero',
+      'sus',
+      'le',
+      'ya',
+      'son',
+      'este',
+      'entre',
+      'cuando',
+      'muy',
+      'sin',
+      'sobre',
+      'también',
+      'me',
+      'hasta',
+      'hay',
+      'donde',
+      'quien',
+      'desde',
+      'todo',
+      'nos',
+      'durante',
+      'todos',
+      'uno',
+      'les',
+      'ni',
+      'contra',
+      'otros',
+      'ese',
+      'eso',
+      'ante',
+      'ellos',
+      'sido',
+      'tengo',
+      'tiene',
+      'nada',
+      'algo',
+    };
+    return stopWords.contains(word.toLowerCase());
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -478,9 +658,11 @@ class LocalMedicalizationService implements MedicalizationService {
       // Check if this match is within a negation window
       final isNegated = _isWithinNegation(originalStart, negationRanges);
 
-      // Increment negationsPreserved when mapping is within negation scope
+      // SKIP mapping if within negation scope - preserve original text
       if (isNegated) {
         negationsPreserved++;
+        // DO NOT apply replacement - skip this candidate entirely
+        continue;
       }
 
       // Calculate positions in the result string (accounting for previous replacements)
@@ -505,7 +687,8 @@ class LocalMedicalizationService implements MedicalizationService {
           clinical: replacement,
           originalStart: originalStart,
           originalEnd: originalEnd,
-          isNegated: isNegated,
+          isNegated:
+              false, // Only applied mappings reach here, so never negated
         ),
       );
 
@@ -516,7 +699,7 @@ class LocalMedicalizationService implements MedicalizationService {
           end: adjustedStart + replacement.length,
           originalText: candidate.matchedText,
           medicalizedText: replacement,
-          type: isNegated ? SpanType.negation : SpanType.term,
+          type: SpanType.term,
         ),
       );
     }

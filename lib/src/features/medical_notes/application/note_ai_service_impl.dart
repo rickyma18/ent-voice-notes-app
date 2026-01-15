@@ -1261,66 +1261,104 @@ class OpenAIClient {
   /// [systemPrompt] - System instructions for the model.
   /// [userPrompt] - User prompt with transcript and schema.
   /// [temperature] - Temperature setting (0.0-1.0). Lower = more deterministic.
+  /// [maxTokens] - Maximum tokens to generate. Default: 1500 (typical note).
+  /// [model] - Model override. If null, uses default _gptModel.
   ///
   /// Returns the raw JSON string from the model.
   Future<String> generateStructuredFieldsV2({
     required String systemPrompt,
     required String userPrompt,
-    double temperature = 0.1,
+    double temperature = 0.0, // 0 for maximum determinism and speed
+    int maxTokens =
+        1500, // Reduced from 3000 - typical note is under 1000 tokens
+    String? model,
   }) async {
-    try {
-      final requestBody = {
-        'model': _gptModel,
-        'messages': [
-          {'role': 'system', 'content': systemPrompt},
-          {'role': 'user', 'content': userPrompt},
-        ],
-        'temperature': temperature,
-        'max_tokens': 3000, // Increased for larger structured output
-        'response_format': {'type': 'json_object'},
-      };
+    // Use provided model or fallback to default
+    final effectiveModel = model ?? _gptModel;
+    var effectiveMaxTokens = maxTokens;
+    var attempt = 0;
+    const maxAttempts = 2;
 
-      final response = await _dio.post(
-        _chatEndpoint,
-        data: requestBody,
-        options: Options(
-          headers: {
-            'Authorization': 'Bearer $apiKey',
-            'Content-Type': 'application/json',
-          },
-          validateStatus: (status) => status! < 500,
-        ),
-      );
+    while (attempt < maxAttempts) {
+      attempt++;
+      try {
+        final requestBody = {
+          'model': effectiveModel,
+          'messages': [
+            {'role': 'system', 'content': systemPrompt},
+            {'role': 'user', 'content': userPrompt},
+          ],
+          'temperature': temperature,
+          'max_tokens': effectiveMaxTokens,
+          'response_format': {'type': 'json_object'},
+        };
 
-      if (response.statusCode == 200) {
-        final content = response.data['choices'][0]['message']['content'];
-        return content.toString();
-      } else if (response.statusCode == 401) {
-        throw NoteAIException(
-          'Error de autenticación con OpenAI. Verifica tu API key.',
+        final response = await _dio.post(
+          _chatEndpoint,
+          data: requestBody,
+          options: Options(
+            headers: {
+              'Authorization': 'Bearer $apiKey',
+              'Content-Type': 'application/json',
+            },
+            validateStatus: (status) => status! < 500,
+          ),
         );
-      } else if (response.statusCode == 429) {
-        throw NoteAIException(
-          'Límite de solicitudes excedido. Intenta más tarde.',
-        );
-      } else {
-        final errorMsg =
-            response.data?['error']?['message'] ?? 'Error desconocido';
-        throw NoteAIException('Error de OpenAI: $errorMsg');
+
+        if (response.statusCode == 200) {
+          final content = response.data['choices'][0]['message']['content'];
+          return content.toString();
+        } else if (response.statusCode == 401) {
+          throw NoteAIException(
+            'Error de autenticación con OpenAI. Verifica tu API key.',
+          );
+        } else if (response.statusCode == 429) {
+          throw NoteAIException(
+            'Límite de solicitudes excedido. Intenta más tarde.',
+          );
+        } else if (response.statusCode == 400) {
+          final errorMsg =
+              response.data?['error']?['message'] ?? 'Error desconocido';
+
+          // Check for context length / max tokens error and retry with lower tokens
+          if (errorMsg.contains('maximum context length') ||
+              errorMsg.contains('max_tokens') ||
+              errorMsg.contains('context_length_exceeded')) {
+            if (attempt < maxAttempts) {
+              // Reduce max_tokens by 40% and retry
+              effectiveMaxTokens = (effectiveMaxTokens * 0.6).round().clamp(
+                256,
+                4000,
+              );
+              Log.warning(
+                '[OpenAIClient] Context length error, retrying with max_tokens=$effectiveMaxTokens',
+              );
+              continue;
+            }
+          }
+          throw NoteAIException('Error de OpenAI: $errorMsg');
+        } else {
+          final errorMsg =
+              response.data?['error']?['message'] ?? 'Error desconocido';
+          throw NoteAIException('Error de OpenAI: $errorMsg');
+        }
+      } on DioException catch (e) {
+        if (e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.receiveTimeout) {
+          throw NoteAIException(
+            'Tiempo de espera agotado. Verifica tu conexión a internet.',
+          );
+        } else if (e.type == DioExceptionType.connectionError) {
+          throw NoteAIException(
+            'No se pudo conectar con OpenAI. Verifica tu conexión a internet.',
+          );
+        }
+        rethrow;
       }
-    } on DioException catch (e) {
-      if (e.type == DioExceptionType.connectionTimeout ||
-          e.type == DioExceptionType.receiveTimeout) {
-        throw NoteAIException(
-          'Tiempo de espera agotado. Verifica tu conexión a internet.',
-        );
-      } else if (e.type == DioExceptionType.connectionError) {
-        throw NoteAIException(
-          'No se pudo conectar con OpenAI. Verifica tu conexión a internet.',
-        );
-      }
-      rethrow;
     }
+
+    // Should not reach here
+    throw NoteAIException('Error inesperado después de $maxAttempts intentos');
   }
 
   /// Generates a treatment plan suggestion using GPT-4.
@@ -1396,6 +1434,9 @@ class OpenAIClient {
   /// Flexible method that supports custom [model], [temperature], and
   /// separate [systemPrompt] and [userPrompt].
   ///
+  /// [maxTokens] - Optional limit on output tokens. If null, API default is used.
+  ///               For SOAP notes, 1500-2000 is typically sufficient.
+  ///
   /// Does NOT enforce JSON mode or specific response format.
   /// Returns the assistant's content string directly.
   Future<String> generateText({
@@ -1403,9 +1444,10 @@ class OpenAIClient {
     required String userPrompt,
     String model = 'gpt-4o',
     double temperature = 0.2,
+    int? maxTokens,
   }) async {
     try {
-      final requestBody = {
+      final requestBody = <String, dynamic>{
         'model': model,
         'messages': [
           {'role': 'system', 'content': systemPrompt},
@@ -1413,6 +1455,11 @@ class OpenAIClient {
         ],
         'temperature': temperature,
       };
+
+      // Add max_tokens if specified (limits output length and can reduce latency)
+      if (maxTokens != null) {
+        requestBody['max_tokens'] = maxTokens;
+      }
 
       final response = await _dio.post(
         _chatEndpoint,

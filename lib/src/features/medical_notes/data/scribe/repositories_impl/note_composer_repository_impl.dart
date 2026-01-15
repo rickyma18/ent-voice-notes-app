@@ -25,39 +25,71 @@ final class NoteComposerRepositoryImpl extends NoteComposerRepository {
     NoteTemplate template = const NoteTemplate(),
   }) async {
     return asyncGuard(() async {
-      Log.info('📝 [Composer] Starting SOAP note composition');
+      final totalStopwatch = Stopwatch()..start();
+
+      // Log assessment=true if we have enough data to generate a note
+      // (either explicit diagnosis OR chief complaint/HPI for fallback)
+      final hasDataForAssessment =
+          facts.assessment.primary != null ||
+          facts.chiefComplaint.text != null ||
+          facts.hpi.narrative != null;
+
       Log.info(
-        '📝 [Composer] Facts: chiefComplaint=${facts.chiefComplaint.text != null}, '
+        '[Composer] Starting SOAP note composition: '
+        'chiefComplaint=${facts.chiefComplaint.text != null}, '
         'hpi=${facts.hpi.narrative != null}, '
-        'assessment=${facts.assessment.primary != null}',
+        'assessment=$hasDataForAssessment',
       );
 
       // ─────────────────────────────────────────────────────────────────────────
       // STEP 1: Build composition prompt
       // ─────────────────────────────────────────────────────────────────────────
+      final buildPromptStopwatch = Stopwatch()..start();
+
       final userPrompt = ComposerPrompts.buildSoapComposePrompt(
         facts: facts,
         template: template,
       );
 
-      Log.info('📝 [Composer] Prompt built: ${userPrompt.length} chars');
+      buildPromptStopwatch.stop();
+      final buildPromptMs = buildPromptStopwatch.elapsedMilliseconds;
+
+      Log.info('[Composer] Prompt built: ${userPrompt.length} chars');
 
       // ─────────────────────────────────────────────────────────────────────────
       // STEP 2: Call LLM for composition
       // ─────────────────────────────────────────────────────────────────────────
+      final requestStopwatch = Stopwatch()..start();
+
       final rawResponse = await _client.composeSoapRaw(
         systemPrompt: ComposerPrompts.systemPrompt,
         userPrompt: userPrompt,
       );
 
-      Log.info('📝 [Composer] LLM response: ${rawResponse.length} chars');
+      requestStopwatch.stop();
+      final requestMs = requestStopwatch.elapsedMilliseconds;
+
+      Log.info('[Composer] LLM response: ${rawResponse.length} chars');
 
       // ─────────────────────────────────────────────────────────────────────────
       // STEP 3: Post-process the response
       // ─────────────────────────────────────────────────────────────────────────
+      final postProcessStopwatch = Stopwatch()..start();
+
       final processedNote = _postProcess(rawResponse);
 
+      postProcessStopwatch.stop();
+      final postProcessMs = postProcessStopwatch.elapsedMilliseconds;
+
       if (processedNote.isEmpty) {
+        totalStopwatch.stop();
+
+        Log.error(
+          '[Composer] FAILED - empty note: '
+          'buildPromptMs=$buildPromptMs, requestMs=$requestMs, '
+          'postProcessMs=$postProcessMs, totalMs=${totalStopwatch.elapsedMilliseconds}',
+        );
+
         throw CompositionFailedException(
           message: 'LLM returned empty note',
           rawFragment: rawResponse.length > 200
@@ -66,8 +98,14 @@ final class NoteComposerRepositoryImpl extends NoteComposerRepository {
         );
       }
 
+      totalStopwatch.stop();
+
+      // Log complete timing breakdown
       Log.info(
-        '✅ [Composer] Composition successful: ${processedNote.length} chars',
+        '[Composer] SUCCESS - Timing breakdown: '
+        'buildPromptMs=$buildPromptMs, requestMs=$requestMs, '
+        'postProcessMs=$postProcessMs, totalMs=${totalStopwatch.elapsedMilliseconds}, '
+        'inputChars=${userPrompt.length}, outputChars=${processedNote.length}',
       );
 
       return processedNote;

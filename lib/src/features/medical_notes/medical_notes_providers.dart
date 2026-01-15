@@ -17,6 +17,7 @@ import 'application/usecases/upload_pdf_attachment_usecase.dart';
 import 'data/datasources/attachments_storage_datasource.dart';
 import 'data/datasources/medical_notes_local_datasource.dart';
 import 'data/datasources/medical_notes_remote_datasource.dart';
+import 'data/datasources/signature_storage_datasource.dart';
 // import 'data/datasources/medical_notes_fake_datasource.dart'; // Fake kept for testing
 import 'data/repositories/attachments_repository_impl.dart';
 import 'data/repositories/medical_notes_repository_impl.dart';
@@ -29,8 +30,11 @@ import 'domain/usecases/get_medical_notes_use_case.dart';
 import 'domain/usecases/update_medical_note_use_case.dart';
 import 'domain/usecases/get_medical_note_by_id_use_case.dart';
 import 'domain/usecases/add_attachment_to_medical_note_use_case.dart';
+import 'domain/usecases/sign_medical_note_use_case.dart';
 import 'domain/entities/medical_note_entity.dart';
 import '../../presentation/core/application_state/current_doctor_provider/current_doctor_provider.dart';
+import '../doctors/doctors_providers.dart';
+import '../doctors/domain/entities/doctor_signature_info.dart';
 
 // Scribe (Pipeline) Imports
 import 'data/scribe/scribe.dart'; // Impls & DTOs
@@ -38,6 +42,9 @@ import 'application/scribe/scribe.dart'; // UseCases & Prompts
 import 'domain/scribe/repositories/transcription_repository.dart';
 import 'domain/scribe/repositories/encounter_extractor_repository.dart';
 import 'domain/scribe/repositories/note_composer_repository.dart';
+
+// Medicalization Service Import
+import 'application/medicalization/medicalization_service.dart';
 
 part 'medical_notes_providers.g.dart';
 
@@ -158,6 +165,9 @@ OpenAIClient openAIClient(Ref ref) {
 /// TEST MODE: Uncomment the stub below for UI testing without API calls.
 @riverpod
 NoteAIService noteAIService(NoteAIServiceRef ref) {
+  // CRITICAL: Keep alive during long LLM operations
+  ref.keepAlive();
+
   return NoteAIServiceImpl(
     openAIClient: ref.watch(openAIClientProvider),
     enablePhoneticMedicationMatching: true,
@@ -301,11 +311,25 @@ AddAttachmentToMedicalNoteUseCase addAttachmentToMedicalNoteUseCase(
 }
 
 // =============================================================================
-// Scribe Pipeline Providers (Stage 2 & 3)
+// Scribe Pipeline Providers (Stage 1, 2 & 3)
 // =============================================================================
 
-@riverpod
-OpenAIExtractorClient openAIExtractorClient(OpenAIExtractorClientRef ref) {
+/// MedicalizationService Provider.
+///
+/// Transforms colloquial patient language into formal clinical terminology
+/// BEFORE sending to LLM. Uses a deterministic local dictionary approach.
+///
+/// keepAlive: true to preserve the glossary cache across the session.
+@Riverpod(keepAlive: true)
+MedicalizationService medicalizationService(Ref ref) {
+  return MedicalizationServiceFactory.create();
+}
+
+/// OpenAI Extractor Client Provider (Stage 2).
+///
+/// keepAlive: true to prevent disposal during long-running pipeline.
+@Riverpod(keepAlive: true)
+OpenAIExtractorClient openAIExtractorClient(Ref ref) {
   return OpenAIExtractorClient(openAIClient: ref.watch(openAIClientProvider));
 }
 
@@ -318,8 +342,11 @@ EncounterExtractorRepository encounterExtractorRepository(
   );
 }
 
-@riverpod
-OpenAIComposerClient openAIComposerClient(OpenAIComposerClientRef ref) {
+/// OpenAI Composer Client Provider (Stage 3).
+///
+/// keepAlive: true to prevent disposal during long-running pipeline.
+@Riverpod(keepAlive: true)
+OpenAIComposerClient openAIComposerClient(Ref ref) {
   return OpenAIComposerClient(openAIClient: ref.watch(openAIClientProvider));
 }
 
@@ -330,26 +357,81 @@ NoteComposerRepository noteComposerRepository(NoteComposerRepositoryRef ref) {
   );
 }
 
-/// Transcription Repository Provider (Stage 1)
-/// Currently unimplemented/mocked as PR focuses on Stage 3 Composer.
+/// Transcription Repository Provider (Stage 1).
 @riverpod
 TranscriptionRepository transcriptionRepository(
   TranscriptionRepositoryRef ref,
 ) {
-  // TODO: Implement Stage 1 TranscriptionRepositoryImpl
-  throw UnimplementedError(
-    'Stage 1 Transcription Repository not yet implemented. '
-    'Verify transcription strategy.',
+  // Stage 1: Transcription with Phase 1.5 SpeechToTextService (Whisper)
+  return TranscriptionRepositoryImpl(
+    service: ref.watch(speechToTextServiceProvider),
   );
 }
 
-@riverpod
-ProcessEncounterUseCase processEncounterUseCase(
-  ProcessEncounterUseCaseRef ref,
-) {
+/// ProcessEncounterUseCase Provider.
+///
+/// Orchestrates the full Scribe V2 pipeline:
+/// Stage 1: Transcription → Stage 1.5: Medicalization → Stage 2: Extraction → Stage 3: Composition
+///
+/// keepAlive: true to prevent disposal during long-running pipeline execution.
+@Riverpod(keepAlive: true)
+ProcessEncounterUseCase processEncounterUseCase(Ref ref) {
   return ProcessEncounterUseCase(
     transcriptionRepository: ref.watch(transcriptionRepositoryProvider),
     extractorRepository: ref.watch(encounterExtractorRepositoryProvider),
     composerRepository: ref.watch(noteComposerRepositoryProvider),
+    medicalizationService: ref.watch(medicalizationServiceProvider),
+  );
+}
+
+// =============================================================================
+// Signature & Digital Signing Providers
+// =============================================================================
+
+/// Signature storage datasource provider.
+///
+/// Handles Firebase Storage operations for:
+/// - Doctor default signatures: doctors/{doctorId}/signature/default.png
+/// - Note signature snapshots: medical_notes/{noteId}/signature.png
+/// - Signed PDFs: medical_notes/{noteId}/final.pdf
+@riverpod
+SignatureStorageDatasource signatureStorageDatasource(
+  SignatureStorageDatasourceRef ref,
+) {
+  return SignatureStorageDatasource();
+}
+
+/// Sign medical note use case provider.
+///
+/// Orchestrates the complete digital signature flow:
+/// 1. Validates note can be signed
+/// 2. Obtains signature (from default or new)
+/// 3. Uploads signature snapshot to Storage
+/// 4. Optionally saves signature as doctor's default
+/// 5. Generates PDF with embedded signature
+/// 6. Uploads signed PDF to Storage
+/// 7. Updates note in Firestore with signature data and status=signed
+@riverpod
+SignMedicalNoteUseCase signMedicalNoteUseCase(SignMedicalNoteUseCaseRef ref) {
+  return SignMedicalNoteUseCase(
+    notesRepository: ref.watch(medicalNotesRepositoryProvider),
+    signatureStorage: ref.watch(signatureStorageDatasourceProvider),
+    onUpdateDoctorSignature: (String doctorId, DoctorSignatureInfo info) async {
+      // Get current doctor profile
+      final doctorsRepo = ref.read(doctorsRepositoryProvider);
+      final doctorResult = await doctorsRepo.getDoctorById(doctorId);
+
+      await doctorResult.maybeMap(
+        success: (success) async {
+          final currentDoctor = success.data;
+          if (currentDoctor != null) {
+            // Update with new signature info
+            final updatedDoctor = currentDoctor.copyWith(signatureInfo: info);
+            await doctorsRepo.updateDoctorProfile(updatedDoctor);
+          }
+        },
+        orElse: () async {},
+      );
+    },
   );
 }

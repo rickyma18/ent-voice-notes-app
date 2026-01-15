@@ -13,24 +13,16 @@ class ComposerPrompts {
 
   /// System prompt for SOAP note composition.
   ///
-  /// Establishes strict rules about using ONLY provided facts.
+  /// Compact version optimized for speed while maintaining clinical quality.
   static const systemPrompt = '''
-Eres un asistente médico que redacta notas clínicas profesionales.
+Redacta una nota SOAP en español clínico. Sé CONCISO.
 
-REGLAS ABSOLUTAS (ANTI-ALUCINACIÓN):
-1. USA SOLO la información proporcionada en los "HECHOS CLÍNICOS".
-2. NO inventes, infieras ni agregues información que no esté explícita.
-3. Si un campo dice null, [], o está vacío → escribe "No documentado" o "No referido".
-4. NO agregues:
-   - Signos vitales si no están en facts
-   - Resultados de laboratorio si no están en facts
-   - Hallazgos de exploración física si no están en facts
-   - Diagnósticos que no estén en assessment
-   - Medicamentos o dosis que no estén en plan.treatments
-5. Responde SOLO con el texto de la nota médica.
-6. NO uses markdown (###, **, listas con bullets raros), NO uses JSON, NO uses código.
-7. NO uses emojis ni símbolos decorativos (como ⚠️, 🔴, etc).
-8. Usa español clínico profesional.''';
+REGLAS:
+- USA SOLO los hechos proporcionados. NO inventes.
+- Campo vacío/null → "No documentado".
+- Preserva negaciones ("niega", "sin").
+- Responde SOLO con texto de nota. Sin markdown, JSON ni emojis.
+- Máximo 400 palabras.''';
 
   /// Builds the user prompt for SOAP note composition.
   ///
@@ -161,7 +153,7 @@ Revisar y confirmar todos los campos antes de firmar.
     buffer.writeln('  ${facts.physicalExam ?? "No documentado"}');
     buffer.writeln();
 
-    // Assessment
+    // Assessment - ALWAYS generate, use "pendiente" if missing
     buffer.writeln('EVALUACIÓN / DIAGNÓSTICO:');
     if (facts.assessment.primary != null ||
         facts.assessment.differential.isNotEmpty) {
@@ -174,11 +166,15 @@ Revisar y confirmar todos los campos antes de firmar.
         );
       }
     } else {
-      buffer.writeln('  No documentado');
+      // No diagnosis yet - guide composer to write "pending" assessment
+      buffer.writeln('  Principal: Pendiente de exploración física');
+      buffer.writeln(
+        '  Nota: Diagnóstico diferido hasta completar exploración.',
+      );
     }
     buffer.writeln();
 
-    // Plan
+    // Plan - ALWAYS generate, use conservative defaults if missing
     buffer.writeln('PLAN:');
     final hasAnyPlan =
         facts.plan.diagnostics.isNotEmpty ||
@@ -206,7 +202,13 @@ Revisar y confirmar todos los campos antes de firmar.
         buffer.writeln('  Seguimiento: ${facts.plan.followUp}');
       }
     } else {
-      buffer.writeln('  No documentado');
+      // No explicit plan from extraction - generate conservative default
+      buffer.writeln('  Tratamiento: Pendiente definir tras exploración');
+      buffer.writeln('  Signos de alarma: Acudir a urgencias si presenta:');
+      buffer.writeln('    - Fiebre alta (>38.5°C) persistente');
+      buffer.writeln('    - Dificultad respiratoria');
+      buffer.writeln('    - Deterioro del estado general');
+      buffer.writeln('  Seguimiento: Revalorar en consulta tras exploración');
     }
     buffer.writeln();
 

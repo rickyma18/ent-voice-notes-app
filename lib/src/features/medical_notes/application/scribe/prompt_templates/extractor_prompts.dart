@@ -129,6 +129,10 @@ INSTRUCCIONES DE EXTRACCIÓN:
 4. pmh/medications/allergies: Listas de antecedentes, medicamentos y alergias.
    - Si el paciente dice "ninguno" o "no tengo", usar [].
    - Si NO se preguntó, agregar a missingInfo.
+   - MEDICAMENTOS: SOLO incluir medicamentos de uso HABITUAL/REGULAR.
+     * NO incluir en medications: "ocasional", "a veces", "cuando me duele", "si lo necesito", "PRN".
+     * Si dice "tomo paracetamol ocasional" o "solo cuando duele", NO agregarlo a medications.
+     * Mencionar medicamentos ocasionales en hpi.keyPoints como "Usa paracetamol PRN para dolor".
 
 5. assessment: Diagnóstico o impresión clínica.
    - primary: Solo si el médico lo menciona explícitamente.
@@ -171,9 +175,7 @@ NO inventes información que no esté en la transcripción.''';
         ? '${rawResponse.substring(0, 3000)}...[TRUNCATED]'
         : rawResponse;
 
-    final errorsList = validationErrors
-        .map((e) => '- $e')
-        .join('\n');
+    final errorsList = validationErrors.map((e) => '- $e').join('\n');
 
     return '''
 El siguiente JSON tiene errores de validación. Corrígelo y devuelve SOLO el JSON corregido.

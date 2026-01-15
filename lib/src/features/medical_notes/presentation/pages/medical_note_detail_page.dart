@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../ui/docsoft_ui.dart';
 import '../../../../core/base/base.dart';
+import '../../../../presentation/features/profile/providers/current_doctor_profile_provider.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 import '../../../patients/patients_providers.dart';
 import '../../domain/entities/attachment_entity.dart';
@@ -24,7 +25,9 @@ import '../../domain/entities/surgical_note_data_entity.dart';
 import '../../domain/usecases/add_attachment_to_medical_note_use_case.dart';
 import '../../medical_notes_providers.dart';
 import '../controllers/medical_notes_controller.dart';
+import '../controllers/sign_note_controller.dart';
 import '../utils/medical_note_pdf_builder.dart';
+import '../widgets/signature/signature.dart';
 import 'image_viewer_page.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
@@ -725,157 +728,285 @@ class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
     );
   }
 
+  // ============================================================================
+  // Signature methods
+  // ============================================================================
+
+  /// Handle sign note action
+  Future<void> _onSignNote() async {
+    // Get current doctor
+    // Get current doctor
+    final doctor = await ref.read(currentDoctorProfileProvider.future);
+    if (doctor == null) {
+      _showErrorSnackbar('Error: No se pudo obtener el perfil del doctor');
+      return;
+    }
+
+    // Check if note can be signed
+    if (!_currentNote.canSign) {
+      _showErrorSnackbar('Esta nota no puede ser firmada');
+      return;
+    }
+
+    // Show sign note bottom sheet
+    final result = await SignNoteBottomSheet.show(
+      context,
+      hasDefaultSignature: doctor.hasDefaultSignature,
+      defaultSignatureUrl: doctor.signatureInfo?.defaultUrl,
+    );
+
+    if (result == null || !mounted) return;
+
+    // Get patient name for PDF
+    final patientName = await _loadPatientName() ?? 'Paciente';
+
+    // Sign the note
+    final success = await ref
+        .read(signNoteControllerProvider.notifier)
+        .signNote(
+          note: _currentNote,
+          doctor: doctor,
+          patientName: patientName,
+          signatureBytes: result.signatureBytes,
+          useDefaultSignature: result.useDefaultSignature,
+          saveAsDefault: result.saveAsDefault,
+        );
+
+    if (!mounted) return;
+
+    if (success) {
+      // Get the signed note from controller state
+      final signedNote = ref.read(signNoteControllerProvider).signedNote;
+      if (signedNote != null) {
+        setState(() {
+          _currentNote = signedNote;
+        });
+
+        // Also update in controller to sync state
+        ref
+            .read(medicalNotesControllerProvider.notifier)
+            .updateMedicalNote(signedNote);
+      }
+
+      // Show success dialog
+      await DocsoftDialogs.showCustomDialog(
+        context,
+        icon: Icons.verified_user_rounded,
+        title: '¡Nota Firmada!',
+        message:
+            'La nota médica ha sido firmada digitalmente y el PDF ha sido generado.',
+        confirmLabel: 'Aceptar',
+        variant: DocsoftDialogVariant.confirm,
+      );
+
+      // Reset controller
+      ref.read(signNoteControllerProvider.notifier).reset();
+    } else {
+      // Show error dialog
+      final failure = ref.read(signNoteControllerProvider).failure;
+      await DocsoftDialogs.showError(
+        context: context,
+        title: 'Error al Firmar',
+        message: failure?.message ?? 'Ocurrió un error al firmar la nota.',
+      );
+
+      // Reset controller
+      ref.read(signNoteControllerProvider.notifier).reset();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: DocsoftColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Inline Header
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                DocsoftSpacing.screenPadding,
-                DocsoftSpacing.screenPadding,
-                DocsoftSpacing.sm,
-                DocsoftSpacing.sm,
-              ),
-              child: Row(
-                children: [
-                  // Back button
-                  DocsoftBackButton(
-                    onTap: () => Navigator.pop(context),
-                    backgroundColor: DocsoftColors.primaryMuted,
-                    iconColor: DocsoftColors.primary,
-                  ),
-                  const SizedBox(width: DocsoftSpacing.sm),
-                  // Title
-                  Expanded(
-                    child: Text(
-                      'Detalle de nota médica',
-                      style: DocsoftTextStyles.appBarTitle,
+    // Watch signing state for overlay and UI updates
+    final signState = ref.watch(signNoteControllerProvider);
+    final isSigning = signState.isSigning;
+
+    // Determine effective editability
+    final canEdit = _currentNote.canEdit && !isSigning;
+
+    return Stack(
+      children: [
+        Scaffold(
+          backgroundColor: DocsoftColors.background,
+          floatingActionButton:
+              (_currentNote.canSign && !isSigning && !_isEditMode)
+              ? FloatingActionButton.extended(
+                  onPressed: _onSignNote,
+                  backgroundColor: DocsoftColors.primary,
+                  icon: const Icon(Icons.draw_outlined, color: Colors.white),
+                  label: Text(
+                    'Firmar',
+                    style: DocsoftTextStyles.button.copyWith(
+                      color: Colors.white,
                     ),
                   ),
-                  // PDF loading indicator
-                  if (_isGeneratingPdf)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: DocsoftSpacing.sm,
-                      ),
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: DocsoftColors.primary,
-                        ),
-                      ),
-                    ),
-                  // Attachment button with loading indicator
-                  if (_isUploadingAttachment)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: DocsoftSpacing.sm,
-                      ),
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: DocsoftColors.primary,
-                        ),
-                      ),
-                    )
-                  else
-                    IconButton(
-                      icon: Icon(
-                        Icons.attach_file,
-                        color: DocsoftColors.textSecondary,
-                      ),
-                      tooltip: 'Adjuntar archivo',
-                      onPressed: _isGeneratingPdf ? null : _showAttachmentSheet,
-                    ),
-                  // Edit mode toggle
-                  IconButton(
-                    icon: Icon(
-                      _isEditMode ? Icons.check : Icons.edit_outlined,
-                      color: _isEditMode
-                          ? DocsoftColors.primary
-                          : DocsoftColors.textSecondary,
-                    ),
-                    tooltip: _isEditMode ? 'Salir de edición' : 'Modo edición',
-                    onPressed: _isGeneratingPdf ? null : _toggleEditMode,
+                )
+              : null,
+          body: SafeArea(
+            child: Column(
+              children: [
+                // Inline Header
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    DocsoftSpacing.screenPadding,
+                    DocsoftSpacing.screenPadding,
+                    DocsoftSpacing.sm,
+                    DocsoftSpacing.sm,
                   ),
-                  // Export menu
-                  PopupMenuButton<String>(
-                    icon: Icon(
-                      Icons.more_horiz,
-                      color: DocsoftColors.textSecondary,
-                    ),
-                    enabled: !_isGeneratingPdf,
-                    tooltip: 'Opciones',
-                    onSelected: (value) {
-                      switch (value) {
-                        case 'export':
-                          _onExportPdf();
-                        case 'share':
-                          _onSharePdf();
-                        case 'print':
-                          _onPrintPdf();
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(
-                        value: 'export',
-                        child: ListTile(
-                          leading: Icon(Icons.picture_as_pdf),
-                          title: Text('Exportar PDF'),
-                          contentPadding: EdgeInsets.zero,
-                          visualDensity: VisualDensity.compact,
+                  child: Row(
+                    children: [
+                      // Back button
+                      DocsoftBackButton(
+                        onTap: () => Navigator.pop(context),
+                        backgroundColor: DocsoftColors.primaryMuted,
+                        iconColor: DocsoftColors.primary,
+                      ),
+                      const SizedBox(width: DocsoftSpacing.sm),
+                      // Title
+                      Expanded(
+                        child: Text(
+                          'Detalle de nota médica',
+                          style: DocsoftTextStyles.appBarTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const PopupMenuItem(
-                        value: 'share',
-                        child: ListTile(
-                          leading: Icon(Icons.share),
-                          title: Text('Compartir'),
-                          contentPadding: EdgeInsets.zero,
-                          visualDensity: VisualDensity.compact,
+                      // PDF loading indicator
+                      if (_isGeneratingPdf)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: DocsoftSpacing.sm,
+                          ),
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: DocsoftColors.primary,
+                            ),
+                          ),
                         ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'print',
-                        child: ListTile(
-                          leading: Icon(Icons.print),
-                          title: Text('Imprimir'),
-                          contentPadding: EdgeInsets.zero,
-                          visualDensity: VisualDensity.compact,
+
+                      // Sign Action (only if canSign and not signing)
+
+                      // Attachment button (hide if locked or signing)
+                      if (canEdit)
+                        if (_isUploadingAttachment)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: DocsoftSpacing.sm,
+                            ),
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: DocsoftColors.primary,
+                              ),
+                            ),
+                          )
+                        else
+                          IconButton(
+                            icon: Icon(
+                              Icons.attach_file,
+                              color: DocsoftColors.textSecondary,
+                            ),
+                            tooltip: 'Adjuntar archivo',
+                            onPressed: _isGeneratingPdf
+                                ? null
+                                : _showAttachmentSheet,
+                          ),
+
+                      // Edit mode toggle (hide if locked or signing)
+                      if (canEdit)
+                        IconButton(
+                          icon: Icon(
+                            _isEditMode ? Icons.check : Icons.edit_outlined,
+                            color: _isEditMode
+                                ? DocsoftColors.primary
+                                : DocsoftColors.textSecondary,
+                          ),
+                          tooltip: _isEditMode
+                              ? 'Salir de edición'
+                              : 'Modo edición',
+                          onPressed: _isGeneratingPdf ? null : _toggleEditMode,
                         ),
+
+                      // Export menu
+                      PopupMenuButton<String>(
+                        icon: Icon(
+                          Icons.more_horiz,
+                          color: DocsoftColors.textSecondary,
+                        ),
+                        enabled: !_isGeneratingPdf && !isSigning,
+                        tooltip: 'Opciones',
+                        onSelected: (value) {
+                          switch (value) {
+                            case 'export':
+                              _onExportPdf();
+                            case 'share':
+                              _onSharePdf();
+                            case 'print':
+                              _onPrintPdf();
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'export',
+                            child: ListTile(
+                              leading: Icon(Icons.picture_as_pdf),
+                              title: Text('Exportar PDF'),
+                              contentPadding: EdgeInsets.zero,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                          const PopupMenuItem(
+                            value: 'share',
+                            child: ListTile(
+                              leading: Icon(Icons.share),
+                              title: Text('Compartir'),
+                              contentPadding: EdgeInsets.zero,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                          const PopupMenuItem(
+                            value: 'print',
+                            child: ListTile(
+                              leading: Icon(Icons.print),
+                              title: Text('Imprimir'),
+                              contentPadding: EdgeInsets.zero,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
+                ),
+                // Content
+                Expanded(
+                  child: _MedicalNoteDetailContent(
+                    note: _currentNote,
+                    isEditMode: _isEditMode,
+                    editingSection: _editingSection,
+                    isSaving: _isSaving,
+                    controllers: _controllers,
+                    onEditSection: _onEditSection,
+                    onSave: _saveCurrentSection,
+                    onCancel: _cancelEditing,
+                    getController: _getController,
+                    onAddAttachment: _showAttachmentSheet,
+                    isUploadingAttachment: _isUploadingAttachment,
+                  ),
+                ),
+              ],
             ),
-            // Content
-            Expanded(
-              child: _MedicalNoteDetailContent(
-                note: _currentNote,
-                isEditMode: _isEditMode,
-                editingSection: _editingSection,
-                isSaving: _isSaving,
-                controllers: _controllers,
-                onEditSection: _onEditSection,
-                onSave: _saveCurrentSection,
-                onCancel: _cancelEditing,
-                getController: _getController,
-                onAddAttachment: _showAttachmentSheet,
-                isUploadingAttachment: _isUploadingAttachment,
-              ),
-            ),
-          ],
+          ),
         ),
-      ),
+
+        // Signing Overlay
+        if (isSigning) SigningOverlay(state: signState),
+      ],
     );
   }
 }
@@ -918,6 +1049,12 @@ class _MedicalNoteDetailContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Note Locked Banner
+          if (note.isLocked && note.signatureData != null) ...[
+            NoteLockedBanner(signatureData: note.signatureData!),
+            const SizedBox(height: 16),
+          ],
+
           // Patient and Date Info Card
           _PatientInfoCard(note: note),
           const SizedBox(height: 16),
@@ -1103,6 +1240,12 @@ class _MedicalNoteDetailContent extends StatelessWidget {
           if (note.tags.isNotEmpty) ...[
             _TagsCard(tags: note.tags),
             const SizedBox(height: 12),
+          ],
+
+          // Signature Section (if signed)
+          if (note.signatureData != null) ...[
+            SignatureDisplaySection(signatureData: note.signatureData!),
+            const SizedBox(height: 24),
           ],
 
           // Raw transcript (collapsible)

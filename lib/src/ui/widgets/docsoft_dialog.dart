@@ -32,7 +32,7 @@ class DocsoftDialog extends StatelessWidget {
     required this.title,
     required this.message,
     required this.confirmLabel,
-    this.cancelLabel = 'Cancelar',
+    this.cancelLabel,
     this.variant = DocsoftDialogVariant.confirm,
     this.onConfirm,
     this.onCancel,
@@ -50,8 +50,8 @@ class DocsoftDialog extends StatelessWidget {
   /// Label for the confirm button
   final String confirmLabel;
 
-  /// Label for the cancel button
-  final String cancelLabel;
+  /// Label for the cancel button. If null, cancel button is hidden.
+  final String? cancelLabel;
 
   /// Visual variant (confirm, warning, destructive)
   final DocsoftDialogVariant variant;
@@ -175,11 +175,40 @@ class DocsoftDialog extends StatelessWidget {
                 builder: (context, constraints) {
                   const buttonHeight = 48.0;
 
+                  // If no cancel label, just show confirm button full width
+                  if (cancelLabel == null) {
+                    return SizedBox(
+                      height: buttonHeight,
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: onConfirm,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _confirmButtonColor,
+                          foregroundColor: _confirmButtonTextColor,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(
+                              DocsoftRadii.full,
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          confirmLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: DocsoftTextStyles.button.copyWith(
+                            color: _confirmButtonTextColor,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
                   // Heurística: si el ancho es reducido o el label es largo -> apila
                   final shouldStack =
                       constraints.maxWidth < 330 ||
                       confirmLabel.length > 11 ||
-                      (confirmLabel.length + cancelLabel.length) > 18;
+                      (confirmLabel.length + cancelLabel!.length) > 18;
 
                   final cancelButton = SizedBox(
                     height: buttonHeight,
@@ -196,7 +225,7 @@ class DocsoftDialog extends StatelessWidget {
                         ),
                       ),
                       child: Text(
-                        cancelLabel,
+                        cancelLabel!,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: DocsoftTextStyles.button.copyWith(

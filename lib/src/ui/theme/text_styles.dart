@@ -54,6 +54,14 @@ abstract class DocsoftTextStyles {
     color: DocsoftColors.textSecondary,
   );
 
+  /// Label: 12px, w500 (Medium) - for tags, badges, overlines
+  static TextStyle get label => _base.copyWith(
+    fontSize: 12,
+    fontWeight: FontWeight.w500,
+    color: DocsoftColors.textSecondary,
+    letterSpacing: 0.5,
+  );
+
   /// Button: 15px, w600 (SemiBold)
   static TextStyle get button => _base.copyWith(
     fontSize: 15,

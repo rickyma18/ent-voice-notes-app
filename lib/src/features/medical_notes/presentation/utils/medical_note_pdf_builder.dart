@@ -25,12 +25,20 @@ class MedicalNotePdfBuilder {
     this.patientName,
     this.doctorName,
     this.doctorLicense,
+    this.signatureImageBytes,
+    this.signedAt,
   });
 
   final MedicalNoteEntity note;
   final String? patientName;
   final String? doctorName;
   final String? doctorLicense;
+
+  /// Digital signature image bytes (PNG) to embed in the PDF
+  final Uint8List? signatureImageBytes;
+
+  /// Timestamp when the note was signed
+  final DateTime? signedAt;
 
   static final _dateFormat = DateFormat('dd/MM/yyyy');
   static final _timeFormat = DateFormat('HH:mm');
@@ -352,33 +360,95 @@ class MedicalNotePdfBuilder {
   }
 
   /// Builds the medical signature block at the end of the document.
+  ///
+  /// If [signatureImageBytes] is provided, displays the digital signature image.
+  /// Otherwise, shows a placeholder line for manual signature.
   pw.Widget _buildSignatureBlock() {
     final hasDoctor = doctorName != null && doctorName!.isNotEmpty;
     final hasLicense = doctorLicense != null && doctorLicense!.isNotEmpty;
+    final hasDigitalSignature = signatureImageBytes != null;
 
     return pw.Container(
       margin: const pw.EdgeInsets.only(top: 16),
+      padding: hasDigitalSignature ? const pw.EdgeInsets.all(12) : null,
+      decoration: hasDigitalSignature
+          ? pw.BoxDecoration(
+              color: PdfColors.green50,
+              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+              border: pw.Border.all(color: PdfColors.green200, width: 1),
+            )
+          : null,
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           // Section title
-          pw.Text(
-            'Firma médica',
-            style: pw.TextStyle(
-              fontSize: 11,
-              fontWeight: pw.FontWeight.bold,
-              color: PdfColors.grey700,
-            ),
+          pw.Row(
+            children: [
+              pw.Text(
+                hasDigitalSignature ? 'Firma Digital' : 'Firma médica',
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                  color: hasDigitalSignature
+                      ? PdfColors.green800
+                      : PdfColors.grey700,
+                ),
+              ),
+              if (hasDigitalSignature) ...[
+                pw.SizedBox(width: 8),
+                pw.Container(
+                  padding: const pw.EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.green100,
+                    borderRadius:
+                        const pw.BorderRadius.all(pw.Radius.circular(4)),
+                  ),
+                  child: pw.Text(
+                    'FIRMADO',
+                    style: pw.TextStyle(
+                      fontSize: 7,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.green700,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
-          pw.SizedBox(height: 24),
-          // Signature line
+          pw.SizedBox(height: hasDigitalSignature ? 12 : 24),
+          // Signature content
           pw.Center(
             child: pw.Column(
               children: [
-                // Horizontal signature line
-                pw.Container(width: 200, height: 0.5, color: PdfColors.grey600),
+                // Digital signature image or placeholder line
+                if (hasDigitalSignature)
+                  pw.Container(
+                    height: 60,
+                    width: 180,
+                    child: pw.Image(
+                      pw.MemoryImage(signatureImageBytes!),
+                      fit: pw.BoxFit.contain,
+                    ),
+                  )
+                else
+                  pw.Container(
+                    width: 200,
+                    height: 0.5,
+                    color: PdfColors.grey600,
+                  ),
                 pw.SizedBox(height: 8),
-                // Doctor name or placeholder
+                // Horizontal line under signature
+                if (hasDigitalSignature)
+                  pw.Container(
+                    width: 200,
+                    height: 0.5,
+                    color: PdfColors.green300,
+                  ),
+                if (hasDigitalSignature) pw.SizedBox(height: 8),
+                // Doctor name
                 pw.Text(
                   hasDoctor ? doctorName! : '_________________________',
                   style: pw.TextStyle(
@@ -397,6 +467,17 @@ class MedicalNotePdfBuilder {
                     fontStyle: hasLicense ? null : pw.FontStyle.italic,
                   ),
                 ),
+                // Signed timestamp
+                if (hasDigitalSignature && signedAt != null) ...[
+                  pw.SizedBox(height: 6),
+                  pw.Text(
+                    'Firmado el ${_fullDateFormat.format(signedAt!)}',
+                    style: const pw.TextStyle(
+                      fontSize: 8,
+                      color: PdfColors.grey500,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

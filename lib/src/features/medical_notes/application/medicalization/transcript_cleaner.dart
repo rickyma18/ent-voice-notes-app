@@ -88,8 +88,10 @@ final List<RegExp> _fillerPatterns = [
   RegExp(r'\b(uhm+)[.,…]*\s*', caseSensitive: false),
   RegExp(r'\b(ajá)[.,…]*\s*', caseSensitive: false),
   RegExp(r'\b(aja)[.,…]*\s*', caseSensitive: false),
-  RegExp(r'\b(este)[.,…]+\s*', caseSensitive: false), // "este..." but not "este dolor"
-
+  RegExp(
+    r'\b(este)[.,…]+\s*',
+    caseSensitive: false,
+  ), // "este..." but not "este dolor"
   // "pues" at start of sentence or after punctuation (filler context)
   RegExp(r'(?:^|[.,;:])\s*pues\s+', caseSensitive: false),
 
@@ -261,8 +263,13 @@ bool _isOnlyPunctuationOrFillers(String input) {
   var cleaned = input.replaceAll(RegExp(r'[.,;:?!¿¡…\s]'), '');
 
   // Remove common standalone fillers
-  cleaned = cleaned
-      .replaceAll(RegExp(r'\b(eh+|mmm+|hmm+|este|pues|bueno|ajá|aja)\b', caseSensitive: false), '');
+  cleaned = cleaned.replaceAll(
+    RegExp(
+      r'\b(eh+|mmm+|hmm+|este|pues|bueno|ajá|aja)\b',
+      caseSensitive: false,
+    ),
+    '',
+  );
 
   return cleaned.trim().isEmpty;
 }
@@ -326,7 +333,8 @@ Map<String, dynamic> sanitizeStructuredFieldsV1(Map<String, dynamic> parsed) {
             .where((item) => item.isNotEmpty)
             .where((item) => !isNonInformativeContent(item))
             .toList();
-        antecedentes[field] = filtered.isEmpty ? null : filtered;
+        // FIX: Return empty list instead of null per user requirement
+        antecedentes[field] = filtered;
       }
     }
 
@@ -334,7 +342,7 @@ Map<String, dynamic> sanitizeStructuredFieldsV1(Map<String, dynamic> parsed) {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Sanitize estudios_indicados array
+  // Sanitize estudios_indicados inputs
   // ─────────────────────────────────────────────────────────────────────────
   if (result['estudios_indicados'] != null &&
       result['estudios_indicados'] is List) {
@@ -345,7 +353,21 @@ Map<String, dynamic> sanitizeStructuredFieldsV1(Map<String, dynamic> parsed) {
         .where((item) => item.isNotEmpty)
         .where((item) => !isNonInformativeContent(item))
         .toList();
-    result['estudios_indicados'] = filtered.isEmpty ? null : filtered;
+    // FIX: Return empty list instead of null
+    result['estudios_indicados'] = filtered;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Sanitize contradictions inputs
+  // ─────────────────────────────────────────────────────────────────────────
+  if (result['contradicciones'] != null && result['contradicciones'] is List) {
+    // Also fix contradicciones here just in case
+    final list = result['contradicciones'] as List;
+    result['contradicciones'] = list
+        .where((i) => i.toString().trim().isNotEmpty)
+        .toList();
+  } else {
+    result['contradicciones'] = [];
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -396,6 +418,27 @@ Map<String, dynamic> sanitizeStructuredFieldsV1(Map<String, dynamic> parsed) {
     result['exploracion_orl'] = exploracion;
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // FALLBACK FOR MISSING DIAGNOSIS/PLAN
+  // ─────────────────────────────────────────────────────────────────────────
+  // If diagnosis is missing, apply a safe default to prevent UI breakage
+  if (result['diagnostico'] == null ||
+      result['diagnostico']['texto'] == null ||
+      isNonInformativeContent(result['diagnostico']['texto'])) {
+    result['diagnostico'] = {
+      'texto':
+          'Diagnóstico diferido - Pendiente de exploración física completa',
+      'tipo': 'presuntivo',
+    };
+  }
+
+  // If plan is missing but we have diagnosis (or just applied fallback), add default plan
+  if (result['plan_tratamiento'] == null ||
+      isNonInformativeContent(result['plan_tratamiento'])) {
+    result['plan_tratamiento'] =
+        'Continuar vigilancia. Acudir a urgencias en caso de datos de alarma.';
+  }
+
   return result;
 }
 
@@ -408,11 +451,17 @@ String _cleanResidualFillers(String input) {
 
   // Remove leading/trailing fillers
   result = result.replaceAll(
-    RegExp(r'^[\s.,;:]*(?:eh+|mmm+|hmm+|este|pues|bueno)[.,…\s]*', caseSensitive: false),
+    RegExp(
+      r'^[\s.,;:]*(?:eh+|mmm+|hmm+|este|pues|bueno)[.,…\s]*',
+      caseSensitive: false,
+    ),
     '',
   );
   result = result.replaceAll(
-    RegExp(r'[.,…\s]*(?:eh+|mmm+|hmm+|este|pues|bueno)[\s.,;:]*$', caseSensitive: false),
+    RegExp(
+      r'[.,…\s]*(?:eh+|mmm+|hmm+|este|pues|bueno)[\s.,;:]*$',
+      caseSensitive: false,
+    ),
     '',
   );
 

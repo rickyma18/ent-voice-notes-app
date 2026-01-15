@@ -1,10 +1,15 @@
 // lib/src/features/medical_notes/presentation/pages/dictation_assist_page.dart
 
+import 'dart:io';
+
+import 'package:flutter/foundation.dart'; // For kDebugMode
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+
+import '../controllers/medical_notes_controller.dart'; // For Scribe Pipeline Hook
 
 import '../../../../presentation/core/router/route_names.dart';
 import '../../../../ui/docsoft_ui.dart';
@@ -46,6 +51,7 @@ class DictationAssistPage extends ConsumerStatefulWidget {
 class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
   DictationStatus _status = DictationStatus.idle;
   String _rawTranscript = '';
+  String? _lastAudioPath; // Capture audio path for Scribe Debug Hook
 
   // ─────────────────────────────────────────────────────────────────────────
   // RATE LIMIT PROTECTION: Guards anti doble ejecucion y cooldown
@@ -176,6 +182,7 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
 
     try {
       final audioFilePath = await audioService.stopRecording();
+      _lastAudioPath = audioFilePath; // Capture for Scribe Debug Hook
 
       if (audioFilePath == null) {
         if (mounted) {
@@ -1079,6 +1086,31 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
             icon: Icons.content_cut,
             fullWidth: true,
           ),
+
+          // ─────────────────────────────────────────────────────────────────
+          // DEBUG HOOK BUTTON
+          // ─────────────────────────────────────────────────────────────────
+          if (false &&
+              kDebugMode &&
+              _lastAudioPath != null &&
+              !_isGenerating) ...[
+            const SizedBox(height: DocsoftSpacing.md),
+            // Custom styling for debug button to make it obvious
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: _debugTestScribePipeline,
+                icon: const Icon(Icons.bug_report, size: 18),
+                label: const Text('DEBUG: Probar Scribe V2'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange.shade800,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1123,5 +1155,125 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
         ],
       ),
     );
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // DEBUG HOOK: Scribe Pipeline V2 Test
+  // ───────────────────────────────────────────────────────────────────────────
+  // This is a temporary hook to validate the new pipeline without affecting
+  // the main product flow. It is only available in debug mode.
+
+  /// Tracks if the debug loading dialog is currently shown.
+  bool _debugLoadingDialogOpen = false;
+
+  Future<void> _debugTestScribePipeline() async {
+    if (_lastAudioPath == null) {
+      debugPrint('[Scribe][Debug] No audio file available.');
+      return;
+    }
+
+    // Prevent multiple concurrent executions
+    if (_debugLoadingDialogOpen) {
+      debugPrint('[Scribe][Debug] Already running, ignoring.');
+      return;
+    }
+
+    // Show loading dialog
+    if (!mounted) return;
+    _debugLoadingDialogOpen = true;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(
+        child: SizedBox(
+          width: 80,
+          height: 80,
+          child: CircularProgressIndicator(),
+        ),
+      ),
+    );
+
+    Map<String, dynamic>? result;
+    Object? error;
+    StackTrace? stackTrace;
+
+    try {
+      // Use raw transcript if available to skip redundant STT (optimization)
+      if (_rawTranscript.isNotEmpty) {
+        debugPrint(
+          '[Scribe][Debug] Using existing transcript (${_rawTranscript.length} chars)',
+        );
+        result = await ref
+            .read(medicalNotesControllerProvider.notifier)
+            .generateNoteFromTranscript(_rawTranscript, language: 'es');
+      } else {
+        final file = File(_lastAudioPath!);
+        debugPrint(
+          '[Scribe][Debug] Starting pipeline with file: $_lastAudioPath (Audio -> STT)',
+        );
+        result = await ref
+            .read(medicalNotesControllerProvider.notifier)
+            .generateNoteFromAudio(file, language: 'es');
+      }
+
+      debugPrint('[Scribe][Debug] Result: $result');
+    } catch (e, st) {
+      error = e;
+      stackTrace = st;
+      debugPrint('[Scribe][Debug] Error: $e\n$st');
+    } finally {
+      // ALWAYS dismiss loading dialog first, before showing any result
+      _debugLoadingDialogOpen = false;
+
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
+    }
+
+    // Now show result or error dialog (after loading is dismissed)
+    if (!mounted) return;
+
+    if (error != null) {
+      // Show error dialog
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Error Scribe V2'),
+          content: SingleChildScrollView(
+            child: Text('Error: $error\n\nStack:\n$stackTrace'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        ),
+      );
+    } else if (result != null) {
+      // Show result dialog
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Scribe V2 Result (Debug)'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: SelectableText(
+                result.toString(),
+                style: const TextStyle(fontFamily: 'monospace'),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 }

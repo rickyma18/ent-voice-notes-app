@@ -6,6 +6,7 @@ import 'attachment_entity.dart';
 import 'medical_note_type.dart';
 import 'medication_entity.dart';
 import 'note_status.dart';
+import 'signature_data_entity.dart';
 import 'study_entity.dart';
 import 'surgical_note_data_entity.dart';
 
@@ -53,6 +54,8 @@ class MedicalNoteEntity extends Equatable {
     this.isFavorite = false,
     // Surgical note specific data (only for surgical notes)
     this.surgicalData,
+    // Signature data (only when status == signed)
+    this.signatureData,
   });
 
   // Identificadores
@@ -150,6 +153,11 @@ class MedicalNoteEntity extends Equatable {
   /// Only populated when type == surgicalNote.
   final SurgicalNoteDataEntity? surgicalData;
 
+  // Signature data
+  /// Digital signature data for signed notes.
+  /// Only populated when status == signed.
+  final SignatureDataEntity? signatureData;
+
   // Factory para crear nota vacía (borrador)
   factory MedicalNoteEntity.empty({
     required String patientId,
@@ -209,6 +217,7 @@ class MedicalNoteEntity extends Equatable {
     List<String>? tags,
     bool? isFavorite,
     SurgicalNoteDataEntity? surgicalData,
+    SignatureDataEntity? signatureData,
   }) {
     return MedicalNoteEntity(
       id: id ?? this.id,
@@ -242,6 +251,7 @@ class MedicalNoteEntity extends Equatable {
       tags: tags ?? this.tags,
       isFavorite: isFavorite ?? this.isFavorite,
       surgicalData: surgicalData ?? this.surgicalData,
+      signatureData: signatureData ?? this.signatureData,
     );
   }
 
@@ -265,6 +275,26 @@ class MedicalNoteEntity extends Equatable {
 
   /// Check if this is a clinical history note
   bool get isClinicalHistory => type == MedicalNoteType.clinicalHistory;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Signature & Lock Status
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// Whether the note is locked for editing (signed, sent, or archived)
+  bool get isLocked =>
+      status == NoteStatus.signed ||
+      status == NoteStatus.sent ||
+      status == NoteStatus.archived;
+
+  /// Whether the note can be signed (only draft or inReview notes)
+  bool get canSign =>
+      status == NoteStatus.draft || status == NoteStatus.inReview;
+
+  /// Whether the note can be edited (not locked)
+  bool get canEdit => !isLocked;
+
+  /// Whether the note has been digitally signed
+  bool get isSigned => signatureData != null && status == NoteStatus.signed;
 
   // Verifica si la nota necesita atención (borrador antiguo)
   bool get needsAttention {
@@ -321,6 +351,7 @@ class MedicalNoteEntity extends Equatable {
         tags,
         isFavorite,
         surgicalData,
+        signatureData,
       ];
 
   @override

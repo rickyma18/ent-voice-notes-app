@@ -2,6 +2,7 @@
 
 import 'package:equatable/equatable.dart';
 
+import 'doctor_signature_info.dart';
 import 'gender.dart';
 
 /// Doctor profile entity
@@ -16,6 +17,7 @@ class DoctorEntity extends Equatable {
     this.lastName,
     this.gender,
     this.photoUrl,
+    this.signatureInfo,
     this.createdAt,
     this.updatedAt,
   });
@@ -37,6 +39,9 @@ class DoctorEntity extends Equatable {
 
   /// Profile photo URL from Firebase Storage (optional)
   final String? photoUrl;
+
+  /// Doctor's signature information for digital signing
+  final DoctorSignatureInfo? signatureInfo;
 
   /// Profile creation timestamp
   final DateTime? createdAt;
@@ -62,6 +67,7 @@ class DoctorEntity extends Equatable {
     String? lastName,
     Gender? gender,
     String? photoUrl,
+    DoctorSignatureInfo? signatureInfo,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -72,6 +78,7 @@ class DoctorEntity extends Equatable {
       lastName: lastName ?? this.lastName,
       gender: gender ?? this.gender,
       photoUrl: photoUrl ?? this.photoUrl,
+      signatureInfo: signatureInfo ?? this.signatureInfo,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -86,10 +93,14 @@ class DoctorEntity extends Equatable {
       lastName: lastName,
       gender: gender,
       photoUrl: photoUrl,
+      signatureInfo: signatureInfo,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );
   }
+
+  /// Whether the doctor has a default signature saved
+  bool get hasDefaultSignature => signatureInfo?.hasDefault ?? false;
 
   @override
   List<Object?> get props => [
@@ -99,6 +110,7 @@ class DoctorEntity extends Equatable {
         lastName,
         gender,
         photoUrl,
+        signatureInfo,
         createdAt,
         updatedAt,
       ];
