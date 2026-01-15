@@ -1173,6 +1173,15 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
     var result = controller.lastScribeResult;
     String source = 'Cached (Previous Run)';
 
+    // Invalidate cache if the current transcript has changed since the last run
+    if (result != null) {
+      final cachedTranscript = result.transcript.fullText;
+      if (cachedTranscript.trim() != _rawTranscript.trim()) {
+        controller.clearLastScribeResult();
+        result = null;
+      }
+    }
+
     // If no cached result, force a generation to create evidence
     if (result == null) {
       if (_debugLoadingDialogOpen) return;

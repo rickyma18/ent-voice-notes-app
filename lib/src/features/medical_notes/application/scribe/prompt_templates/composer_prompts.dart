@@ -15,14 +15,48 @@ class ComposerPrompts {
   ///
   /// Compact version optimized for speed while maintaining clinical quality.
   static const systemPrompt = '''
-Redacta una nota SOAP en español clínico. Sé CONCISO.
+Redacta una nota SOAP en español clínico profesional. Sé CONCISO pero COMPLETO.
 
-REGLAS:
-- USA SOLO los hechos proporcionados. NO inventes.
-- Campo vacío/null → "No documentado".
-- Preserva negaciones ("niega", "sin").
-- Responde SOLO con texto de nota. Sin markdown, JSON ni emojis.
-- Máximo 400 palabras.''';
+═══════════════════════════════════════════════════════════════════════════════
+REGLAS DE COMPOSICIÓN
+═══════════════════════════════════════════════════════════════════════════════
+1. USA SOLO los hechos proporcionados. NUNCA inventes información.
+2. Sección no interrogada/desconocida → "No interrogado".
+3. Si hay síntomas en los hechos, NUNCA escribas "No documentado" en esa sección.
+4. Preserva TODAS las negaciones ("niega", "sin", "no refiere").
+5. Usa terminología médica estándar (otalgia, odinofagia, rinorrea, cefalea, etc.).
+6. Redacta en tercera persona clínica ("el paciente refiere", "presenta", "niega").
+
+═══════════════════════════════════════════════════════════════════════════════
+REGLAS DE CONSISTENCIA (CRÍTICO)
+═══════════════════════════════════════════════════════════════════════════════
+- Assessment (A) NUNCA debe contradecir el Subjetivo (S).
+- Si hay síntomas pero NO hay diagnóstico explícito → usar impresión conservadora:
+  * "Otalgia a estudio; pendiente valoración otoscópica"
+  * "Síndrome de vías aéreas superiores a descartar"
+  * "Cuadro vertiginoso a caracterizar"
+- NUNCA inventar diagnósticos definitivos. Preferir "probable", "sugestivo de".
+
+═══════════════════════════════════════════════════════════════════════════════
+SOAP MÍNIMO PARA "SOLO NEGACIONES" (CRÍTICO)
+═══════════════════════════════════════════════════════════════════════════════
+Si chiefComplaint está vacío/null pero HPI contiene negaciones:
+- S (SUBJETIVO):
+  * Motivo de consulta: "No referido / No especificado en la transcripción."
+  * HPI: Incluir la narrativa de negaciones exactamente.
+  * NUNCA decir "síntomas no documentados" si hay negaciones documentadas.
+- O (OBJETIVO): "Pendiente exploración física."
+- A (EVALUACIÓN): "Información insuficiente para impresión clínica; pendiente
+  motivo de consulta y exploración."
+- P (PLAN): "Pendiente definir tras completar interrogatorio y exploración."
+- Incluir missingInfo al final como "Pendiente documentar".
+
+═══════════════════════════════════════════════════════════════════════════════
+FORMATO DE SALIDA
+═══════════════════════════════════════════════════════════════════════════════
+- Responde SOLO con texto de nota médica.
+- Sin markdown, backticks, JSON ni emojis.
+- Máximo 500 palabras.''';
 
   /// Builds the user prompt for SOAP note composition.
   ///
@@ -47,10 +81,15 @@ $factsSection
 $formatSection
 $specialtySection
 INSTRUCCIONES ADICIONALES:
-- Si "No documentado" aplica a una sección completa, inclúyela con ese texto.
+- Si una sección no fue interrogada → escribir "No interrogado".
+- Si ROS está vacío pero HPI menciona síntomas → incluir síntomas de HPI en el Subjetivo.
+- NUNCA dejes la nota vacía si hay contenido clínico en los hechos.
 - Preserva las negaciones clínicas ("niega", "sin", "no refiere").
-- Si hay info ambigua (ambiguousInfo), menciónala al final.
-- Si hay info faltante crítica (missingInfo), menciónala al final como "Pendiente documentar".
+- Si chiefComplaint está vacío pero hay negaciones → aplicar reglas de "SOLO NEGACIONES".
+- NUNCA escribir "síntomas no documentados" si hay negaciones documentadas.
+- missingInfo (datos faltantes) → "Pendiente documentar: [campo]".
+- ambiguousInfo (datos contradictorios) → "Información ambigua: [detalle]".
+- Datos demográficos faltantes (nombre/edad/sexo) son missingInfo, NO ambiguousInfo.
 
 Genera la nota médica ahora:''';
   }
@@ -247,23 +286,30 @@ FORMATO REQUERIDO: SOAP
 Estructura la nota en estas secciones:
 
 S (SUBJETIVO):
-- Motivo de consulta
-- Historia de enfermedad actual
+- Motivo de consulta (en terminología médica)
+- Historia de enfermedad actual (incluir TODOS los síntomas mencionados)
 - Antecedentes relevantes
 - Medicamentos y alergias
 
 O (OBJETIVO):
 - Exploración física (solo lo documentado)
+- Si no hay exploración → "Pendiente exploración física"
 
 A (ANÁLISIS/EVALUACIÓN):
-- Diagnóstico principal
-- Diagnósticos diferenciales (si aplica)
+- Si hay diagnóstico explícito → incluirlo
+- Si NO hay diagnóstico pero hay síntomas → impresión conservadora:
+  * "[Síntoma principal] a estudio"
+  * "Probable [síndrome], a descartar [diferencial]"
+  * "Cuadro sugestivo de [X], pendiente valoración"
+- NUNCA inventar diagnósticos definitivos
+- NUNCA contradecir los síntomas del Subjetivo
 
 P (PLAN):
 - Estudios solicitados
 - Tratamiento indicado
 - Referencias
-- Seguimiento''';
+- Seguimiento o cita de control
+- Si no hay plan explícito → "Pendiente definir tras completar valoración"''';
 
       case NoteFormat.hp:
         return '''

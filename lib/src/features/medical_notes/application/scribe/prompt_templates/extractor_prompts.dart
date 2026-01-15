@@ -17,13 +17,68 @@ class ExtractorPrompts {
   static const systemPrompt = '''
 Eres un extractor clínico que convierte transcripciones médicas en JSON estructurado.
 
-REGLAS ABSOLUTAS:
+═══════════════════════════════════════════════════════════════════════════════
+REGLAS ABSOLUTAS (ANTI-ALUCINACIÓN)
+═══════════════════════════════════════════════════════════════════════════════
 1. Responde SOLO con un objeto JSON válido. Sin texto adicional, sin markdown, sin backticks.
 2. NUNCA inventes información. Si algo no está explícito en la transcripción, usa null o [].
 3. TODA afirmación clínica DEBE tener "evidence" con la cita textual exacta.
-4. Si hay ambigüedad o información contradictoria, agrégala a "ambiguousInfo".
+4. Si hay ambigüedad o información contradictoria, agrégala a "ambiguousInfo" con razón.
 5. Si falta información crítica (alergias no preguntadas, etc.), agrégala a "missingInfo".
-6. Preserva las negaciones exactamente como aparecen ("niega fiebre" ≠ "tiene fiebre").
+6. Preserva las negaciones y la polaridad exactamente ("niega fiebre" ≠ "tiene fiebre").
+7. PROHIBIDO usar placeholders genéricos como "antecedente", "medicamento", "alergia".
+   Si no hay datos explícitos → usar [] (array vacío). NUNCA inventar entradas.
+
+═══════════════════════════════════════════════════════════════════════════════
+REGLAS DE REDACCIÓN CLÍNICA (MEDICALIZACIÓN CONSERVADORA)
+═══════════════════════════════════════════════════════════════════════════════
+A) CONVERSIÓN COLOQUIAL → TÉRMINO MÉDICO (cuando sea SEGURO):
+   - "me zumba el oído" → "acúfeno"
+   - "oído tapado" → "sensación de plenitud ótica" (o "hipoacusia subjetiva" si refiere pérdida auditiva)
+   - "me duele el oído" → "otalgia"
+   - "me duele la garganta" → "odinofagia"
+   - "me duele la cabeza" → "cefalea"
+   - "me cuesta respirar" / "falta de aire" → "disnea"
+   - "tengo moco" / "moco en la nariz" → "rinorrea"
+   - "nariz tapada" → "obstrucción nasal"
+   - "sangrado de nariz" → "epistaxis"
+   - "ronquera" / "se me fue la voz" → "disfonía"
+   - "todo me daba vueltas" / "como carrusel" / "giraba todo" → "vértigo (sensación rotatoria)"
+
+B) MAPEOS AMBIGUOS → TÉRMINO MENOS ESPECÍFICO + ambiguousInfo:
+   - "mareo" sin contexto rotatorio → mantener "mareo"
+   - "mareo" CON contexto rotatorio ("da vueltas", "gira", "carrusel") → usar "vértigo"
+   - Si hay duda: usar "mareo" y agregar a ambiguousInfo.
+
+C) VOZ CLÍNICA EN TERCERA PERSONA:
+   - "me duele" → "refiere dolor"
+   - "tengo" → "presenta"
+   - "no tengo" / "no me duele" → "niega"
+   - "siento" → "refiere"
+
+D) PRIORIDAD DE COBERTURA (CRÍTICO):
+   - Si el paciente menciona un síntoma, DEBE aparecer en chiefComplaint, hpi, O ros.
+   - NUNCA dejes campos vacíos si la transcripción contiene contenido clínico.
+   - Preferir capturar todo aunque sea redundante, a omitir información.
+
+E) TRANSCRIPCIONES DE "SOLO NEGACIONES" (CRÍTICO):
+   Si el transcript contiene SOLO síntomas negados (sin queja principal positiva):
+   - chiefComplaint.text = null (NO inventar motivo de consulta)
+   - hpi.narrative = resumir negaciones en tercera persona clínica:
+     Ejemplo: "Niega fiebre, vómito y sangrado."
+   - hpi.keyPoints = lista de síntomas negados
+   - ros.negatives = lista de síntomas (sin prefijos)
+   - assessment.primary = null (no hay diagnóstico posible)
+   - NO usar placeholders ni inventar información.
+
+F) MISSINGINFO vs AMBIGUOUSINFO (IMPORTANTE):
+   - missingInfo: Datos que DEBERÍAN existir pero NO se mencionaron.
+     * Nombre/edad/sexo no documentados → missingInfo
+     * Alergias no preguntadas → missingInfo
+   - ambiguousInfo: Datos que SÍ se mencionaron pero son CONTRADICTORIOS o confusos.
+     * "a veces me duele, a veces no" → ambiguousInfo
+     * "mareo" que podría ser vértigo → ambiguousInfo
+   - NUNCA poner datos faltantes en ambiguousInfo.
 
 FORMATO DE EVIDENCE:
 {
@@ -115,28 +170,86 @@ EXTRAE un objeto JSON con esta estructura EXACTA (incluye TODAS las claves):
 
 INSTRUCCIONES DE EXTRACCIÓN:
 
-1. chiefComplaint: El motivo principal por el que el paciente consulta. REQUIERE evidence.
+1. chiefComplaint: El motivo principal por el que el paciente consulta.
+   - text DEBE ser BREVE, CLÍNICO y MEDICALIZADO (2-6 palabras).
+   - NO usar citas literales del paciente.
+   - REQUIERE evidence con la cita original.
+   EJEMPLOS:
+     * "me duele el oído derecho" → "Otalgia derecha"
+     * "oído tapado" → "Sensación de plenitud ótica"
+     * "me zumba" → "Acúfeno"
+     * "todo me daba vueltas como carrusel" → "Vértigo (sensación rotatoria)"
+     * "me duele la garganta" → "Odinofagia"
 
 2. hpi: Narrativa del padecimiento actual (inicio, evolución, duración, tratamientos previos).
    - keyPoints: Lista de puntos clave extraídos.
    - REQUIERE al menos un evidence si hay contenido.
+   - REGLA MÍNIMA: Si existe chiefComplaint, DEBE existir hpi.narrative o al menos 1 keyPoint.
+     No dejar HPI vacío si hay síntoma principal.
 
 3. ros (Review of Systems): Síntomas por aparatos/sistemas.
-   - positives: Síntomas PRESENTES mencionados.
-   - negatives: Síntomas NEGADOS explícitamente.
-   - Solo incluir si se mencionaron explícitamente.
+   - positives: Síntomas PRESENTES mencionados (ESTADO ACTUAL).
+   - negatives: Síntomas NEGADOS explícitamente (ESTADO ACTUAL).
+   - Solo incluir síntomas mencionados explícitamente.
+   - APLICAR MEDICALIZACIÓN: usar términos médicos (otalgia, odinofagia, rinorrea, etc.)
+   
+   REGLAS CRÍTICAS DE ROS:
+   
+   a) PRIORIDAD TEMPORAL: El ÚLTIMO estado mencionado es el que cuenta.
+      EJEMPLO: "Al inicio no tenía mareo, pero anoche sí me mareé"
+        → ROS positives: ["mareo"]
+        → ROS negatives: [] (vacío, NO incluir mareo)
+        → HPI narrative: "Refiere ausencia inicial de mareo con aparición anoche"
+      
+      EJEMPLO: "Antes me dolía la garganta, pero ya no"
+        → ROS positives: [] (ya resolvió)
+        → ROS negatives: ["odinofagia"] (solo el síntoma)
+        → HPI narrative: "Refiere odinofagia previa ya resuelta"
+   
+   b) SIN CONTRADICCIONES: Un síntoma NO puede estar en positives Y negatives.
+      * Si detectas el mismo síntoma en ambos → usar SOLO el estado ACTUAL.
+      * Nunca generar: positives: ["mareo"], negatives: ["niega mareo"]
+   
+   c) NEGACIONES HISTÓRICAS (van a HPI, NO a ROS):
+      Patrones → solo incluir en HPI narrative:
+      - "al inicio no tenía X"
+      - "antes no"
+      - "previamente sin X"
+      - "inicialmente sin X"
+   
+   d) NEGACIONES ACTUALES (van a ROS negatives):
+      Patrones → incluir en ROS negatives:
+      - "no tiene X" / "niega X" / "sin X" (sin contexto temporal)
+      - "actualmente sin X" / "hoy no tiene X"
+   
+   e) FORMATO DE ROS.NEGATIVES (CRÍTICO):
+      - Incluir SOLO el síntoma, SIN prefijos ("niega", "sin", "no").
+      - CORRECTO: ["fiebre", "vómito", "cefalea"]
+      - INCORRECTO: ["niega fiebre", "sin vómito", "no cefalea"]
+      - Unificar variantes: "vómitos" → "vómito", "mareos" → "mareo"
+   
+   f) SIN DUPLICADOS NI MALFORMACIONES:
+      - NO generar: ["fiebre", "fiebre ni..."]
+      - NO generar strings vacíos o palabras sueltas
+      - Cada síntoma aparece UNA sola vez
 
 4. pmh/medications/allergies: Listas de antecedentes, medicamentos y alergias.
    - Si el paciente dice "ninguno" o "no tengo", usar [].
    - Si NO se preguntó, agregar a missingInfo.
+   - PROHIBIDO usar placeholders: "antecedente", "medicamento", "alergia" son INVALIDOS.
+   - Si no hay datos explícitos → usar [] (array vacío).
    - MEDICAMENTOS: SOLO incluir medicamentos de uso HABITUAL/REGULAR.
      * NO incluir en medications: "ocasional", "a veces", "cuando me duele", "si lo necesito", "PRN".
-     * Si dice "tomo paracetamol ocasional" o "solo cuando duele", NO agregarlo a medications.
-     * Mencionar medicamentos ocasionales en hpi.keyPoints como "Usa paracetamol PRN para dolor".
+     * Si dice "tomo paracetamol ocasional", mencionar en hpi.keyPoints, NO en medications.
 
 5. assessment: Diagnóstico o impresión clínica.
-   - primary: Solo si el médico lo menciona explícitamente.
-   - differential: Diagnósticos diferenciales mencionados.
+   - primary: Si el médico menciona diagnóstico explícito → usarlo.
+   - Si NO hay diagnóstico explícito pero hay síntomas → usar IMPRESIÓN CONSERVADORA:
+     * "[Síntoma principal] a estudio"
+     * "Otalgia derecha a estudio (pendiente otoscopía)"
+     * "Mareo a estudio"
+     * "Síndrome vertiginoso a estudio" (SOLO si hay contexto rotatorio explícito)
+   - NUNCA usar "Diagnóstico diferido - pendiente exploración física".
    - REQUIERE evidence si hay primary.
 
 6. plan: Acciones a tomar.

@@ -47,13 +47,13 @@ class ExtractionMetadata extends Equatable {
   final String? modelVersion;
 
   Map<String, dynamic> toJson() => {
-        if (specialty != null) 'specialty': specialty,
-        if (language != null) 'language': language,
-        'confidenceOverall': confidenceOverall.name,
-        if (extractionTimestamp != null)
-          'extractionTimestamp': extractionTimestamp!.toIso8601String(),
-        if (modelVersion != null) 'modelVersion': modelVersion,
-      };
+    if (specialty != null) 'specialty': specialty,
+    if (language != null) 'language': language,
+    'confidenceOverall': confidenceOverall.name,
+    if (extractionTimestamp != null)
+      'extractionTimestamp': extractionTimestamp!.toIso8601String(),
+    if (modelVersion != null) 'modelVersion': modelVersion,
+  };
 
   static DateTime? _parseDateTime(dynamic value) {
     if (value == null) return null;
@@ -64,21 +64,17 @@ class ExtractionMetadata extends Equatable {
 
   @override
   List<Object?> get props => [
-        specialty,
-        language,
-        confidenceOverall,
-        extractionTimestamp,
-        modelVersion,
-      ];
+    specialty,
+    language,
+    confidenceOverall,
+    extractionTimestamp,
+    modelVersion,
+  ];
 }
 
 /// Patient demographic information extracted from encounter.
 class PatientInfo extends Equatable {
-  const PatientInfo({
-    this.name,
-    this.age,
-    this.sex,
-  });
+  const PatientInfo({this.name, this.age, this.sex});
 
   factory PatientInfo.fromJson(Map<String, dynamic>? json) {
     if (json == null) return const PatientInfo();
@@ -94,10 +90,10 @@ class PatientInfo extends Equatable {
   final String? sex;
 
   Map<String, dynamic> toJson() => {
-        if (name != null) 'name': name,
-        if (age != null) 'age': age,
-        if (sex != null) 'sex': sex,
-      };
+    if (name != null) 'name': name,
+    if (age != null) 'age': age,
+    if (sex != null) 'sex': sex,
+  };
 
   static int? _parseIntOrNull(dynamic value) {
     if (value == null) return null;
@@ -113,10 +109,7 @@ class PatientInfo extends Equatable {
 
 /// Chief complaint with evidence.
 class ChiefComplaintSection extends Equatable {
-  const ChiefComplaintSection({
-    this.text,
-    this.evidence,
-  });
+  const ChiefComplaintSection({this.text, this.evidence});
 
   factory ChiefComplaintSection.fromJson(Map<String, dynamic>? json) {
     if (json == null) return const ChiefComplaintSection();
@@ -132,9 +125,9 @@ class ChiefComplaintSection extends Equatable {
   final EvidenceDTO? evidence;
 
   Map<String, dynamic> toJson() => {
-        if (text != null) 'text': text,
-        if (evidence != null) 'evidence': evidence!.toJson(),
-      };
+    if (text != null) 'text': text,
+    if (evidence != null) 'evidence': evidence!.toJson(),
+  };
 
   @override
   List<Object?> get props => [text, evidence];
@@ -162,11 +155,10 @@ class HPISection extends Equatable {
   final List<EvidenceDTO> evidence;
 
   Map<String, dynamic> toJson() => {
-        if (narrative != null) 'narrative': narrative,
-        if (keyPoints.isNotEmpty) 'keyPoints': keyPoints,
-        if (evidence.isNotEmpty)
-          'evidence': EvidenceDTO.listToJson(evidence),
-      };
+    if (narrative != null) 'narrative': narrative,
+    if (keyPoints.isNotEmpty) 'keyPoints': keyPoints,
+    if (evidence.isNotEmpty) 'evidence': EvidenceDTO.listToJson(evidence),
+  };
 
   static List<String> _parseStringList(dynamic value) {
     if (value == null) return [];
@@ -199,12 +191,23 @@ class ROSSection extends Equatable {
   final List<String> negatives;
   final List<EvidenceDTO> evidence;
 
+  ROSSection copyWith({
+    List<String>? positives,
+    List<String>? negatives,
+    List<EvidenceDTO>? evidence,
+  }) {
+    return ROSSection(
+      positives: positives ?? this.positives,
+      negatives: negatives ?? this.negatives,
+      evidence: evidence ?? this.evidence,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
-        if (positives.isNotEmpty) 'positives': positives,
-        if (negatives.isNotEmpty) 'negatives': negatives,
-        if (evidence.isNotEmpty)
-          'evidence': EvidenceDTO.listToJson(evidence),
-      };
+    if (positives.isNotEmpty) 'positives': positives,
+    if (negatives.isNotEmpty) 'negatives': negatives,
+    if (evidence.isNotEmpty) 'evidence': EvidenceDTO.listToJson(evidence),
+  };
 
   static List<String> _parseStringList(dynamic value) {
     if (value == null) return [];
@@ -218,11 +221,7 @@ class ROSSection extends Equatable {
 
 /// A single item in PMH, medications, or allergies with optional evidence.
 class ClinicalListItem extends Equatable {
-  const ClinicalListItem({
-    required this.item,
-    this.details,
-    this.evidence,
-  });
+  const ClinicalListItem({required this.item, this.details, this.evidence});
 
   factory ClinicalListItem.fromJson(dynamic json) {
     if (json is String) {
@@ -245,10 +244,10 @@ class ClinicalListItem extends Equatable {
   final EvidenceDTO? evidence;
 
   Map<String, dynamic> toJson() => {
-        'item': item,
-        if (details != null) 'details': details,
-        if (evidence != null) 'evidence': evidence!.toJson(),
-      };
+    'item': item,
+    if (details != null) 'details': details,
+    if (evidence != null) 'evidence': evidence!.toJson(),
+  };
 
   static List<ClinicalListItem> listFromJson(dynamic json) {
     if (json == null) return [];
@@ -286,11 +285,10 @@ class AssessmentSection extends Equatable {
   final List<EvidenceDTO> evidence;
 
   Map<String, dynamic> toJson() => {
-        if (primary != null) 'primary': primary,
-        if (differential.isNotEmpty) 'differential': differential,
-        if (evidence.isNotEmpty)
-          'evidence': EvidenceDTO.listToJson(evidence),
-      };
+    if (primary != null) 'primary': primary,
+    if (differential.isNotEmpty) 'differential': differential,
+    if (evidence.isNotEmpty) 'evidence': EvidenceDTO.listToJson(evidence),
+  };
 
   static List<String> _parseStringList(dynamic value) {
     if (value == null) return [];
@@ -333,14 +331,13 @@ class PlanSection extends Equatable {
   final List<EvidenceDTO> evidence;
 
   Map<String, dynamic> toJson() => {
-        if (diagnostics.isNotEmpty) 'diagnostics': diagnostics,
-        if (treatments.isNotEmpty) 'treatments': treatments,
-        if (referrals.isNotEmpty) 'referrals': referrals,
-        if (education.isNotEmpty) 'education': education,
-        if (followUp != null) 'followUp': followUp,
-        if (evidence.isNotEmpty)
-          'evidence': EvidenceDTO.listToJson(evidence),
-      };
+    if (diagnostics.isNotEmpty) 'diagnostics': diagnostics,
+    if (treatments.isNotEmpty) 'treatments': treatments,
+    if (referrals.isNotEmpty) 'referrals': referrals,
+    if (education.isNotEmpty) 'education': education,
+    if (followUp != null) 'followUp': followUp,
+    if (evidence.isNotEmpty) 'evidence': EvidenceDTO.listToJson(evidence),
+  };
 
   static List<String> _parseStringList(dynamic value) {
     if (value == null) return [];
@@ -350,22 +347,18 @@ class PlanSection extends Equatable {
 
   @override
   List<Object?> get props => [
-        diagnostics,
-        treatments,
-        referrals,
-        education,
-        followUp,
-        evidence,
-      ];
+    diagnostics,
+    treatments,
+    referrals,
+    education,
+    followUp,
+    evidence,
+  ];
 }
 
 /// Information identified as missing from the encounter.
 class MissingInfo extends Equatable {
-  const MissingInfo({
-    required this.field,
-    this.importance,
-    this.suggestion,
-  });
+  const MissingInfo({required this.field, this.importance, this.suggestion});
 
   factory MissingInfo.fromJson(dynamic json) {
     if (json is String) {
@@ -386,10 +379,10 @@ class MissingInfo extends Equatable {
   final String? suggestion;
 
   Map<String, dynamic> toJson() => {
-        'field': field,
-        if (importance != null) 'importance': importance,
-        if (suggestion != null) 'suggestion': suggestion,
-      };
+    'field': field,
+    if (importance != null) 'importance': importance,
+    if (suggestion != null) 'suggestion': suggestion,
+  };
 
   static List<MissingInfo> listFromJson(dynamic json) {
     if (json == null) return [];
@@ -430,11 +423,11 @@ class AmbiguousInfo extends Equatable {
   final List<String> possibleInterpretations;
 
   Map<String, dynamic> toJson() => {
-        'item': item,
-        if (reason != null) 'reason': reason,
-        if (possibleInterpretations.isNotEmpty)
-          'possibleInterpretations': possibleInterpretations,
-      };
+    'item': item,
+    if (reason != null) 'reason': reason,
+    if (possibleInterpretations.isNotEmpty)
+      'possibleInterpretations': possibleInterpretations,
+  };
 
   static List<String> _parseStringList(dynamic value) {
     if (value == null) return [];
@@ -479,9 +472,7 @@ class ClinicalFactsDTO extends Equatable {
       metadata: ExtractionMetadata.fromJson(
         json['metadata'] as Map<String, dynamic>?,
       ),
-      patient: PatientInfo.fromJson(
-        json['patient'] as Map<String, dynamic>?,
-      ),
+      patient: PatientInfo.fromJson(json['patient'] as Map<String, dynamic>?),
       chiefComplaint: ChiefComplaintSection.fromJson(
         json['chiefComplaint'] as Map<String, dynamic>? ??
             json['chief_complaint'] as Map<String, dynamic>?,
@@ -501,14 +492,12 @@ class ClinicalFactsDTO extends Equatable {
         json['medications'] ?? json['meds'],
       ),
       allergies: ClinicalListItem.listFromJson(json['allergies']),
-      physicalExam: json['physicalExam'] as String? ??
-          json['physical_exam'] as String?,
+      physicalExam:
+          json['physicalExam'] as String? ?? json['physical_exam'] as String?,
       assessment: AssessmentSection.fromJson(
         json['assessment'] as Map<String, dynamic>?,
       ),
-      plan: PlanSection.fromJson(
-        json['plan'] as Map<String, dynamic>?,
-      ),
+      plan: PlanSection.fromJson(json['plan'] as Map<String, dynamic>?),
       missingInfo: MissingInfo.listFromJson(
         json['missingInfo'] ?? json['missing_info'],
       ),
@@ -533,6 +522,40 @@ class ClinicalFactsDTO extends Equatable {
   final List<MissingInfo> missingInfo;
   final List<AmbiguousInfo> ambiguousInfo;
   final Map<String, dynamic>? rawExtraction;
+
+  ClinicalFactsDTO copyWith({
+    ExtractionMetadata? metadata,
+    PatientInfo? patient,
+    ChiefComplaintSection? chiefComplaint,
+    HPISection? hpi,
+    ROSSection? ros,
+    List<ClinicalListItem>? pmh,
+    List<ClinicalListItem>? medications,
+    List<ClinicalListItem>? allergies,
+    String? physicalExam,
+    AssessmentSection? assessment,
+    PlanSection? plan,
+    List<MissingInfo>? missingInfo,
+    List<AmbiguousInfo>? ambiguousInfo,
+    Map<String, dynamic>? rawExtraction,
+  }) {
+    return ClinicalFactsDTO(
+      metadata: metadata ?? this.metadata,
+      patient: patient ?? this.patient,
+      chiefComplaint: chiefComplaint ?? this.chiefComplaint,
+      hpi: hpi ?? this.hpi,
+      ros: ros ?? this.ros,
+      pmh: pmh ?? this.pmh,
+      medications: medications ?? this.medications,
+      allergies: allergies ?? this.allergies,
+      physicalExam: physicalExam ?? this.physicalExam,
+      assessment: assessment ?? this.assessment,
+      plan: plan ?? this.plan,
+      missingInfo: missingInfo ?? this.missingInfo,
+      ambiguousInfo: ambiguousInfo ?? this.ambiguousInfo,
+      rawExtraction: rawExtraction ?? this.rawExtraction,
+    );
+  }
 
   Map<String, dynamic> toJson() {
     return {
@@ -566,18 +589,18 @@ class ClinicalFactsDTO extends Equatable {
 
   @override
   List<Object?> get props => [
-        metadata,
-        patient,
-        chiefComplaint,
-        hpi,
-        ros,
-        pmh,
-        medications,
-        allergies,
-        physicalExam,
-        assessment,
-        plan,
-        missingInfo,
-        ambiguousInfo,
-      ];
+    metadata,
+    patient,
+    chiefComplaint,
+    hpi,
+    ros,
+    pmh,
+    medications,
+    allergies,
+    physicalExam,
+    assessment,
+    plan,
+    missingInfo,
+    ambiguousInfo,
+  ];
 }

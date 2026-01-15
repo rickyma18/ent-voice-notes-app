@@ -13,6 +13,8 @@ import '../../domain/scribe/repositories/encounter_extractor_repository.dart';
 import '../../domain/scribe/repositories/note_composer_repository.dart';
 import '../../domain/scribe/repositories/transcription_repository.dart';
 import '../medicalization/medicalization_service.dart';
+import 'clinical_facts_sanitizer.dart';
+import 'ros_reconciliation_service.dart';
 
 /// Result of the complete medical scribe pipeline.
 class MedicalScribeResult extends Equatable {
@@ -110,12 +112,15 @@ final class ProcessEncounterUseCase {
     required this.extractorRepository,
     required this.composerRepository,
     required this.medicalizationService,
+    this.sanitizer = const ClinicalFactsSanitizer(),
   });
 
   final TranscriptionRepository transcriptionRepository;
   final EncounterExtractorRepository extractorRepository;
   final NoteComposerRepository composerRepository;
   final MedicalizationService medicalizationService;
+
+  final ClinicalFactsSanitizer sanitizer;
 
   /// Processes a medical encounter audio file through the full pipeline.
   ///
@@ -310,6 +315,14 @@ final class ProcessEncounterUseCase {
   ///
   /// This ensures the composer ALWAYS has meaningful data to work with,
   /// even if the LLM didn't extract a diagnosis or plan.
+  ///
+  /// Also reconciles ROS data using deterministic rules:
+  /// - Positives override conflicting negatives
+  /// - Temporal/historical negations stay in HPI only
+  /// - Clean up duplicate or malformed negation entries
+  /// - No symptom can appear in both positives AND negatives
+  ///
+  /// Finally, applies ClinicalFactsSanitizer to ensure data hygiene.
   ClinicalFactsDTO _applyExtractorFallback(
     ClinicalFactsDTO facts, {
     required bool hasNegatedFindings,
@@ -329,10 +342,10 @@ final class ProcessEncounterUseCase {
     if (facts.assessment.primary == null &&
         facts.assessment.differential.isEmpty) {
       Log.info('[Scribe] Applying fallback for empty assessment');
-      updatedAssessment = AssessmentSection(
+      updatedAssessment = const AssessmentSection(
         primary: 'Diagnóstico diferido - pendiente exploración física',
-        differential: const [],
-        evidence: const [],
+        differential: [],
+        evidence: [],
       );
     }
 
@@ -340,64 +353,40 @@ final class ProcessEncounterUseCase {
     var updatedPlan = facts.plan;
     if (facts.plan.treatments.isEmpty && facts.plan.diagnostics.isEmpty) {
       Log.info('[Scribe] Applying fallback for empty plan');
-      updatedPlan = PlanSection(
-        diagnostics: const [],
-        treatments: const ['Manejo sintomático según hallazgos de exploración'],
-        referrals: const [],
-        education: const [
+      updatedPlan = const PlanSection(
+        diagnostics: [],
+        treatments: ['Manejo sintomático según hallazgos de exploración'],
+        referrals: [],
+        education: [
           'Signos de alarma: fiebre alta persistente, dificultad respiratoria, deterioro general',
         ],
         followUp: 'Revalorar tras exploración física completa',
-        evidence: const [],
+        evidence: [],
       );
     }
 
-    // Add negated findings to ROS negatives if not already present
-    var updatedROS = facts.ros;
-    if (negatedFindings.isNotEmpty) {
-      final existingNegatives = facts.ros.negatives
-          .map((n) => n.toLowerCase())
-          .toSet();
-      final newNegatives = <String>[...facts.ros.negatives];
+    // ─────────────────────────────────────────────────────────────────────────
+    // DETERMINISTIC ROS RECONCILIATION
+    // ─────────────────────────────────────────────────────────────────────────
+    const rosReconciliationService = ROSReconciliationService();
+    final reconciledROS = rosReconciliationService.reconcile(
+      ros: facts.ros,
+      negatedFindings: negatedFindings,
+      hpiNarrative: facts.hpi.narrative,
+    );
 
-      for (final finding in negatedFindings) {
-        if (!existingNegatives.contains(finding.toLowerCase())) {
-          // Add formatted string like "niega fiebre"
-          newNegatives.add('niega $finding');
-        }
-      }
+    // Apply updates via copyWith
+    final intermediateFacts = facts.copyWith(
+      assessment: updatedAssessment,
+      plan: updatedPlan,
+      ros: reconciledROS,
+    );
 
-      if (newNegatives.length > facts.ros.negatives.length) {
-        updatedROS = ROSSection(
-          positives: facts.ros.positives,
-          negatives: newNegatives,
-          evidence: facts.ros.evidence,
-        );
-      }
-    }
-
-    // Only create new DTO if something changed
-    if (updatedAssessment != facts.assessment ||
-        updatedPlan != facts.plan ||
-        updatedROS != facts.ros) {
-      return ClinicalFactsDTO(
-        metadata: facts.metadata,
-        patient: facts.patient,
-        chiefComplaint: facts.chiefComplaint,
-        hpi: facts.hpi,
-        ros: updatedROS,
-        pmh: facts.pmh,
-        medications: facts.medications,
-        allergies: facts.allergies,
-        physicalExam: facts.physicalExam,
-        assessment: updatedAssessment,
-        plan: updatedPlan,
-        missingInfo: facts.missingInfo,
-        ambiguousInfo: facts.ambiguousInfo,
-      );
-    }
-
-    return facts;
+    // ─────────────────────────────────────────────────────────────────────────
+    // DETERMINISTIC SANITIZATION (FINAL PASS)
+    // ─────────────────────────────────────────────────────────────────────────
+    // Applies hygiene rules and negations-only overrides
+    return sanitizer.sanitize(intermediateFacts);
   }
 
   /// Sanitizes negated findings by normalizing, deduplicating, and filtering.
