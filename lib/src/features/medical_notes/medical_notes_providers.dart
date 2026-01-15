@@ -11,6 +11,8 @@ import 'application/audio_recording_service.dart';
 import 'application/audio_recording_service_impl.dart';
 import 'application/speech_to_text_service.dart';
 import 'application/speech_to_text_service_impl.dart';
+import 'application/note_quality_gate_service_impl.dart';
+import 'domain/services/note_quality_gate_service.dart';
 
 import 'application/usecases/upload_image_attachment_usecase.dart';
 import 'application/usecases/upload_pdf_attachment_usecase.dart';
@@ -45,6 +47,22 @@ import 'domain/scribe/repositories/note_composer_repository.dart';
 
 // Medicalization Service Import
 import 'application/medicalization/medicalization_service.dart';
+
+// Audio Preprocessing (VAD/Chunking) Imports
+import 'data/repositories/audio_preprocessor_repository_impl.dart';
+import 'domain/repositories/audio_preprocessor_repository.dart';
+
+// Diarization (Speaker Identification) Imports
+import 'data/scribe/services_impl/diarization_service_stub.dart';
+import 'data/scribe/services_impl/diarization_service_impl.dart';
+import 'domain/scribe/services/diarization_service.dart';
+
+// Google Cloud STT V2 (Chirp-3) Imports
+import 'data/stt/google_chirp_stt_client.dart';
+import 'data/stt/google_chirp_stt_service_impl.dart';
+
+// Scribe V2 Storage Imports
+import 'data/datasources/scribe_v2_storage_datasource.dart';
 
 part 'medical_notes_providers.g.dart';
 
@@ -188,22 +206,224 @@ AudioRecordingService audioRecordingService(AudioRecordingServiceRef ref) {
   // return AudioRecordingServiceStub();
 }
 
+/// Feature flag for audio preprocessing (VAD/chunking).
+///
+/// When true, audio is preprocessed to detect silences and split into
+/// multiple chunks before transcription. This can reduce latency and
+/// improve transcription quality for long recordings with pauses.
+///
+/// Default: false (disabled for backward compatibility).
+/// Override in main() or via environment variable to enable.
+@Riverpod(keepAlive: true)
+bool enableAudioPreprocessing(Ref ref) {
+  // Default: disabled for backward compatibility
+  // Can be overridden in main() for testing or gradual rollout:
+  // container.updateOverrides([enableAudioPreprocessingProvider.overrideWithValue(true)]);
+  return false;
+}
+
+/// Feature flag for using Scribe V2 pipeline in note creation flows.
+///
+/// When true:
+/// - CreateMedicalNotePage and ClinicalHistoryWizardPage use Scribe V2
+///   via MedicalNotesController.generateNoteFromAudio/Transcript
+/// - Results are mapped to legacy format via _mapScribeResultToLegacyFormat
+/// - If Scribe V2 fails (JSON invalid, rate limit, etc.), auto-fallback to legacy
+///
+/// When false:
+/// - Legacy NoteAIService is used directly (current behavior)
+///
+/// Default: false (disabled for backward compatibility, enable for gradual rollout).
+@Riverpod(keepAlive: true)
+bool useScribeV2ForNoteCreation(Ref ref) {
+  // Default: disabled for backward compatibility
+  // Can be overridden in main() for testing or gradual rollout:
+  // container.updateOverrides([useScribeV2ForNoteCreationProvider.overrideWithValue(true)]);
+  return false;
+}
+
+/// Note Quality Gate Service provider.
+///
+/// Validates that medical notes have minimum required clinical fields:
+/// - Motivo de consulta (Chief complaint / HPI)
+/// - Diagnóstico (Assessment / Diagnosis)
+/// - Plan de tratamiento (Treatment plan)
+///
+/// Used to block:
+/// - Saving incomplete notes (warning only, doesn't block draft saves)
+/// - Signing notes that don't meet quality standards (blocks signing)
+@riverpod
+NoteQualityGateService noteQualityGateService(Ref ref) {
+  return const NoteQualityGateServiceImpl();
+}
+
+/// Audio Preprocessor Repository provider.
+///
+/// Provides VAD/chunking preprocessing for audio before STT.
+/// Uses FFmpeg if available, falls back to passthrough (single chunk).
+@riverpod
+AudioPreprocessorRepository audioPreprocessorRepository(Ref ref) {
+  return AudioPreprocessorRepositoryImpl();
+}
+
 /// SpeechToText Service provider.
 ///
 /// PRODUCTION MODE: Uses real OpenAI Whisper API for transcription.
 /// Phase 1.5: Now applies medical transcript post-processing for consistency
 /// with NoteAIService pipeline.
+/// Phase 2.0: Optional audio preprocessing (VAD/chunking) when enabled.
+/// Phase 2.5: Optional Google Chirp-3 STT backend via useChirp3SttProvider.
 /// TEST MODE: Uncomment the stub below for UI testing without API calls.
 @riverpod
 SpeechToTextService speechToTextService(Ref ref) {
-  // PRODUCTION MODE: Real Whisper transcription with Phase 1.5 post-processing
+  ref.keepAlive(); // Prevent disposal during long operations
+  final enablePreprocessing = ref.watch(enableAudioPreprocessingProvider);
+  final useChirp3 = ref.watch(useChirp3SttProvider);
+  final allowFallback = ref.watch(allowSttFallbackProvider);
+
+  // Get audio preprocessor if enabled
+  final audioPreprocessor = enablePreprocessing
+      ? ref.watch(audioPreprocessorRepositoryProvider)
+      : null;
+
+  // Phase 2.5: Use Google Chirp-3 if enabled
+  if (useChirp3) {
+    final chirpConfig = ref.watch(googleChirpSttConfigProvider);
+    if (chirpConfig != null) {
+      final chirpClient = GoogleChirpSttClient(config: chirpConfig);
+
+      // Build fallback service (Whisper) if allowed
+      SpeechToTextService? fallback;
+      if (allowFallback) {
+        fallback = SpeechToTextServiceImpl(
+          openAIClient: ref.watch(openAIClientProvider),
+          enablePhoneticMedicationMatching: true,
+          audioPreprocessor: audioPreprocessor,
+          enableAudioPreprocessing: enablePreprocessing,
+        );
+      }
+
+      return GoogleChirpSttServiceImpl(
+        client: chirpClient,
+        fallbackService: fallback,
+        allowFallback: allowFallback,
+        audioPreprocessor: audioPreprocessor,
+        enableAudioPreprocessing: enablePreprocessing,
+      );
+    }
+  }
+
+  // Default: OpenAI Whisper transcription with Phase 1.5 post-processing
   return SpeechToTextServiceImpl(
     openAIClient: ref.watch(openAIClientProvider),
     enablePhoneticMedicationMatching: true, // Phase 1.5 enabled
+    audioPreprocessor: audioPreprocessor,
+    enableAudioPreprocessing: enablePreprocessing,
   );
 
   // TEST MODE: Stub for UI testing (no real API calls)
   // return SpeechToTextServiceStub();
+}
+
+// =============================================================================
+// Google Cloud STT V2 (Chirp-3) Providers
+// =============================================================================
+
+/// Feature flag for using Google Cloud STT V2 with Chirp-3 model.
+///
+/// When true, uses Google Chirp-3 for transcription instead of OpenAI Whisper.
+/// Provides word-level timestamps and potentially better multilingual support.
+///
+/// Default: false (uses Whisper).
+/// Requires googleChirpSttConfigProvider to be configured.
+@Riverpod(keepAlive: true)
+bool useChirp3Stt(Ref ref) {
+  // Default: disabled, use Whisper
+  // Can be overridden: container.updateOverrides([useChirp3SttProvider.overrideWithValue(true)])
+  return false;
+}
+
+/// Feature flag for allowing STT fallback.
+///
+/// When true and Chirp-3 fails, automatically falls back to Whisper.
+/// Default: true (always try fallback).
+@Riverpod(keepAlive: true)
+bool allowSttFallback(Ref ref) {
+  return true;
+}
+
+/// Configuration provider for Google Cloud STT V2.
+///
+/// Returns null if not configured (Chirp-3 won't be used).
+/// Override this provider with actual credentials in main().
+///
+/// Example:
+/// ```dart
+/// ProviderScope(
+///   overrides: [
+///     googleChirpSttConfigProvider.overrideWithValue(
+///       GoogleChirpSttConfig(
+///         projectId: 'my-project',
+///         location: 'us-central1',
+///         accessToken: 'ya29...',
+///       ),
+///     ),
+///   ],
+/// )
+/// ```
+@Riverpod(keepAlive: true)
+GoogleChirpSttConfig? googleChirpSttConfig(Ref ref) {
+  // Default: not configured
+  // Must be overridden with actual credentials to use Chirp-3
+  return null;
+}
+
+// =============================================================================
+// Diarization (Speaker Identification) Providers
+// =============================================================================
+
+/// Feature flag for speaker diarization.
+///
+/// When true, diarization service will attempt to assign speaker labels
+/// (Doctor, Paciente) to transcript segments based on audio analysis.
+///
+/// Default: false (disabled - all segments assigned 'unknown').
+/// Override in main() or via environment variable to enable.
+///
+/// TODO: Enable when pyannote FastAPI integration is complete.
+@Riverpod(keepAlive: true)
+bool enableDiarization(Ref ref) {
+  // Default: disabled until real implementation is ready
+  // Can be overridden in main() for testing:
+  // container.updateOverrides([enableDiarizationProvider.overrideWithValue(true)]);
+  return false;
+}
+
+/// Diarization backend configuration provider.
+///
+/// Configure the pyannote diarization backend URL.
+/// Default: http://localhost:8000 (local Docker)
+@Riverpod(keepAlive: true)
+DiarizationBackendConfig diarizationBackendConfig(Ref ref) {
+  return const DiarizationBackendConfig();
+}
+
+@riverpod
+DiarizationService diarizationService(Ref ref) {
+  final enabled = ref.watch(enableDiarizationProvider);
+
+  if (enabled) {
+    // Use real pyannote backend implementation
+    final config = ref.watch(diarizationBackendConfigProvider);
+    return DiarizationServiceImpl(
+      config: config,
+      fallbackService:
+          const DiarizationServiceStub(), // Fallback if backend fails
+    );
+  }
+
+  // Default: stub implementation
+  return const DiarizationServiceStub();
 }
 
 /// Repository provider
@@ -358,13 +578,22 @@ NoteComposerRepository noteComposerRepository(NoteComposerRepositoryRef ref) {
 }
 
 /// Transcription Repository Provider (Stage 1).
+///
+/// Phase 2.2: Now supports optional speaker diarization when enableDiarization is true.
 @riverpod
 TranscriptionRepository transcriptionRepository(
   TranscriptionRepositoryRef ref,
 ) {
+  final enableDiarization = ref.watch(enableDiarizationProvider);
+
   // Stage 1: Transcription with Phase 1.5 SpeechToTextService (Whisper)
+  // Phase 2.2: Optional speaker diarization
   return TranscriptionRepositoryImpl(
     service: ref.watch(speechToTextServiceProvider),
+    diarizationService: enableDiarization
+        ? ref.watch(diarizationServiceProvider)
+        : null,
+    enableDiarization: enableDiarization,
   );
 }
 
@@ -434,4 +663,42 @@ SignMedicalNoteUseCase signMedicalNoteUseCase(SignMedicalNoteUseCaseRef ref) {
       );
     },
   );
+}
+
+// =============================================================================
+// Scribe V2 Storage Providers
+// =============================================================================
+
+/// Scribe V2 storage datasource provider.
+///
+/// Handles Firestore operations for persisting Scribe V2 pipeline results.
+/// Storage location: medical_notes/{noteId}/scribe_v2/latest
+///
+/// This datasource stores:
+/// - Transcript segments with speaker and timing info
+/// - Extracted clinical facts (structured JSON)
+/// - Evidence mapping (facts → transcript quotes/timestamps)
+/// - Composed SOAP note text
+/// - Pipeline metadata (source, model, timings)
+@riverpod
+ScribeV2StorageDatasource scribeV2StorageDatasource(Ref ref) {
+  return ScribeV2StorageDatasource();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Debug & Telemetry Providers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Features flag to enable the Scribe V2 Evidence Debug Hook in UI.
+/// Features flag to enable the Scribe V2 Evidence Debug Hook in UI.
+final enableEvidenceDebugHookProvider = Provider<bool>((ref) {
+  // Default to false. Can be overridden in main.dart or tests.
+  return false;
+});
+
+/// Provides the current application version.
+@riverpod
+String appVersion(Ref ref) {
+  // TODO: Integrate package_info_plus for real version
+  return '1.0.0+1';
 }

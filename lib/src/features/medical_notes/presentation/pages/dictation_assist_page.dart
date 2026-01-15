@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import '../../medical_notes_providers.dart';
+import '../widgets/evidence_debug_sheet.dart'; // For Scribe Pipeline Hook
 
 import '../controllers/medical_notes_controller.dart'; // For Scribe Pipeline Hook
 
@@ -15,7 +17,7 @@ import '../../../../presentation/core/router/route_names.dart';
 import '../../../../ui/docsoft_ui.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 import '../../application/audio_recording_service.dart';
-import '../../medical_notes_providers.dart';
+
 import '../widgets/dictation_guide_accordion.dart';
 import '../widgets/recording_controls.dart';
 
@@ -588,7 +590,7 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
 
   bool get _ctasEnabled =>
       _status == DictationStatus.ready &&
-      _rawTranscript.isNotEmpty &&
+      _rawTranscript.trim().isNotEmpty &&
       !_isGenerating;
 
   @override
@@ -1090,9 +1092,9 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
           // ─────────────────────────────────────────────────────────────────
           // DEBUG HOOK BUTTON
           // ─────────────────────────────────────────────────────────────────
-          if (false &&
-              kDebugMode &&
-              _lastAudioPath != null &&
+          if (kDebugMode &&
+              ref.watch(enableEvidenceDebugHookProvider) &&
+              (_lastAudioPath != null || _rawTranscript.isNotEmpty) &&
               !_isGenerating) ...[
             const SizedBox(height: DocsoftSpacing.md),
             // Custom styling for debug button to make it obvious
@@ -1167,111 +1169,80 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
   bool _debugLoadingDialogOpen = false;
 
   Future<void> _debugTestScribePipeline() async {
-    if (_lastAudioPath == null) {
-      debugPrint('[Scribe][Debug] No audio file available.');
-      return;
-    }
+    final controller = ref.read(medicalNotesControllerProvider.notifier);
+    var result = controller.lastScribeResult;
+    String source = 'Cached (Previous Run)';
 
-    // Prevent multiple concurrent executions
-    if (_debugLoadingDialogOpen) {
-      debugPrint('[Scribe][Debug] Already running, ignoring.');
-      return;
-    }
+    // If no cached result, force a generation to create evidence
+    if (result == null) {
+      if (_debugLoadingDialogOpen) return;
+      _debugLoadingDialogOpen = true;
 
-    // Show loading dialog
-    if (!mounted) return;
-    _debugLoadingDialogOpen = true;
+      // Capture dialog context to close it reliably
+      BuildContext? dialogContext;
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const Center(
-        child: SizedBox(
-          width: 80,
-          height: 80,
-          child: CircularProgressIndicator(),
-        ),
-      ),
-    );
-
-    Map<String, dynamic>? result;
-    Object? error;
-    StackTrace? stackTrace;
-
-    try {
-      // Use raw transcript if available to skip redundant STT (optimization)
-      if (_rawTranscript.isNotEmpty) {
-        debugPrint(
-          '[Scribe][Debug] Using existing transcript (${_rawTranscript.length} chars)',
-        );
-        result = await ref
-            .read(medicalNotesControllerProvider.notifier)
-            .generateNoteFromTranscript(_rawTranscript, language: 'es');
-      } else {
-        final file = File(_lastAudioPath!);
-        debugPrint(
-          '[Scribe][Debug] Starting pipeline with file: $_lastAudioPath (Audio -> STT)',
-        );
-        result = await ref
-            .read(medicalNotesControllerProvider.notifier)
-            .generateNoteFromAudio(file, language: 'es');
-      }
-
-      debugPrint('[Scribe][Debug] Result: $result');
-    } catch (e, st) {
-      error = e;
-      stackTrace = st;
-      debugPrint('[Scribe][Debug] Error: $e\n$st');
-    } finally {
-      // ALWAYS dismiss loading dialog first, before showing any result
-      _debugLoadingDialogOpen = false;
-
-      if (mounted && Navigator.canPop(context)) {
-        Navigator.pop(context);
-      }
-    }
-
-    // Now show result or error dialog (after loading is dismissed)
-    if (!mounted) return;
-
-    if (error != null) {
-      // Show error dialog
-      await showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Error Scribe V2'),
-          content: SingleChildScrollView(
-            child: Text('Error: $error\n\nStack:\n$stackTrace'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cerrar'),
-            ),
-          ],
-        ),
-      );
-    } else if (result != null) {
-      // Show result dialog
-      await showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Scribe V2 Result (Debug)'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: SelectableText(
-                result.toString(),
-                style: const TextStyle(fontFamily: 'monospace'),
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) {
+            dialogContext = ctx;
+            return const Center(
+              child: SizedBox(
+                width: 80,
+                height: 80,
+                child: CircularProgressIndicator(),
               ),
+            );
+          },
+        );
+      }
+
+      try {
+        if (_rawTranscript.isNotEmpty) {
+          source = 'Generated from Transcript';
+          // This method caches the result in _lastScribeResult
+          await controller.generateAISuggestionsAndCacheForPersistence(
+            _rawTranscript,
+            language: 'es',
+          );
+        } else if (_lastAudioPath != null) {
+          source = 'Generated from Audio';
+          final file = File(_lastAudioPath!);
+          // This method uses the pipeline AND caches valid results now
+          await controller.generateNoteFromAudio(file, language: 'es');
+        }
+        result = controller.lastScribeResult;
+      } catch (e) {
+        debugPrint('[Scribe][Debug] Generation failed: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error generating trace: $e'),
+              backgroundColor: Colors.red,
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cerrar'),
-            ),
-          ],
+          );
+        }
+      } finally {
+        // Robust dialog closing using captured context
+        if (dialogContext != null && dialogContext!.mounted) {
+          Navigator.of(dialogContext!).pop();
+        }
+        _debugLoadingDialogOpen = false;
+      }
+    }
+
+    if (result != null && mounted) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          builder: (_, scrollController) =>
+              EvidenceDebugSheet(result: result!, source: source),
         ),
       );
     }

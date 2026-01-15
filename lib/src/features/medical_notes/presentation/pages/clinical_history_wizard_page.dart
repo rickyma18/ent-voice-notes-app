@@ -595,16 +595,21 @@ class _ClinicalHistoryWizardPageState
     });
 
     try {
-      final aiService = ref.read(noteAIServiceProvider);
+      // Use the controller's generateAISuggestionsWithFallback method
+      // which respects the useScribeV2ForNoteCreation feature flag
+      // and automatically falls back to legacy if Scribe V2 fails
+      final controller = ref.read(medicalNotesControllerProvider.notifier);
 
-      // Use V3 with LOCAL medicalization + LLM extraction
-      // Feature flag: set enableMedicalization to false to rollback to V2 behavior
-      final structuredV1 = await aiService.suggestStructuredFieldsV3(
+      final result = await controller.generateAISuggestionsWithFallback(
         _rawTranscript!,
-        enableMedicalization: true, // Set to false to disable medicalization
+        language: 'es',
       );
 
       if (!mounted) return;
+
+      final structuredV1 = result['suggestions'] as Map<String, dynamic>;
+      final source = result['source'] as String;
+      final fallbackReason = result['fallbackReason'] as String?;
 
       // Cache structured response for later use
       _structuredFieldsV1 = structuredV1;
@@ -614,6 +619,19 @@ class _ClinicalHistoryWizardPageState
         _dictationStatus = DictationStatus.generated;
         _suggestionsGenerated = true;
       });
+
+      // Show notification if fallback was used
+      if (source == MedicalNotesController.kSourceFallback && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Se usó el procesador alternativo. ${fallbackReason != null ? "(Razón: ${fallbackReason.split('\n').first})" : ""}',
+            ),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
 
       // Build sections for the sheet using structured v1 data
       final sections = _buildSuggestionsFromStructuredV1(structuredV1);
@@ -1178,17 +1196,29 @@ class _ClinicalHistoryWizardPageState
     });
 
     try {
-      final aiService = ref.read(noteAIServiceProvider);
-
       // Use cached structured fields if available, otherwise generate new
+      // using the controller's generateAISuggestionsWithFallback method
       Map<String, dynamic> structuredV1;
+      String? fallbackNotice;
+
       if (_structuredFieldsV1 != null) {
         structuredV1 = _structuredFieldsV1!;
       } else {
-        structuredV1 = await aiService.suggestStructuredFieldsV2(
+        final controller = ref.read(medicalNotesControllerProvider.notifier);
+        final result = await controller.generateAISuggestionsWithFallback(
           _rawTranscript!,
+          language: 'es',
         );
+        structuredV1 = result['suggestions'] as Map<String, dynamic>;
         _structuredFieldsV1 = structuredV1;
+
+        // Check if fallback was used
+        final source = result['source'] as String;
+        if (source == MedicalNotesController.kSourceFallback) {
+          final reason = result['fallbackReason'] as String?;
+          fallbackNotice =
+              'Se usó el procesador alternativo. ${reason != null ? "(Razón: ${reason.split('\n').first})" : ""}';
+        }
       }
 
       if (!mounted) return;
@@ -1196,6 +1226,17 @@ class _ClinicalHistoryWizardPageState
       setState(() {
         _isGeneratingSuggestions = false;
       });
+
+      // Show fallback notice if applicable
+      if (fallbackNotice != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(fallbackNotice),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
 
       // Build all sections from structured data, then filter for this step
       final allSections = _buildSuggestionsFromStructuredV1(structuredV1);

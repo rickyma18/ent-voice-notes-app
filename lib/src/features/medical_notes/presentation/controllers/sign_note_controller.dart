@@ -9,6 +9,7 @@ import '../../../../core/base/failure.dart';
 import '../../../../core/base/result.dart';
 import '../../../doctors/domain/entities/doctor_entity.dart';
 import '../../domain/entities/medical_note_entity.dart';
+import '../../domain/entities/quality_gate_result.dart';
 import '../../domain/usecases/sign_medical_note_use_case.dart';
 import '../../medical_notes_providers.dart';
 
@@ -17,6 +18,7 @@ part 'sign_note_controller.g.dart';
 /// Steps in the signing process for UI feedback
 enum SigningStep {
   idle(''),
+  validatingQuality('Validando campos requeridos...'),
   savingSignature('Guardando firma...'),
   generatingPdf('Generando PDF...'),
   uploadingDocuments('Subiendo documentos...'),
@@ -35,12 +37,17 @@ class SignNoteState {
     this.signedNote,
     this.signedPdfUrl,
     this.failure,
+    this.qualityGateResult,
   });
 
   final SigningStep step;
   final MedicalNoteEntity? signedNote;
   final String? signedPdfUrl;
   final Failure? failure;
+
+  /// Quality gate result when validation fails.
+  /// Contains details about missing required fields.
+  final QualityGateResult? qualityGateResult;
 
   bool get isIdle => step == SigningStep.idle;
   bool get isSigning =>
@@ -50,17 +57,23 @@ class SignNoteState {
   bool get isSuccess => step == SigningStep.success;
   bool get isError => step == SigningStep.error;
 
+  /// Whether the error was due to quality gate failure.
+  bool get isQualityGateError =>
+      isError && qualityGateResult != null && !qualityGateResult!.pass;
+
   SignNoteState copyWith({
     SigningStep? step,
     MedicalNoteEntity? signedNote,
     String? signedPdfUrl,
     Failure? failure,
+    QualityGateResult? qualityGateResult,
   }) {
     return SignNoteState(
       step: step ?? this.step,
       signedNote: signedNote ?? this.signedNote,
       signedPdfUrl: signedPdfUrl ?? this.signedPdfUrl,
       failure: failure ?? this.failure,
+      qualityGateResult: qualityGateResult ?? this.qualityGateResult,
     );
   }
 }
@@ -87,6 +100,9 @@ class SignNoteController extends _$SignNoteController {
   /// [signatureBytes] - PNG bytes of the signature (required if not using default)
   /// [useDefaultSignature] - Whether to use doctor's saved default signature
   /// [saveAsDefault] - Whether to save new signature as doctor's default
+  ///
+  /// Returns false if quality gate validation fails. Check [state.qualityGateResult]
+  /// for details about missing required fields.
   Future<bool> signNote({
     required MedicalNoteEntity note,
     required DoctorEntity doctor,
@@ -95,6 +111,28 @@ class SignNoteController extends _$SignNoteController {
     bool useDefaultSignature = false,
     bool saveAsDefault = false,
   }) async {
+    // Step 0: Quality Gate validation (MANDATORY before signing)
+    state = state.copyWith(step: SigningStep.validatingQuality);
+
+    final qualityGate = ref.read(noteQualityGateServiceProvider);
+    final gateResult = qualityGate.validateForSigning(note);
+
+    if (!gateResult.pass) {
+      // Quality gate failed - block signing
+      state = SignNoteState(
+        step: SigningStep.error,
+        qualityGateResult: gateResult,
+        failure: Failure(
+          type: FailureType.validation,
+          message: gateResult.errorMessage,
+        ),
+      );
+      return false;
+    }
+
+    // Small delay for UX (let user see validation passed)
+    await Future.delayed(const Duration(milliseconds: 200));
+
     // Step 1: Saving signature
     state = state.copyWith(step: SigningStep.savingSignature);
 

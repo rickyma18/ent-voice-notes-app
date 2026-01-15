@@ -39,8 +39,15 @@ class DocsoftOutlinedButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveBorderColor = borderColor ?? DocsoftColors.primary;
-    final effectiveTextColor = textColor ?? DocsoftColors.primary;
+    final bool isDisabled = onPressed == null || isLoading;
+
+    final effectiveBorderColor = isDisabled
+        ? DocsoftColors.disabledBackground
+        : (borderColor ?? DocsoftColors.primary);
+
+    final effectiveTextColor = isDisabled
+        ? DocsoftColors.disabledForeground
+        : (textColor ?? DocsoftColors.primary);
 
     final content = isLoading
         ? SizedBox(
@@ -71,7 +78,10 @@ class DocsoftOutlinedButton extends StatelessWidget {
     final button = OutlinedButton(
       onPressed: isLoading ? null : onPressed,
       style: OutlinedButton.styleFrom(
+        // Force colors manually because styleFrom with fixed values overrides disabled state logic usually
         side: BorderSide(color: effectiveBorderColor, width: 2),
+        foregroundColor: effectiveTextColor,
+        disabledForegroundColor: DocsoftColors.disabledForeground,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(DocsoftRadii.buttonRadiusValue),
         ),

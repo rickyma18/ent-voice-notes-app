@@ -21,6 +21,73 @@ abstract class SpeechToTextService {
     String audioFilePath, {
     String language = 'es',
   });
+
+  /// Transcribe audio y retorna resultado con timestamps por segmento.
+  ///
+  /// Este método es preferido para el pipeline Scribe V2 ya que proporciona:
+  /// - Múltiples segmentos con tiempos (startMs/endMs)
+  /// - Soporte para evidencia y correlación temporal
+  ///
+  /// [audioFilePath]: Ruta del archivo de audio a transcribir.
+  /// [language]: Código de idioma (por defecto 'es' para español).
+  ///
+  /// Devuelve [TranscriptionResult] con segmentos y metadata.
+  /// Fallback: si el servicio no soporta timestamps, retorna un solo segmento.
+  Future<TranscriptionResult> transcribeAudioWithTimestamps(
+    String audioFilePath, {
+    String language = 'es',
+  });
+}
+
+/// Resultado de transcripción con segmentos y timestamps.
+///
+/// Usado por el pipeline Scribe V2 para construir TranscriptWithSpeakers
+/// con información temporal real.
+class TranscriptionResult {
+  const TranscriptionResult({
+    required this.segments,
+    this.totalDurationMs,
+    this.preprocessed = false,
+  });
+
+  /// Lista de segmentos transcritos con tiempos opcionales.
+  final List<TranscriptionSegment> segments;
+
+  /// Duración total del audio en milisegundos (si conocida).
+  final int? totalDurationMs;
+
+  /// Si se aplicó preprocesamiento (VAD/chunking).
+  final bool preprocessed;
+
+  /// Texto completo concatenado de todos los segmentos.
+  String get fullText => segments.map((s) => s.text).join(' ');
+
+  /// Factory para crear un resultado de un solo segmento (legacy/fallback).
+  factory TranscriptionResult.single(String text) {
+    return TranscriptionResult(
+      segments: [TranscriptionSegment(text: text, startMs: null, endMs: null)],
+    );
+  }
+}
+
+/// Un segmento de transcripción con timestamps opcionales.
+class TranscriptionSegment {
+  const TranscriptionSegment({required this.text, this.startMs, this.endMs});
+
+  /// Texto transcrito de este segmento.
+  final String text;
+
+  /// Inicio del segmento en milisegundos desde el inicio del audio.
+  final int? startMs;
+
+  /// Fin del segmento en milisegundos desde el inicio del audio.
+  final int? endMs;
+
+  /// Duración del segmento en milisegundos.
+  int? get durationMs {
+    if (startMs == null || endMs == null) return null;
+    return endMs! - startMs!;
+  }
 }
 
 /// Implementación stub (simulada) del servicio de transcripción.
@@ -81,6 +148,16 @@ class SpeechToTextServiceStub implements SpeechToTextService {
         (_transcriptionIndex + 1) % _mockTranscriptions.length;
 
     return transcription;
+  }
+
+  @override
+  Future<TranscriptionResult> transcribeAudioWithTimestamps(
+    String audioFilePath, {
+    String language = 'es',
+  }) async {
+    // Stub: usa transcribeAudio y envuelve en un solo segmento
+    final text = await transcribeAudio(audioFilePath, language: language);
+    return TranscriptionResult.single(text);
   }
 }
 

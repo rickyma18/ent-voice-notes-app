@@ -2,13 +2,19 @@
 
 // Entities
 export 'entities/attachment_entity.dart';
+export 'entities/audio_chunk.dart';
 export 'entities/medical_note_entity.dart';
 export 'entities/medication_entity.dart';
 export 'entities/note_status.dart';
+export 'entities/quality_gate_result.dart';
 export 'entities/study_entity.dart';
 
 // Repositories
+export 'repositories/audio_preprocessor_repository.dart';
 export 'repositories/medical_notes_repository.dart';
+
+// Services
+export 'services/note_quality_gate_service.dart';
 
 // Use Cases
 export 'usecases/create_medical_note_use_case.dart';
