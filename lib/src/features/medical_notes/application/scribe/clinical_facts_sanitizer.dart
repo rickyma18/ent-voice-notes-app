@@ -14,10 +14,12 @@ class ClinicalFactsSanitizer {
 
   /// Main sanitization method for the entire ClinicalFactsDTO.
   ClinicalFactsDTO sanitize(ClinicalFactsDTO facts) {
-    // 1. Sanitize ROS negatives
+    // 1. Sanitize ROS negatives and positives
     final cleanedNegatives = sanitizeROSNegatives(facts.ros.negatives);
-    final rosWithCleanedNegatives = facts.ros.copyWith(
+    final cleanedPositives = sanitizeROSPositives(facts.ros.positives);
+    final cleanedROS = facts.ros.copyWith(
       negatives: cleanedNegatives,
+      positives: cleanedPositives,
     );
 
     // 2. Sanitize lists (pmh, medications, allergies)
@@ -37,12 +39,16 @@ class ClinicalFactsSanitizer {
       );
     }
 
+    // 4. ÉPICA 5: Sanitize plan - remove generic/invented phrases
+    final cleanedPlan = sanitizePlan(facts.plan);
+
     return facts.copyWith(
-      ros: rosWithCleanedNegatives,
+      ros: cleanedROS,
       pmh: cleanedPmh,
       medications: cleanedMeds,
       allergies: cleanedAllergies,
       assessment: newAssessment,
+      plan: cleanedPlan,
     );
   }
 
@@ -85,6 +91,9 @@ class ClinicalFactsSanitizer {
         // Filter junk/stopwords
         if (_isJunk(unified)) continue;
 
+        // Filter non-clinical colloquial phrases (CRITICAL)
+        if (_isNonClinicalColloquial(unified)) continue;
+
         // Apply heuristic for multi-word junk
         if (!_isValidSymptomPayload(unified)) continue;
 
@@ -94,6 +103,39 @@ class ClinicalFactsSanitizer {
 
         result.add(unified);
       }
+    }
+
+    return result;
+  }
+
+  /// Sanitizes ROS positives list with same rules as negatives.
+  ///
+  /// Ensures consistency between positive and negative symptom handling.
+  List<String> sanitizeROSPositives(List<String> positives) {
+    final seen = <String>{};
+    final result = <String>[];
+
+    for (final positive in positives) {
+      var symptom = positive.trim();
+      if (symptom.isEmpty) continue;
+
+      // Unify variants
+      final unified = _unifyVariant(symptom);
+
+      // Filter junk/stopwords
+      if (_isJunk(unified)) continue;
+
+      // Filter non-clinical colloquial phrases (CRITICAL)
+      if (_isNonClinicalColloquial(unified)) continue;
+
+      // Apply heuristic for multi-word junk
+      if (!_isValidSymptomPayload(unified)) continue;
+
+      // Deduplicate
+      if (seen.contains(unified.toLowerCase())) continue;
+      seen.add(unified.toLowerCase());
+
+      result.add(unified);
     }
 
     return result;
@@ -150,6 +192,170 @@ class ClinicalFactsSanitizer {
     return false;
   }
 
+  /// CRITICAL FILTER: Detects and rejects non-clinical colloquial phrases.
+  ///
+  /// These phrases are descriptive/verbal expressions that should NOT appear
+  /// in ROS (positives or negatives). They belong in HPI narrative only.
+  ///
+  /// Examples blocked:
+  /// - "da vueltas", "que gire", "se mueve", "siento raro"
+  /// - "como que gira", "todo me da vueltas"
+  /// - "he tenido", "sé si", "fiebre ni" (verbal fragments)
+  /// - "ningún síntoma", "nada importante" (general non-symptom phrases)
+  bool _isNonClinicalColloquial(String text) {
+    final lower = text.toLowerCase().trim();
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ÉPICA 5 - FILTER 0: Verbal fragments and incomplete negations
+    // ═══════════════════════════════════════════════════════════════════════
+    // These are fragments from speech that leaked into ROS extraction.
+    // Examples: "he tenido", "sé si", "fiebre ni", "vómito ni"
+
+    // Incomplete negation fragments (ends with " ni")
+    if (lower.endsWith(' ni')) return true;
+
+    // Verbal fragments - conjugated verbs that are NOT symptoms
+    const verbalFragments = {
+      // Conjugated forms of "haber" + past participle fragments
+      'he tenido',
+      'he vomitado',
+      'he sentido',
+      'he presentado',
+      'he visto', // CASO 7 regresión
+      'he notado',
+      'he observado',
+      'ha tenido',
+      'ha presentado',
+      'ha visto',
+      'lo he',
+      'me ha',
+      'me he',
+      // Doubt/uncertainty fragments
+      'sé si',
+      'no sé',
+      'no sé si',
+      'creo que',
+      'me parece',
+      'tal vez',
+      'puede ser',
+      // Isolated verbal forms that aren't symptoms
+      // NOTE: 'veo' and 'noto' removed - they can be valid in compounds like "veo borroso"
+      'he',
+      'tengo',
+      'siento',
+      'tenía',
+      'sentía',
+    };
+    if (verbalFragments.contains(lower)) return true;
+
+    // Pattern-based filter: "he + participio" that aren't symptoms
+    // Catches: "he comido", "he dormido", etc.
+    if (lower.startsWith('he ') && lower.split(' ').length == 2) {
+      final secondWord = lower.split(' ')[1];
+      // If second word ends in -ado/-ido (participio), it's likely verbal
+      if (secondWord.endsWith('ado') || secondWord.endsWith('ido')) {
+        // Whitelist valid symptom participios
+        const validSymptomParticipios = {'sangrado', 'manchado'};
+        if (!validSymptomParticipios.contains(secondWord)) {
+          return true;
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ÉPICA 5 - FILTER 1: General non-symptom phrases
+    // ═══════════════════════════════════════════════════════════════════════
+    const generalNonSymptomPhrases = {
+      'ningún síntoma',
+      'ningún síntoma importante',
+      'nada importante',
+      'nada en especial',
+      'nada más',
+      'eso es todo',
+      'solo eso',
+      'nada que reportar',
+    };
+    if (generalNonSymptomPhrases.contains(lower)) return true;
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // LIST 1: Exact matches - phrases that are NEVER clinical
+    // ═══════════════════════════════════════════════════════════════════════
+    const exactColloquialPhrases = {
+      // Rotation/movement descriptions
+      'da vueltas',
+      'que gire',
+      'que gira',
+      'todo gire',
+      'gire todo',
+      'gira todo',
+      'todo gira',
+      'como que gira',
+      'como si girara',
+      'se mueve',
+      'se mueve todo',
+      'todo se mueve',
+      // Vague sensations
+      'siento raro',
+      'me siento raro',
+      'sensación rara',
+      'algo raro',
+      // Colloquial symptom descriptions
+      'me da vueltas',
+      'todo me da vueltas',
+      'la cabeza me da vueltas',
+      // Connector phrases that slipped through
+      'no es que',
+      'es que', // after removing "no " prefix
+      'más bien',
+      'pero no',
+      'no', // after removing prefix from "pero no" etc.
+      'aunque no',
+      'aunque', // after removing "no " prefix
+    };
+
+    if (exactColloquialPhrases.contains(lower)) return true;
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // LIST 2: Substring patterns - any text containing these is non-clinical
+    // ═══════════════════════════════════════════════════════════════════════
+    const colloquialSubstrings = [
+      'gire', // any form of "girar" verb
+      'gira',
+      'girar',
+      'giraba',
+      'girando',
+      'vueltas', // "da vueltas", "me da vueltas"
+      'se mueve',
+      'raro', // "siento raro", "algo raro"
+    ];
+
+    for (final substring in colloquialSubstrings) {
+      if (lower.contains(substring)) return true;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // LIST 3: Structural heuristics - phrases with connectors/pronouns
+    // ═══════════════════════════════════════════════════════════════════════
+    // If text has spaces AND starts with connector/pronoun, it's likely
+    // a colloquial phrase, not a medical term.
+    if (lower.contains(' ')) {
+      const colloquialStarters = [
+        'que ',
+        'como ',
+        'todo ',
+        'algo ',
+        'me ',
+        'no es ',
+        'más bien',
+      ];
+      for (final starter in colloquialStarters) {
+        if (lower.startsWith(starter)) return true;
+      }
+    }
+
+    return false;
+  }
+
   bool _isValidSymptomPayload(String text) {
     // If single word, we assume it's valid (unless it was junk)
     if (!text.contains(' ')) return true;
@@ -201,6 +407,9 @@ class ClinicalFactsSanitizer {
   }
 
   /// Unifies common symptom variants to canonical form.
+  ///
+  /// ÉPICA 5: Also deduplicates colloquial variants to clinical terms
+  /// to prevent both versions appearing in ROS.
   String _unifyVariant(String symptom) {
     final lower = symptom.toLowerCase();
 
@@ -221,6 +430,7 @@ class ClinicalFactsSanitizer {
     }
 
     // Colloquial → medical (if still present after extraction)
+    // ÉPICA 5: Extended list to prevent duplicates like "veo borroso" + "visión borrosa"
     const colloquialToMedical = {
       'dolor de cabeza': 'cefalea',
       'dolor de oído': 'otalgia',
@@ -229,6 +439,40 @@ class ClinicalFactsSanitizer {
       'nariz tapada': 'obstrucción nasal',
       'zumbido': 'acúfeno',
       'falta de aire': 'disnea',
+      // ÉPICA 5 - Visual symptoms normalization
+      'veo borroso': 'visión borrosa',
+      'vista borrosa': 'visión borrosa',
+      'veo doble': 'diplopía',
+      'visión doble': 'diplopía',
+      // ÉPICA 5 - Hearing symptoms normalization
+      'oigo mal': 'hipoacusia',
+      'no oigo bien': 'hipoacusia',
+      'escucho mal': 'hipoacusia',
+      // ÉPICA 5 - GI symptoms normalization
+      'dolor de estómago': 'dolor abdominal',
+      'dolor de panza': 'dolor abdominal',
+      'me duele la panza': 'dolor abdominal',
+      'ganas de vomitar': 'náusea',
+      // ÉPICA 5 CASOS 6-10 - Urinary symptoms
+      'voy al baño a cada rato': 'polaquiuria',
+      'orino muy seguido': 'polaquiuria',
+      'muchas ganas de orinar': 'polaquiuria',
+      'me arde al orinar': 'disuria',
+      'me duele al orinar': 'disuria',
+      // ÉPICA 5 CASOS 6-10 - Ear symptoms (CRITICAL: otorrea ≠ rinorrea)
+      'me sale líquido del oído': 'otorrea',
+      'me sale algo del oído': 'otorrea',
+      'secreción del oído': 'otorrea',
+      'sale del oído': 'otorrea',
+      // ENT-First normalization (epistaxis, disfonía)
+      'sangrado de nariz': 'epistaxis',
+      'me sangra la nariz': 'epistaxis',
+      'sangre de nariz': 'epistaxis',
+      'ronquera': 'disfonía',
+      'se me fue la voz': 'disfonía',
+      'perdí la voz': 'disfonía',
+      'me zumba el oído': 'acúfeno',
+      'zumbido en el oído': 'acúfeno',
     };
 
     if (colloquialToMedical.containsKey(lower)) {
@@ -257,5 +501,79 @@ class ClinicalFactsSanitizer {
       final itemValue = item.item.toLowerCase().trim();
       return itemValue.isNotEmpty && !invalidItems.contains(itemValue);
     }).toList();
+  }
+
+  /// ÉPICA 5: Sanitizes the plan section by removing generic/invented phrases.
+  ///
+  /// This is a defensive layer in case the LLM ignores extraction instructions.
+  /// Removes common hallucinated plan items that should not appear unless
+  /// explicitly mentioned by the doctor.
+  PlanSection sanitizePlan(PlanSection plan) {
+    // Generic phrases that are NEVER valid unless explicitly mentioned
+    const prohibitedTreatments = {
+      'manejo sintomático según hallazgos de exploración',
+      'manejo sintomático según hallazgos',
+      'manejo sintomático',
+      'tratamiento sintomático',
+      'control de síntomas',
+    };
+
+    const prohibitedEducation = {
+      'signos de alarma: fiebre alta persistente, dificultad respiratoria, deterioro general',
+      'signos de alarma: fiebre alta, dificultad respiratoria',
+      'signos de alarma: acudir a urgencias si',
+      'signos de alarma acudir a urgencias',
+      'acudir a urgencias si presenta',
+      'acudir a urgencias si empeora',
+    };
+
+    const prohibitedFollowUp = {
+      'revalorar tras exploración física completa',
+      'revalorar tras exploración física',
+      'revalorar si no mejora',
+      'revalorar en caso de empeoramiento',
+      'pendiente definir plan tras valoración',
+      'pendiente definir tras valoración',
+    };
+
+    // Filter treatments
+    final cleanedTreatments = plan.treatments.where((t) {
+      final lower = t.toLowerCase().trim();
+      return !prohibitedTreatments.any((p) => lower.contains(p));
+    }).toList();
+
+    // Filter education - check both exact and partial matches
+    final cleanedEducation = plan.education.where((e) {
+      final lower = e.toLowerCase().trim();
+      // Check if starts with "signos de alarma" and contains generic phrases
+      if (lower.startsWith('signos de alarma')) {
+        // Allow if it's specific to the condition, not generic
+        final isGeneric =
+            lower.contains('fiebre alta persistente') ||
+            lower.contains('dificultad respiratoria') ||
+            lower.contains('deterioro general') ||
+            lower.contains('acudir a urgencias');
+        return !isGeneric;
+      }
+      return !prohibitedEducation.any((p) => lower.contains(p));
+    }).toList();
+
+    // Filter followUp
+    String? cleanedFollowUp = plan.followUp;
+    if (cleanedFollowUp != null) {
+      final lower = cleanedFollowUp.toLowerCase().trim();
+      if (prohibitedFollowUp.any((p) => lower.contains(p))) {
+        cleanedFollowUp = null;
+      }
+    }
+
+    return PlanSection(
+      diagnostics: plan.diagnostics,
+      treatments: cleanedTreatments,
+      referrals: plan.referrals,
+      education: cleanedEducation,
+      followUp: cleanedFollowUp,
+      evidence: plan.evidence,
+    );
   }
 }

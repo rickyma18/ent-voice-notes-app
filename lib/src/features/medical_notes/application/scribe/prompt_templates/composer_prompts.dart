@@ -4,8 +4,9 @@ import '../../../domain/scribe/repositories/note_composer_repository.dart';
 /// Prompt templates for SOAP note composition from clinical facts.
 ///
 /// These prompts are designed to:
-/// - Generate formatted clinical notes ONLY from provided facts
+/// - Generate formatted clinical notes AS A DIRECT PROJECTION of provided facts
 /// - NEVER hallucinate or add information not in the facts
+/// - NEVER infer, deduce, complete or "improve" clinically
 /// - Explicitly mark missing information
 /// - Support multiple note formats (SOAP, H&P, Progress)
 class ComposerPrompts {
@@ -13,50 +14,98 @@ class ComposerPrompts {
 
   /// System prompt for SOAP note composition.
   ///
-  /// Compact version optimized for speed while maintaining clinical quality.
+  /// STRICT PROJECTION MODE: The SOAP note must be a 1:1 projection of the JSON.
   static const systemPrompt = '''
-Redacta una nota SOAP en español clínico profesional. Sé CONCISO pero COMPLETO.
+Eres un redactor clínico. Tu ÚNICA tarea: proyectar JSON → SOAP.
 
 ═══════════════════════════════════════════════════════════════════════════════
-REGLAS DE COMPOSICIÓN
+REGLA FUNDAMENTAL (INQUEBRANTABLE)
 ═══════════════════════════════════════════════════════════════════════════════
-1. USA SOLO los hechos proporcionados. NUNCA inventes información.
-2. Sección no interrogada/desconocida → "No interrogado".
-3. Si hay síntomas en los hechos, NUNCA escribas "No documentado" en esa sección.
-4. Preserva TODAS las negaciones ("niega", "sin", "no refiere").
-5. Usa terminología médica estándar (otalgia, odinofagia, rinorrea, cefalea, etc.).
-6. Redacta en tercera persona clínica ("el paciente refiere", "presenta", "niega").
+La nota SOAP debe ser una PROYECCIÓN DIRECTA del JSON proporcionado.
+
+Esto implica:
+❌ PROHIBIDO introducir información que NO exista explícitamente en el JSON.
+❌ PROHIBIDO inferir, deducir, completar o "mejorar" clínicamente.
+❌ PROHIBIDO resumir eliminando datos clínicos relevantes.
+❌ PROHIBIDO agregar explicaciones, contexto médico o frases genéricas.
+❌ PROHIBIDO agregar signos de alarma, recomendaciones estándar o "por costumbre".
+
+Si algo NO está en el JSON → NO aparece en el SOAP.
+Si algo está en el JSON → DEBE aparecer en el SOAP (en su sección correcta).
 
 ═══════════════════════════════════════════════════════════════════════════════
-REGLAS DE CONSISTENCIA (CRÍTICO)
+REGLAS DE PROYECCIÓN POR SECCIÓN
 ═══════════════════════════════════════════════════════════════════════════════
-- Assessment (A) NUNCA debe contradecir el Subjetivo (S).
-- Si hay síntomas pero NO hay diagnóstico explícito → usar impresión conservadora:
-  * "Otalgia a estudio; pendiente valoración otoscópica"
-  * "Síndrome de vías aéreas superiores a descartar"
-  * "Cuadro vertiginoso a caracterizar"
-- NUNCA inventar diagnósticos definitivos. Preferir "probable", "sugestivo de".
+
+S (SUBJETIVO):
+- SOLO puede contener información de: chiefComplaint, hpi
+- Redacción en tercera persona, tiempo presente.
+- NO agregar duración, severidad, evolución si no están explícitas.
+- NO reinterpretar lenguaje ya medicalizado.
+- Si chiefComplaint vacío → "Motivo de consulta no referido."
+
+ROS (REVISIÓN POR SISTEMAS):
+- REFLEJAR EXACTAMENTE: ros.positives, ros.negatives
+- NO agregar sistemas "por costumbre".
+- NO inferir normalidad de sistemas no mencionados.
+- Mantener términos clínicos TAL COMO aparecen en el JSON.
+- Si ROS vacío → "No interrogado."
+
+O (OBJETIVO):
+- SOLO incluir datos de: physicalExam
+- Si physicalExam es null → "Pendiente exploración física."
+- ❌ PROHIBIDO agregar exploración física "normal" inventada.
+
+A (ANÁLISIS/EVALUACIÓN):
+- SOLO usar contenido de: assessment, ambiguousInfo
+- Mantener lenguaje conservador.
+- Si assessment.primary es null → "Pendiente diagnóstico tras valoración completa."
+- Si hay ambiguousInfo → reflejarla, NO resolverla.
+- ❌ PROHIBIDO inventar diagnósticos.
+
+P (PLAN):
+- SOLO incluir acciones EXPLÍCITAS del JSON: plan.diagnostics, plan.treatments, plan.referrals, plan.education, plan.followUp
+- Si plan vacío → "Pendiente definir plan tras valoración."
+- ❌ PROHIBIDO agregar estudios "sugeridos", tratamientos "habituales", signos de alarma genéricos.
 
 ═══════════════════════════════════════════════════════════════════════════════
-SOAP MÍNIMO PARA "SOLO NEGACIONES" (CRÍTICO)
+REGLAS CLÍNICAS: MAREO vs VÉRTIGO (CRÍTICO)
 ═══════════════════════════════════════════════════════════════════════════════
-Si chiefComplaint está vacío/null pero HPI contiene negaciones:
-- S (SUBJETIVO):
-  * Motivo de consulta: "No referido / No especificado en la transcripción."
-  * HPI: Incluir la narrativa de negaciones exactamente.
-  * NUNCA decir "síntomas no documentados" si hay negaciones documentadas.
-- O (OBJETIVO): "Pendiente exploración física."
-- A (EVALUACIÓN): "Información insuficiente para impresión clínica; pendiente
-  motivo de consulta y exploración."
-- P (PLAN): "Pendiente definir tras completar interrogatorio y exploración."
-- Incluir missingInfo al final como "Pendiente documentar".
+PRINCIPIO: CONSERVADOR > ESPECÍFICO. "Mareo" ≠ "Vértigo".
+
+EN EL SUBJETIVO (S):
+- Si chiefComplaint = "Mareo" → escribir "Mareo" (NO "vértigo").
+- Si chiefComplaint = "Vértigo" → escribir "Vértigo".
+
+EN EL ASSESSMENT (A):
+- Si chiefComplaint = "Mareo" → "Mareo a estudio" (NUNCA "Síndrome vertiginoso").
+- Si chiefComplaint = "Vértigo" → "Vértigo a estudio".
+- Si existe ambiguousInfo sobre mareo → mantener conservador y reflejarla.
 
 ═══════════════════════════════════════════════════════════════════════════════
-FORMATO DE SALIDA
+SOAP MÍNIMO PARA "SOLO NEGACIONES"
 ═══════════════════════════════════════════════════════════════════════════════
-- Responde SOLO con texto de nota médica.
-- Sin markdown, backticks, JSON ni emojis.
-- Máximo 500 palabras.''';
+Si chiefComplaint vacío/null pero HPI contiene negaciones:
+- S: "Motivo de consulta no referido. [narrativa de HPI con negaciones]"
+- O: "Pendiente exploración física."
+- A: "Información insuficiente para impresión clínica."
+- P: "Pendiente definir tras completar interrogatorio."
+
+═══════════════════════════════════════════════════════════════════════════════
+REGLAS DE ESTILO
+═══════════════════════════════════════════════════════════════════════════════
+- Lenguaje médico neutro.
+- Sin relleno ni frases comodín ("se sugiere", "se recomienda").
+- Sin listas largas artificiales.
+- Conciso pero COMPLETO (todo el JSON presente).
+- Formato texto plano (sin markdown, backticks, JSON, emojis).
+
+═══════════════════════════════════════════════════════════════════════════════
+REGLAS DE SEGURIDAD
+═══════════════════════════════════════════════════════════════════════════════
+- Ante duda → OMITE.
+- Ante conflicto → el JSON manda.
+- NUNCA "arregles" el caso clínicamente.''';
 
   /// Builds the user prompt for SOAP note composition.
   ///
@@ -75,21 +124,24 @@ FORMATO DE SALIDA
 
     return '''
 $warningSection
-HECHOS CLÍNICOS EXTRAÍDOS:
+═══════════════════════════════════════════════════════════════════════════════
+HECHOS CLÍNICOS EXTRAÍDOS (FUENTE DE VERDAD)
+═══════════════════════════════════════════════════════════════════════════════
 $factsSection
 
 $formatSection
 $specialtySection
-INSTRUCCIONES ADICIONALES:
-- Si una sección no fue interrogada → escribir "No interrogado".
-- Si ROS está vacío pero HPI menciona síntomas → incluir síntomas de HPI en el Subjetivo.
-- NUNCA dejes la nota vacía si hay contenido clínico en los hechos.
-- Preserva las negaciones clínicas ("niega", "sin", "no refiere").
-- Si chiefComplaint está vacío pero hay negaciones → aplicar reglas de "SOLO NEGACIONES".
-- NUNCA escribir "síntomas no documentados" si hay negaciones documentadas.
-- missingInfo (datos faltantes) → "Pendiente documentar: [campo]".
-- ambiguousInfo (datos contradictorios) → "Información ambigua: [detalle]".
-- Datos demográficos faltantes (nombre/edad/sexo) son missingInfo, NO ambiguousInfo.
+═══════════════════════════════════════════════════════════════════════════════
+INSTRUCCIONES FINALES (OBLIGATORIAS)
+═══════════════════════════════════════════════════════════════════════════════
+1. PROYECTA directamente el JSON → SOAP.
+2. NO agregues información que no esté en los hechos.
+3. NO inventes diagnósticos, planes o exploraciones.
+4. Preserva negaciones clínicas exactamente ("niega", "sin").
+5. missingInfo → "Pendiente documentar: [campo]".
+6. ambiguousInfo → "Información ambigua: [detalle]" al final de la nota.
+7. Si una sección no tiene datos → usa el placeholder mínimo indicado.
+8. Un médico debe poder comparar JSON vs SOAP sin encontrar discrepancias.
 
 Genera la nota médica ahora:''';
   }
@@ -98,7 +150,7 @@ Genera la nota médica ahora:''';
   static String _buildWarningSection(ClinicalFactsDTO facts) {
     if (facts.metadata.confidenceOverall == ConfidenceLevel.baja) {
       return '''
-ALERTA: Datos extraídos con baja confianza...
+⚠️ ALERTA: Datos extraídos con BAJA CONFIANZA.
 Revisar y confirmar todos los campos antes de firmar.
 
 ''';
@@ -107,114 +159,121 @@ Revisar y confirmar todos los campos antes de firmar.
   }
 
   /// Serializes clinical facts into a readable format for the LLM.
+  ///
+  /// STRICT: Does not add defaults or invented content.
   static String _buildFactsSection(ClinicalFactsDTO facts) {
     final buffer = StringBuffer();
 
     // Patient info
     buffer.writeln('PACIENTE:');
-    buffer.writeln('  - Nombre: ${facts.patient.name ?? "No documentado"}');
-    buffer.writeln('  - Edad: ${facts.patient.age ?? "No documentado"}');
-    buffer.writeln('  - Sexo: ${facts.patient.sex ?? "No documentado"}');
+    buffer.writeln('  - Nombre: ${facts.patient.name ?? "[No documentado]"}');
+    buffer.writeln('  - Edad: ${facts.patient.age ?? "[No documentado]"}');
+    buffer.writeln('  - Sexo: ${facts.patient.sex ?? "[No documentado]"}');
     buffer.writeln();
 
-    // Chief complaint
-    buffer.writeln('MOTIVO DE CONSULTA:');
-    buffer.writeln('  ${facts.chiefComplaint.text ?? "No documentado"}');
-    buffer.writeln();
-
-    // HPI
-    buffer.writeln('HISTORIA DE ENFERMEDAD ACTUAL (HPI):');
-    if (facts.hpi.narrative != null) {
-      buffer.writeln('  ${facts.hpi.narrative}');
-      if (facts.hpi.keyPoints.isNotEmpty) {
-        buffer.writeln('  Puntos clave:');
-        for (final point in facts.hpi.keyPoints) {
-          buffer.writeln('    - $point');
-        }
-      }
+    // Chief complaint - explicit null handling
+    buffer.writeln('MOTIVO DE CONSULTA (chiefComplaint):');
+    if (facts.chiefComplaint.text != null &&
+        facts.chiefComplaint.text!.isNotEmpty) {
+      buffer.writeln('  "${facts.chiefComplaint.text}"');
     } else {
-      buffer.writeln('  No documentado');
+      buffer.writeln('  [VACÍO - No referido]');
     }
     buffer.writeln();
 
-    // ROS
-    buffer.writeln('REVISIÓN POR SISTEMAS (ROS):');
-    if (facts.ros.positives.isNotEmpty || facts.ros.negatives.isNotEmpty) {
-      if (facts.ros.positives.isNotEmpty) {
-        buffer.writeln('  Positivos: ${facts.ros.positives.join(", ")}');
-      }
-      if (facts.ros.negatives.isNotEmpty) {
-        buffer.writeln('  Negativos: ${facts.ros.negatives.join(", ")}');
+    // HPI
+    buffer.writeln('HISTORIA DE ENFERMEDAD ACTUAL (hpi):');
+    if (facts.hpi.narrative != null && facts.hpi.narrative!.isNotEmpty) {
+      buffer.writeln('  Narrativa: "${facts.hpi.narrative}"');
+      if (facts.hpi.keyPoints.isNotEmpty) {
+        buffer.writeln('  Puntos clave:');
+        for (final point in facts.hpi.keyPoints) {
+          buffer.writeln('    • $point');
+        }
       }
     } else {
-      buffer.writeln('  No documentado');
+      buffer.writeln('  [VACÍO]');
+    }
+    buffer.writeln();
+
+    // ROS - explicit lists
+    buffer.writeln('REVISIÓN POR SISTEMAS (ros):');
+    if (facts.ros.positives.isNotEmpty || facts.ros.negatives.isNotEmpty) {
+      if (facts.ros.positives.isNotEmpty) {
+        buffer.writeln('  Positivos: [${facts.ros.positives.join(", ")}]');
+      }
+      if (facts.ros.negatives.isNotEmpty) {
+        buffer.writeln('  Negativos: [${facts.ros.negatives.join(", ")}]');
+      }
+    } else {
+      buffer.writeln('  [VACÍO - No interrogado]');
     }
     buffer.writeln();
 
     // PMH
-    buffer.writeln('ANTECEDENTES PATOLÓGICOS:');
+    buffer.writeln('ANTECEDENTES PATOLÓGICOS (pmh):');
     if (facts.pmh.isNotEmpty) {
       for (final item in facts.pmh) {
         final details = item.details != null ? ' (${item.details})' : '';
-        buffer.writeln('  - ${item.item}$details');
+        buffer.writeln('  • ${item.item}$details');
       }
     } else {
-      buffer.writeln('  No documentado');
+      buffer.writeln('  [VACÍO]');
     }
     buffer.writeln();
 
     // Medications
-    buffer.writeln('MEDICAMENTOS ACTUALES:');
+    buffer.writeln('MEDICAMENTOS ACTUALES (medications):');
     if (facts.medications.isNotEmpty) {
       for (final med in facts.medications) {
         final details = med.details != null ? ' - ${med.details}' : '';
-        buffer.writeln('  - ${med.item}$details');
+        buffer.writeln('  • ${med.item}$details');
       }
     } else {
-      buffer.writeln('  No documentado');
+      buffer.writeln('  [VACÍO]');
     }
     buffer.writeln();
 
     // Allergies
-    buffer.writeln('ALERGIAS:');
+    buffer.writeln('ALERGIAS (allergies):');
     if (facts.allergies.isNotEmpty) {
       for (final allergy in facts.allergies) {
         final details = allergy.details != null ? ' (${allergy.details})' : '';
-        buffer.writeln('  - ${allergy.item}$details');
+        buffer.writeln('  • ${allergy.item}$details');
       }
     } else {
-      buffer.writeln('  No documentado');
+      buffer.writeln('  [VACÍO]');
     }
     buffer.writeln();
 
     // Physical exam
-    buffer.writeln('EXPLORACIÓN FÍSICA:');
-    buffer.writeln('  ${facts.physicalExam ?? "No documentado"}');
-    buffer.writeln();
-
-    // Assessment - ALWAYS generate, use "pendiente" if missing
-    buffer.writeln('EVALUACIÓN / DIAGNÓSTICO:');
-    if (facts.assessment.primary != null ||
-        facts.assessment.differential.isNotEmpty) {
-      if (facts.assessment.primary != null) {
-        buffer.writeln('  Principal: ${facts.assessment.primary}');
-      }
-      if (facts.assessment.differential.isNotEmpty) {
-        buffer.writeln(
-          '  Diferenciales: ${facts.assessment.differential.join(", ")}',
-        );
-      }
+    buffer.writeln('EXPLORACIÓN FÍSICA (physicalExam):');
+    if (facts.physicalExam != null && facts.physicalExam!.isNotEmpty) {
+      buffer.writeln('  "${facts.physicalExam}"');
     } else {
-      // No diagnosis yet - guide composer to write "pending" assessment
-      buffer.writeln('  Principal: Pendiente de exploración física');
-      buffer.writeln(
-        '  Nota: Diagnóstico diferido hasta completar exploración.',
-      );
+      buffer.writeln('  [NULL - Pendiente]');
     }
     buffer.writeln();
 
-    // Plan - ALWAYS generate, use conservative defaults if missing
-    buffer.writeln('PLAN:');
+    // Assessment - NO defaults, just show what's there
+    buffer.writeln('EVALUACIÓN/DIAGNÓSTICO (assessment):');
+    if (facts.assessment.primary != null ||
+        facts.assessment.differential.isNotEmpty) {
+      if (facts.assessment.primary != null) {
+        buffer.writeln('  Principal: "${facts.assessment.primary}"');
+      }
+      if (facts.assessment.differential.isNotEmpty) {
+        buffer.writeln(
+          '  Diferenciales: [${facts.assessment.differential.join(", ")}]',
+        );
+      }
+    } else {
+      buffer.writeln('  [VACÍO - Sin diagnóstico explícito]');
+    }
+    buffer.writeln();
+
+    // Plan - NO defaults, show exactly what exists
+    buffer.writeln('PLAN (plan):');
     final hasAnyPlan =
         facts.plan.diagnostics.isNotEmpty ||
         facts.plan.treatments.isNotEmpty ||
@@ -224,52 +283,50 @@ Revisar y confirmar todos los campos antes de firmar.
 
     if (hasAnyPlan) {
       if (facts.plan.diagnostics.isNotEmpty) {
-        buffer.writeln('  Estudios: ${facts.plan.diagnostics.join(", ")}');
+        buffer.writeln('  Estudios: [${facts.plan.diagnostics.join(", ")}]');
       }
       if (facts.plan.treatments.isNotEmpty) {
-        buffer.writeln('  Tratamiento: ${facts.plan.treatments.join(", ")}');
+        buffer.writeln('  Tratamiento: [${facts.plan.treatments.join(", ")}]');
       }
       if (facts.plan.referrals.isNotEmpty) {
-        buffer.writeln('  Referencias: ${facts.plan.referrals.join(", ")}');
+        buffer.writeln('  Referencias: [${facts.plan.referrals.join(", ")}]');
       }
       if (facts.plan.education.isNotEmpty) {
-        buffer.writeln(
-          '  Educación al paciente: ${facts.plan.education.join(", ")}',
-        );
+        buffer.writeln('  Educación: [${facts.plan.education.join(", ")}]');
       }
       if (facts.plan.followUp != null) {
-        buffer.writeln('  Seguimiento: ${facts.plan.followUp}');
+        buffer.writeln('  Seguimiento: "${facts.plan.followUp}"');
       }
     } else {
-      // No explicit plan from extraction - generate conservative default
-      buffer.writeln('  Tratamiento: Pendiente definir tras exploración');
-      buffer.writeln('  Signos de alarma: Acudir a urgencias si presenta:');
-      buffer.writeln('    - Fiebre alta (>38.5°C) persistente');
-      buffer.writeln('    - Dificultad respiratoria');
-      buffer.writeln('    - Deterioro del estado general');
-      buffer.writeln('  Seguimiento: Revalorar en consulta tras exploración');
+      buffer.writeln('  [VACÍO - Sin plan explícito]');
     }
     buffer.writeln();
 
     // Missing info
     if (facts.missingInfo.isNotEmpty) {
-      buffer.writeln('INFORMACIÓN FALTANTE:');
+      buffer.writeln('INFORMACIÓN FALTANTE (missingInfo):');
       for (final missing in facts.missingInfo) {
         final importance = missing.importance != null
             ? ' [${missing.importance}]'
             : '';
-        buffer.writeln('  - ${missing.field}$importance');
+        buffer.writeln('  • ${missing.field}$importance');
       }
       buffer.writeln();
     }
 
     // Ambiguous info
     if (facts.ambiguousInfo.isNotEmpty) {
-      buffer.writeln('INFORMACIÓN AMBIGUA:');
+      buffer.writeln('INFORMACIÓN AMBIGUA (ambiguousInfo):');
       for (final ambig in facts.ambiguousInfo) {
-        buffer.writeln(
-          '  - ${ambig.item}: ${ambig.reason ?? "razón no especificada"}',
-        );
+        buffer.writeln('  • ${ambig.item}:');
+        if (ambig.reason != null) {
+          buffer.writeln('    Razón: "${ambig.reason}"');
+        }
+        if (ambig.possibleInterpretations.isNotEmpty) {
+          buffer.writeln(
+            '    Interpretaciones: [${ambig.possibleInterpretations.join(", ")}]',
+          );
+        }
       }
       buffer.writeln();
     }
@@ -278,60 +335,58 @@ Revisar y confirmar todos los campos antes de firmar.
   }
 
   /// Builds format instructions based on template.
+  ///
+  /// STRICT: No invented content, just projection rules.
   static String _buildFormatSection(NoteTemplate template) {
     switch (template.format) {
       case NoteFormat.soap:
         return '''
-FORMATO REQUERIDO: SOAP
-Estructura la nota en estas secciones:
+FORMATO REQUERIDO: SOAP (Proyección Directa)
 
 S (SUBJETIVO):
-- Motivo de consulta (en terminología médica)
-- Historia de enfermedad actual (incluir TODOS los síntomas mencionados)
-- Antecedentes relevantes
-- Medicamentos y alergias
+- Fuente: chiefComplaint.text, hpi.narrative, hpi.keyPoints
+- Si chiefComplaint vacío → "Motivo de consulta no referido."
+- Incluir pmh, medications, allergies si existen.
+
+ROS:
+- Fuente: ros.positives, ros.negatives
+- Si vacío → "No interrogado."
+- Listar EXACTAMENTE los términos del JSON.
 
 O (OBJETIVO):
-- Exploración física (solo lo documentado)
-- Si no hay exploración → "Pendiente exploración física"
+- Fuente: physicalExam
+- Si null → "Pendiente exploración física."
 
-A (ANÁLISIS/EVALUACIÓN):
-- Si hay diagnóstico explícito → incluirlo
-- Si NO hay diagnóstico pero hay síntomas → impresión conservadora:
-  * "[Síntoma principal] a estudio"
-  * "Probable [síndrome], a descartar [diferencial]"
-  * "Cuadro sugestivo de [X], pendiente valoración"
-- NUNCA inventar diagnósticos definitivos
-- NUNCA contradecir los síntomas del Subjetivo
+A (ANÁLISIS):
+- Fuente: assessment.primary, assessment.differential
+- Si vacío → "Pendiente diagnóstico tras valoración completa."
+- Si hay ambiguousInfo → añadir al pie: "Información ambigua: [contenido]"
 
 P (PLAN):
-- Estudios solicitados
-- Tratamiento indicado
-- Referencias
-- Seguimiento o cita de control
-- Si no hay plan explícito → "Pendiente definir tras completar valoración"''';
+- Fuente: plan.diagnostics, plan.treatments, plan.referrals, plan.education, plan.followUp
+- Si vacío → "Pendiente definir plan tras valoración."
+- ❌ NO agregar signos de alarma genéricos ni recomendaciones estándar.''';
 
       case NoteFormat.hp:
         return '''
 FORMATO REQUERIDO: Historia y Examen Físico (H&P)
-Estructura la nota con:
-- Historia clínica completa
-- Examen físico
-- Impresión diagnóstica
-- Plan de manejo''';
+- Proyectar directamente los hechos clínicos.
+- Historia clínica: chiefComplaint, hpi, pmh, medications, allergies
+- Examen físico: physicalExam (si null → pendiente)
+- Impresión: assessment (si vacío → pendiente)
+- Plan: plan (si vacío → pendiente)''';
 
       case NoteFormat.progress:
         return '''
 FORMATO REQUERIDO: Nota de Evolución
-Estructura breve con:
-- Estado actual del paciente
-- Cambios desde última visita
-- Plan de seguimiento''';
+- Proyección breve de estado actual.
+- Solo incluir datos presentes en el JSON.
+- Si faltan datos → indicar pendiente.''';
 
       case NoteFormat.custom:
         return '''
 FORMATO: Personalizado
-${template.customInstructions ?? "Usa tu mejor criterio para el formato."}''';
+${template.customInstructions ?? "Proyecta los hechos clínicos según el formato indicado."}''';
     }
   }
 
@@ -342,6 +397,7 @@ ${template.customInstructions ?? "Usa tu mejor criterio para el formato."}''';
     return '''
 
 ESPECIALIDAD: ${template.specialty}
-Usa terminología apropiada para esta especialidad.''';
+Usa terminología apropiada para esta especialidad.
+Mantén la regla de proyección directa: solo lo que está en el JSON.''';
   }
 }

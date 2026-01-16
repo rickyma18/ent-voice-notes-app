@@ -30,6 +30,28 @@ REGLAS ABSOLUTAS (ANTI-ALUCINACIÓN)
    Si no hay datos explícitos → usar [] (array vacío). NUNCA inventar entradas.
 
 ═══════════════════════════════════════════════════════════════════════════════
+⚠️ REGLA CRÍTICA: PLAN VACÍO SI NO HAY INDICACIONES EXPLÍCITAS ⚠️
+═══════════════════════════════════════════════════════════════════════════════
+Si el MÉDICO no indica explícitamente tratamiento, estudios o seguimiento:
+→ plan.treatments = []
+→ plan.education = []
+→ plan.diagnostics = []
+→ plan.followUp = null
+
+FRASES ABSOLUTAMENTE PROHIBIDAS (no generarlas NUNCA):
+❌ "Manejo sintomático según hallazgos de exploración"
+❌ "Manejo sintomático según hallazgos"
+❌ "Signos de alarma: fiebre alta persistente, dificultad respiratoria"
+❌ "Signos de alarma: acudir a urgencias si..."
+❌ "Revalorar tras exploración física completa"
+❌ "Revalorar si no mejora"
+❌ "Pendiente definir plan tras valoración"
+❌ "Tratamiento sintomático"
+❌ "Control de síntomas"
+
+Estas frases son INVENTADAS. Si el médico no las dijo → NO aparecen en el JSON.
+
+═══════════════════════════════════════════════════════════════════════════════
 REGLAS DE REDACCIÓN CLÍNICA (MEDICALIZACIÓN CONSERVADORA)
 ═══════════════════════════════════════════════════════════════════════════════
 A) CONVERSIÓN COLOQUIAL → TÉRMINO MÉDICO (cuando sea SEGURO):
@@ -43,12 +65,75 @@ A) CONVERSIÓN COLOQUIAL → TÉRMINO MÉDICO (cuando sea SEGURO):
    - "nariz tapada" → "obstrucción nasal"
    - "sangrado de nariz" → "epistaxis"
    - "ronquera" / "se me fue la voz" → "disfonía"
-   - "todo me daba vueltas" / "como carrusel" / "giraba todo" → "vértigo (sensación rotatoria)"
 
-B) MAPEOS AMBIGUOS → TÉRMINO MENOS ESPECÍFICO + ambiguousInfo:
-   - "mareo" sin contexto rotatorio → mantener "mareo"
-   - "mareo" CON contexto rotatorio ("da vueltas", "gira", "carrusel") → usar "vértigo"
-   - Si hay duda: usar "mareo" y agregar a ambiguousInfo.
+   ÉPICA 5 - MAPEOS ADICIONALES:
+   - "voy al baño a cada rato" / "orino muy seguido" / "muchas ganas de orinar" → "polaquiuria"
+   - "me arde al orinar" / "me duele al orinar" → "disuria"
+   - "me sale líquido del oído" / "me sale algo del oído" / "secreción del oído" → "otorrea"
+   - "oigo menos" / "no oigo bien" / "escucho mal" → "hipoacusia"
+
+   ⚠️ DISTINCIÓN CRÍTICA: RINORREA ≠ OTORREA
+   - rinorrea = secreción NASAL (nariz)
+   - otorrea = secreción ÓTICA (oído)
+   - NUNCA confundirlos. Son anatómicamente distintos.
+
+═══════════════════════════════════════════════════════════════════════════════
+B) REGLAS CLÍNICAS: MAREO vs VÉRTIGO (CRÍTICO - CONSERVADOR)
+═══════════════════════════════════════════════════════════════════════════════
+   PRINCIPIO: "Mareo" ≠ "Vértigo". Vértigo es una entidad clínica ESPECÍFICA.
+   ANTE LA DUDA: CONSERVADOR > ESPECÍFICO.
+
+   1. "MAREO" ES EL TÉRMINO POR DEFECTO:
+      Usar "mareo" cuando el paciente describa:
+      - Inestabilidad, aturdimiento, sensación vaga
+      - Curso intermitente u ocasional ("a veces", "no siempre")
+      - Descripción imprecisa o coloquial
+      EJEMPLOS que usan "mareo":
+         * "me mareo a veces" → "mareo"
+         * "me sentí raro" → "mareo"
+         * "como que me da vueltas" → "mareo" (NO vértigo)
+         * "no siempre me pasa" → "mareo"
+         * "siento que gira" (sin claridad rotatoria) → "mareo"
+
+   2. SOLO USAR "VÉRTIGO" SI HAY SENSACIÓN ROTATORIA CLARA Y EXPLÍCITA:
+      Usar "vértigo" ÚNICAMENTE si el paciente describe de forma DIRECTA:
+      - "todo gira" / "todo me da vueltas como carrusel"
+      - "siento que el cuarto da vueltas"
+      - "sensación rotatoria franca"
+      - Descripción inequívoca de rotación externa
+      EJEMPLOS que usan "vértigo":
+         * "todo giraba sin parar" → "vértigo (sensación rotatoria)"
+         * "como si el cuarto diera vueltas" → "vértigo"
+
+   3. FRASES AMBIGUAS NO AUTORIZAN VÉRTIGO:
+      Las siguientes frases NO justifican "vértigo" por sí solas:
+      - "me da vueltas" (sin contexto claro)
+      - "siento que gira"
+      - "a veces me pasa"
+      - "no siempre"
+      En estos casos:
+         * chiefComplaint → "Mareo"
+         * ROS positives → "mareo"
+         * AGREGAR a ambiguousInfo (ver punto 4)
+
+   4. MANEJO DE AMBIGÜEDAD (OBLIGATORIO):
+      Si el mareo es confuso, intermitente o mal definido → documentar duda:
+      {
+        "item": "mareo",
+        "reason": "Paciente refiere mareo intermitente con descripción imprecisa; no se confirma componente rotatorio claro.",
+        "possibleInterpretations": ["mareo intermitente", "mareo inespecífico", "posible componente rotatorio (no concluyente)"]
+      }
+      NUNCA colocar "vértigo" como diagnóstico definitivo dentro de ambiguousInfo.
+
+   5. RESTRICCIÓN SEMÁNTICA (CRÍTICA):
+      - "Vértigo" NO es sinónimo de mareo.
+      - NO usar "vértigo" si:
+         * El curso es intermitente ("a veces")
+         * El paciente duda o corrige su descripción
+         * La sensación rotatoria no es inequívocamente clara
+
+C) MAPEOS GENERALES AMBIGUOS → TÉRMINO MENOS ESPECÍFICO + ambiguousInfo:
+   - Si hay duda clínica: usar término menos específico y agregar a ambiguousInfo.
 
 C) VOZ CLÍNICA EN TERCERA PERSONA:
    - "me duele" → "refiere dolor"
@@ -174,12 +259,30 @@ INSTRUCCIONES DE EXTRACCIÓN:
    - text DEBE ser BREVE, CLÍNICO y MEDICALIZADO (2-6 palabras).
    - NO usar citas literales del paciente.
    - REQUIERE evidence con la cita original.
+
+   ═══════════════════════════════════════════════════════════════════════════════
+   ÉPICA 5 - chiefComplaint NUNCA vacío si hay síntomas:
+   ═══════════════════════════════════════════════════════════════════════════════
+   Si el paciente describe síntomas, chiefComplaint DEBE tener texto.
+   PROHIBIDO usar "Motivo de consulta no referido" si hay síntomas claros.
+
+   Si hay disuria + polaquiuria → chiefComplaint = "Síndrome urinario"
+   Si hay otalgia + otorrea → chiefComplaint = "Otalgia con otorrea"
+   Si hay diarrea + vómito → chiefComplaint = "Síndrome gastrointestinal"
+
+   SOLO usar chiefComplaint vacío/null si el paciente NO menciona síntomas
+   (ej: "vine porque me mandaron" → "Consulta referida").
+   ═══════════════════════════════════════════════════════════════════════════════
+
    EJEMPLOS:
      * "me duele el oído derecho" → "Otalgia derecha"
      * "oído tapado" → "Sensación de plenitud ótica"
      * "me zumba" → "Acúfeno"
-     * "todo me daba vueltas como carrusel" → "Vértigo (sensación rotatoria)"
+     * "todo me daba vueltas como carrusel" → "Vértigo (sensación rotatoria)" (rotación CLARA)
+     * "me mareo a veces" → "Mareo" (NO vértigo - intermitente/impreciso)
+     * "me da vueltas" → "Mareo" (NO vértigo - ambiguo, agregar a ambiguousInfo)
      * "me duele la garganta" → "Odinofagia"
+     * "me arde al orinar y voy al baño a cada rato" → "Síndrome urinario"
 
 2. hpi: Narrativa del padecimiento actual (inicio, evolución, duración, tratamientos previos).
    - keyPoints: Lista de puntos clave extraídos.
@@ -232,6 +335,33 @@ INSTRUCCIONES DE EXTRACCIÓN:
       - NO generar: ["fiebre", "fiebre ni..."]
       - NO generar strings vacíos o palabras sueltas
       - Cada síntoma aparece UNA sola vez
+   
+   g) REGLA CRÍTICA: ROS SOLO TÉRMINOS CLÍNICOS (OBLIGATORIO):
+      - ROS.positives y ROS.negatives SOLO pueden contener SÍNTOMAS CLÍNICOS ESTANDARIZADOS.
+      - PROHIBIDO incluir frases coloquiales, verbos descriptivos o expresiones vagas.
+      
+      PROHIBIDO EN ROS (ejemplos):
+        * "da vueltas"       → NO (coloquial)
+        * "que gire"         → NO (verbo descriptivo)
+        * "se mueve"         → NO (descripción vaga)
+        * "siento raro"      → NO (expresión subjetiva)
+        * "como que gira"    → NO (frase coloquial)
+        * "todo me da vueltas" → NO (frase coloquial, usar "vértigo" SI hay rotación clara, "mareo" si no)
+      
+      PERMITIDO EN ROS (términos médicos):
+        * "mareo", "vértigo", "cefalea", "otalgia", "acúfeno"
+        * "rinorrea", "odinofagia", "disnea", "fiebre", "náusea"
+      
+      MANEJO DE DESCRIPCIONES COLOQUIALES NEGADAS:
+        * Si el paciente NIEGA con frase coloquial (ej: "no es que gire todo"):
+          → QUEDA en HPI narrative como aclaración
+          → NO aparece en ROS.negatives
+          → Solo usar para desambiguar contexto clínico
+        * EJEMPLO:
+          - Frase: "no es que gire todo, más bien me siento inestable"
+          - HPI: "Refiere inestabilidad; aclara que no percibe rotación."
+          - ROS.positives: ["mareo"] (medicalizado)
+          - ROS.negatives: [] (vacío - la negación era coloquial, no sintomática)
 
 4. pmh/medications/allergies: Listas de antecedentes, medicamentos y alergias.
    - Si el paciente dice "ninguno" o "no tengo", usar [].
@@ -247,15 +377,96 @@ INSTRUCCIONES DE EXTRACCIÓN:
    - Si NO hay diagnóstico explícito pero hay síntomas → usar IMPRESIÓN CONSERVADORA:
      * "[Síntoma principal] a estudio"
      * "Otalgia derecha a estudio (pendiente otoscopía)"
-     * "Mareo a estudio"
-     * "Síndrome vertiginoso a estudio" (SOLO si hay contexto rotatorio explícito)
+     * "Mareo a estudio" (para mareo sin rotación clara - CONSERVADOR)
+     * "Vértigo a estudio" (SOLO si extractor identificó vértigo explícitamente)
+   - REGLA MAREO/VÉRTIGO EN ASSESSMENT:
+     * Si chiefComplaint = "Mareo" → assessment = "Mareo a estudio" (NUNCA "Síndrome vertiginoso")
+     * Si chiefComplaint = "Vértigo" → assessment = "Vértigo a estudio" o "Síndrome vertiginoso a caracterizar"
+     * Si existe ambiguousInfo relacionada con mareo → mantener Assessment conservador
    - NUNCA usar "Diagnóstico diferido - pendiente exploración física".
    - REQUIERE evidence si hay primary.
 
+   ═══════════════════════════════════════════════════════════════════════════════
+   ÉPICA 5 - DIAGNÓSTICOS CONSERVADORES (PROHIBIDO INFERIR):
+   ═══════════════════════════════════════════════════════════════════════════════
+   Sin exploración física ni labs, TODO es "a estudio". NUNCA inferir diagnósticos específicos.
+
+   PROHIBIDO:                              → USAR EN SU LUGAR:
+   - "Gastroenteritis"                     → "Síndrome gastrointestinal a estudio"
+   - "Otitis media"                        → "Otalgia con otorrea a estudio"
+   - "Otitis externa"                      → "Otalgia a estudio"
+   - "Infección urinaria" / "IVU"          → "Síndrome urinario a estudio"
+   - "Faringitis"                          → "Odinofagia a estudio"
+   - "Neumonía"                            → "Síndrome respiratorio a estudio"
+   - "Sinusitis"                           → "Síndrome rinosinusal a estudio"
+
+   REGLA: Si el médico NO dijo el diagnóstico → NO lo infieras.
+   ═══════════════════════════════════════════════════════════════════════════════
+
 6. plan: Acciones a tomar.
-   - diagnostics: Estudios solicitados.
-   - treatments: Medicamentos o intervenciones indicadas.
+   - diagnostics: Estudios solicitados EXPLÍCITAMENTE.
+   - treatments: Medicamentos o intervenciones indicadas EXPLÍCITAMENTE.
    - REQUIERE evidence para treatments si hay contenido.
+
+   ═══════════════════════════════════════════════════════════════════════════════
+   REGLA CRÍTICA - PLAN (ÉPICA 5 - PROHIBIDO INVENTAR):
+   ═══════════════════════════════════════════════════════════════════════════════
+   a) Si el speech NO menciona tratamientos → treatments = []
+   b) Si el speech NO menciona educación/signos de alarma → education = []
+   c) Si el speech NO menciona seguimiento → followUp = null
+
+   PROHIBIDO GENERAR (no están en el speech):
+   - "Manejo sintomático según hallazgos de exploración"
+   - "Manejo sintomático según hallazgos"
+   - "Signos de alarma: fiebre alta persistente, dificultad respiratoria..."
+   - "Revalorar tras exploración física completa"
+   - "Pendiente definir plan tras valoración"
+   - Cualquier tratamiento/indicación no mencionada explícitamente
+
+   EJEMPLO CORRECTO (paciente solo describe síntomas):
+   Speech: "Me duele el oído desde hace tres días, punzante, sin fiebre."
+   plan: {
+     "diagnostics": [],
+     "treatments": [],
+     "referrals": [],
+     "education": [],
+     "followUp": null,
+     "evidence": []
+   }
+
+   EJEMPLO CORRECTO (médico sí indica tratamiento):
+   Speech: "Doctor: Le voy a recetar ibuprofeno cada 8 horas."
+   plan: {
+     "diagnostics": [],
+     "treatments": ["Ibuprofeno cada 8 horas"],
+     "referrals": [],
+     "education": [],
+     "followUp": null,
+     "evidence": [{"quote": "Le voy a recetar ibuprofeno cada 8 horas", "speaker": "Doctor", ...}]
+   }
+   ═══════════════════════════════════════════════════════════════════════════════
+
+   d) MEDICAMENTOS QUE EL PACIENTE YA USA (ÉPICA 5):
+      Si el paciente menciona que YA usa un medicamento y LE FUNCIONA:
+      - Incluir en medications: [{ "item": "paracetamol", "details": "uso actual" }]
+      - En plan.treatments usar "Continuar [medicamento]" - NO solo "[medicamento]"
+
+      EJEMPLO:
+      Speech: "Se me quita con paracetamol"
+      medications: [{ "item": "paracetamol", "details": "uso actual, efectivo" }]
+      plan.treatments: ["Continuar paracetamol"]  // NO solo "paracetamol"
+
+   e) CONSULTA REFERIDA (ÉPICA 5):
+      Si el paciente dice "vine porque me mandaron", "me refirieron", etc.:
+      - chiefComplaint.text = "Consulta referida" o "Valoración solicitada"
+      - Incluir evidence con la cita
+
+      EJEMPLO:
+      Speech: "La verdad vine porque me mandaron del trabajo"
+      chiefComplaint: {
+        "text": "Consulta referida",
+        "evidence": { "quote": "vine porque me mandaron del trabajo", "speaker": "Patient", ... }
+      }
 
 7. missingInfo: Información que debería estar pero no se mencionó.
    - Ejemplos: alergias no preguntadas, antecedentes incompletos.

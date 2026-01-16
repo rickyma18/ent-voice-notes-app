@@ -238,6 +238,13 @@ class EvidenceDebugSheet extends StatelessWidget {
             style: const TextStyle(fontFamily: 'Courier', fontSize: 13),
           ),
         ),
+        TextButton.icon(
+          onPressed: () {
+            Clipboard.setData(ClipboardData(text: result.soapText));
+          },
+          icon: const Icon(Icons.copy),
+          label: const Text('Copy SOAP'),
+        ),
       ],
     );
   }
