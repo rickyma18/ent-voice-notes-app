@@ -1,0 +1,33 @@
+{
+  "chiefComplaint": {
+    "text": "Otalgia derecha",
+    "evidence": {
+      "quote": "le duele el oído derecho desde hace tres días",
+      "speaker": "Patient"
+    }
+  },
+  "hpi": {
+    "narrative": "Paciente refiere otalgia derecha de 3 días de evolución. El dolor es punzante, con exacerbación nocturna.",
+    "keyPoints": [
+      "Inicio: 3 días",
+      "Carácter: punzante",
+      "Empeora por las noches"
+    ]
+  },
+  "ros": {
+    "positives": ["otalgia"],
+    "negatives": ["fiebre", "otorrea"]
+  },
+  "pmh": [],
+  "medications": [],
+  "allergies": [],
+  "physicalExam": null,
+  "assessment": {
+    "primary": "Otalgia derecha a estudio"
+  },
+  "plan": {
+    "treatments": [],
+    "diagnostics": [],
+    "education": []
+  }
+}

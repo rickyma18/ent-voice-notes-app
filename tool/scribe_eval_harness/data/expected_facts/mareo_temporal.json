@@ -1,0 +1,40 @@
+{
+  "chiefComplaint": {
+    "text": "Mareo",
+    "evidence": {
+      "quote": "a veces le da como vueltas la cabeza",
+      "speaker": "Patient"
+    }
+  },
+  "hpi": {
+    "narrative": "Paciente refiere mareo intermitente. Refiere ausencia inicial de mareo con aparición anoche.",
+    "keyPoints": [
+      "Curso intermitente",
+      "Ausencia inicial",
+      "Aparición anoche"
+    ]
+  },
+  "ros": {
+    "positives": ["mareo"],
+    "negatives": ["fiebre", "vómito"]
+  },
+  "pmh": [],
+  "medications": [],
+  "allergies": [],
+  "physicalExam": null,
+  "assessment": {
+    "primary": "Mareo a estudio"
+  },
+  "plan": {
+    "treatments": [],
+    "diagnostics": [],
+    "education": []
+  },
+  "ambiguousInfo": [
+    {
+      "item": "mareo",
+      "reason": "Paciente refiere mareo intermitente con descripción imprecisa; no se confirma componente rotatorio claro.",
+      "possibleInterpretations": ["mareo intermitente", "mareo inespecífico"]
+    }
+  ]
+}

@@ -328,42 +328,32 @@ final class ProcessEncounterUseCase {
     required bool hasNegatedFindings,
     required List<String> negatedFindings,
   }) {
-    // Check if we have enough data to justify a fallback
+    // Check if we have enough data to justify processing
     final hasChiefComplaint = facts.chiefComplaint.text != null;
     final hasHPI = facts.hpi.narrative != null;
 
-    // If no substantive data, don't force fallbacks
+    // If no substantive data, don't apply any transformations
     if (!hasChiefComplaint && !hasHPI) {
       return facts;
     }
 
-    // Apply fallback for empty assessment
-    var updatedAssessment = facts.assessment;
-    if (facts.assessment.primary == null &&
-        facts.assessment.differential.isEmpty) {
-      Log.info('[Scribe] Applying fallback for empty assessment');
-      updatedAssessment = const AssessmentSection(
-        primary: 'Diagnóstico diferido - pendiente exploración física',
-        differential: [],
-        evidence: [],
-      );
-    }
+    // ─────────────────────────────────────────────────────────────────────────
+    // IMPORTANT: NO FALLBACK CONTENT GENERATION
+    // ─────────────────────────────────────────────────────────────────────────
+    // If extractor returns empty assessment/plan, keep them empty.
+    // We do NOT generate:
+    // - "Diagnóstico diferido - pendiente exploración física"
+    // - "Manejo sintomático según hallazgos de exploración"
+    // - "Signos de alarma: fiebre alta persistente..."
+    // - "Revalorar tras exploración física completa"
+    //
+    // These are HALLUCINATIONS if the doctor didn't say them.
+    // The SOAP composer will handle empty sections appropriately.
+    // ─────────────────────────────────────────────────────────────────────────
 
-    // Apply fallback for empty plan
-    var updatedPlan = facts.plan;
-    if (facts.plan.treatments.isEmpty && facts.plan.diagnostics.isEmpty) {
-      Log.info('[Scribe] Applying fallback for empty plan');
-      updatedPlan = const PlanSection(
-        diagnostics: [],
-        treatments: ['Manejo sintomático según hallazgos de exploración'],
-        referrals: [],
-        education: [
-          'Signos de alarma: fiebre alta persistente, dificultad respiratoria, deterioro general',
-        ],
-        followUp: 'Revalorar tras exploración física completa',
-        evidence: [],
-      );
-    }
+    // Keep assessment and plan as-is from extractor
+    final updatedAssessment = facts.assessment;
+    final updatedPlan = facts.plan;
 
     // ─────────────────────────────────────────────────────────────────────────
     // DETERMINISTIC ROS RECONCILIATION

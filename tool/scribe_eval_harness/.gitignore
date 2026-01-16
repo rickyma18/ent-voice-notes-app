@@ -1,0 +1,12 @@
+# Generated outputs
+output/
+
+# Dart
+.dart_tool/
+.packages
+pubspec.lock
+
+# IDE
+.idea/
+.vscode/
+*.iml

@@ -1,0 +1,25 @@
+{
+  "chiefComplaint": {
+    "text": null
+  },
+  "hpi": {
+    "narrative": "Niega fiebre, cefalea, mareo, náusea y vómito.",
+    "keyPoints": []
+  },
+  "ros": {
+    "positives": [],
+    "negatives": ["fiebre", "cefalea", "mareo", "náusea", "vómito"]
+  },
+  "pmh": [],
+  "medications": [],
+  "allergies": [],
+  "physicalExam": null,
+  "assessment": {
+    "primary": null
+  },
+  "plan": {
+    "treatments": [],
+    "diagnostics": [],
+    "education": []
+  }
+}
