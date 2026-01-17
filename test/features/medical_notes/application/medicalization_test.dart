@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:medical_notes_app/src/features/medical_notes/application/medicalization/medicalization.dart';
 import 'package:medical_notes_app/src/features/medical_notes/application/medicalization/medicalization_service.dart';
+import 'package:medical_notes_app/src/features/medical_notes/application/medicalization/flutter_glossary_loader.dart';
 
 /// Unit tests for the medicalization layer.
 ///
@@ -12,11 +13,18 @@ import 'package:medical_notes_app/src/features/medical_notes/application/medical
 void main() {
   // Initialize Flutter binding to enable rootBundle.loadString for assets
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  // Set up the default glossary loader for tests
+  setUpAll(() {
+    MedicalizationGlossary.defaultLoader = const FlutterGlossaryLoader();
+  });
+
   group('MedicalizationGlossary', () {
     late MedicalizationGlossary glossary;
 
     setUp(() {
-      glossary = MedicalizationGlossary();
+      MedicalizationGlossary.resetSingleton();
+      glossary = MedicalizationGlossary.singleton();
       glossary.clearCache();
     });
 
@@ -133,65 +141,73 @@ void main() {
       service.clearCache();
     });
 
-    test('11. "Me duele la cabeza" should produce cefalea, not "dolor en la cabeza"', () async {
-      // This is the key test case from the requirements:
-      // The compound mapping "me duele la cabeza" → "refiere cefalea" (P300)
-      // should take precedence over "me duele" → "refiere dolor en" (P100)
+    test(
+      '11. "Me duele la cabeza" should produce cefalea, not "dolor en la cabeza"',
+      () async {
+        // This is the key test case from the requirements:
+        // The compound mapping "me duele la cabeza" → "refiere cefalea" (P300)
+        // should take precedence over "me duele" → "refiere dolor en" (P100)
 
-      final result = await service.medicalize(
-        'Me duele la cabeza desde hace 3 días',
-      );
+        final result = await service.medicalize(
+          'Me duele la cabeza desde hace 3 días',
+        );
 
-      // Must contain "cefalea" - the clinical term
-      expect(
-        result.medicalizedText.toLowerCase(),
-        contains('cefalea'),
-        reason: 'Clinical term "cefalea" should be present, not "dolor en la cabeza"',
-      );
+        // Must contain "cefalea" - the clinical term
+        expect(
+          result.medicalizedText.toLowerCase(),
+          contains('cefalea'),
+          reason:
+              'Clinical term "cefalea" should be present, not "dolor en la cabeza"',
+        );
 
-      // Should NOT contain "dolor en la cabeza" (the incorrect cascaded result)
-      expect(
-        result.medicalizedText.toLowerCase(),
-        isNot(contains('dolor en la cabeza')),
-        reason: 'Should not have generic "dolor en la cabeza" when cefalea mapping exists',
-      );
+        // Should NOT contain "dolor en la cabeza" (the incorrect cascaded result)
+        expect(
+          result.medicalizedText.toLowerCase(),
+          isNot(contains('dolor en la cabeza')),
+          reason:
+              'Should not have generic "dolor en la cabeza" when cefalea mapping exists',
+        );
 
-      // Check that mapping was applied
-      expect(result.appliedMappings, isNotEmpty);
+        // Check that mapping was applied
+        expect(result.appliedMappings, isNotEmpty);
 
-      // Verify the clinical mapping was applied
-      final cefaleaMapping = result.appliedMappings.where(
-        (m) => m.clinical.toLowerCase().contains('cefalea'),
-      );
-      expect(
-        cefaleaMapping,
-        isNotEmpty,
-        reason: 'A cefalea mapping should have been applied',
-      );
-    });
+        // Verify the clinical mapping was applied
+        final cefaleaMapping = result.appliedMappings.where(
+          (m) => m.clinical.toLowerCase().contains('cefalea'),
+        );
+        expect(
+          cefaleaMapping,
+          isNotEmpty,
+          reason: 'A cefalea mapping should have been applied',
+        );
+      },
+    );
 
-    test('12. Clinical symptom mappings have priority over voice_transforms', () async {
-      // Test that a high-priority clinical mapping is not blocked by
-      // a lower-priority voice_transform that would overlap
+    test(
+      '12. Clinical symptom mappings have priority over voice_transforms',
+      () async {
+        // Test that a high-priority clinical mapping is not blocked by
+        // a lower-priority voice_transform that would overlap
 
-      final result = await service.medicalize(
-        'Tengo dolor de cabeza muy fuerte',
-      );
+        final result = await service.medicalize(
+          'Tengo dolor de cabeza muy fuerte',
+        );
 
-      // "tengo dolor de cabeza" (P300) should win over "tengo" (P100)
-      expect(
-        result.medicalizedText.toLowerCase(),
-        contains('cefalea'),
-        reason: 'Compound clinical mapping should be applied',
-      );
+        // "tengo dolor de cabeza" (P300) should win over "tengo" (P100)
+        expect(
+          result.medicalizedText.toLowerCase(),
+          contains('cefalea'),
+          reason: 'Compound clinical mapping should be applied',
+        );
 
-      // Should not have "presenta dolor de cabeza"
-      expect(
-        result.medicalizedText.toLowerCase(),
-        isNot(contains('presenta dolor de cabeza')),
-        reason: 'Voice transform should not have split the clinical mapping',
-      );
-    });
+        // Should not have "presenta dolor de cabeza"
+        expect(
+          result.medicalizedText.toLowerCase(),
+          isNot(contains('presenta dolor de cabeza')),
+          reason: 'Voice transform should not have split the clinical mapping',
+        );
+      },
+    );
 
     test('13. voice_transforms apply when no clinical overlap exists', () async {
       // When there's no clinical mapping to overlap, voice_transforms should work
@@ -217,9 +233,7 @@ void main() {
     test('14. Longer matches win at same priority level', () async {
       // At the same priority level, longer (more specific) matches should win
 
-      final result = await service.medicalize(
-        'Me duele mucho la cabeza',
-      );
+      final result = await service.medicalize('Me duele mucho la cabeza');
 
       // "me duele mucho la cabeza" → "refiere cefalea intensa" should win
       // over "me duele la cabeza" → "refiere cefalea"

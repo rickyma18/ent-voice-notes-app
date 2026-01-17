@@ -2,6 +2,7 @@
 
 import '../../../../core/base/result.dart';
 import '../../data/scribe/dtos/clinical_facts_dto.dart';
+import '../medicalization/file_glossary_loader.dart';
 import 'process_encounter_usecase.dart';
 import 'scribe_pipeline_factory.dart';
 
@@ -47,8 +48,15 @@ class ScribePipelineRunner {
   ///
   /// [apiKey] - OpenAI API key. If null, reads from environment.
   factory ScribePipelineRunner.forEval({String? apiKey}) {
-    final effectiveKey = apiKey ?? ScribePipelineFactory.getApiKeyFromEnv();
-    final useCase = ScribePipelineFactory.forEval(apiKey: effectiveKey);
+    final cleaned = (apiKey != null && apiKey.trim().isNotEmpty)
+        ? apiKey.trim()
+        : null;
+    final effectiveKey = cleaned ?? ScribePipelineFactory.getApiKeyFromEnv();
+
+    final useCase = ScribePipelineFactory.forEval(
+      apiKey: effectiveKey,
+      glossaryLoader: FileGlossaryLoader(),
+    );
     return ScribePipelineRunner(useCase: useCase);
   }
 

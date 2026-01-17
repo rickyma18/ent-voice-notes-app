@@ -2,12 +2,19 @@ import 'package:collection/collection.dart';
 
 import '../models/test_case.dart';
 import '../models/evaluation_result.dart';
+import '../normalization/clinical_normalizer.dart';
 
 /// Comparator for clinical facts JSON.
 ///
 /// Computes precision/recall for each field and generates errors.
+///
+/// ÉPICA 1: Uses [ClinicalNormalizer] for canonical symptom comparison
+/// to avoid false negatives from synonym variation (e.g., "dolor de oído" ≈ "otalgia").
 class FactComparator {
   const FactComparator();
+
+  /// Clinical normalizer for canonical symptom matching.
+  static const _normalizer = ClinicalNormalizer();
 
   /// "Never wrong" fields - errors here are always CRITICAL.
   static const neverWrongFields = {
@@ -60,10 +67,15 @@ class FactComparator {
     fieldMetrics['ros.negatives'] = rosNegativesResult.metrics;
 
     // Compare assessment primary
-    final assessmentResult = _compareString(
-      field: 'assessment.primary',
-      expected: _getPath(expected, ['assessment', 'primary']),
-      actual: _getPath(actual, ['assessment', 'primary']),
+    // ÉPICA 1: Derive assessment from CC when actual is generic placeholder
+    final expectedAssessment = _getPath(expected, ['assessment', 'primary']);
+    final actualAssessment = _getPath(actual, ['assessment', 'primary']);
+    final actualCC = _getPath(actual, ['chiefComplaint', 'text']);
+
+    final assessmentResult = _compareAssessment(
+      expected: expectedAssessment,
+      actual: actualAssessment,
+      actualChiefComplaint: actualCC,
     );
     errors.addAll(assessmentResult.errors);
     fieldMetrics['assessment.primary'] = assessmentResult.metrics;
@@ -180,7 +192,22 @@ class FactComparator {
       );
     }
 
-    // Both present - check similarity
+    // Both present - check canonical match first for clinical fields
+    // ÉPICA 1: Use canonical normalization for symptom fields
+    if (_isClinicalSymptomField(field)) {
+      if (_normalizer.chiefComplaintsMatch(expected!, actual!)) {
+        return _FieldComparisonResult(
+          errors: [],
+          metrics: FieldMetrics.compute(
+            truePositives: 1,
+            falsePositives: 0,
+            falseNegatives: 0,
+          ),
+        );
+      }
+    }
+
+    // Standard string similarity check
     final similarity = _stringSimilarity(expected!, actual!);
     if (similarity >= 0.8) {
       // Good match
@@ -228,6 +255,121 @@ class FactComparator {
         ),
       );
     }
+  }
+
+  /// Check if a field should use canonical symptom comparison.
+  bool _isClinicalSymptomField(String field) {
+    return field == 'chiefComplaint.text' || field == 'assessment.primary';
+  }
+
+  /// Compare assessment.primary with special handling for generic placeholders.
+  ///
+  /// ÉPICA 1: When actual is "X a estudio", derive the assessment from
+  /// the chief complaint and compare against expected.
+  _FieldComparisonResult _compareAssessment({
+    required String? expected,
+    required String? actual,
+    required String? actualChiefComplaint,
+  }) {
+    const field = 'assessment.primary';
+    final errors = <EvaluationError>[];
+
+    // Both null is OK
+    if (expected == null && actual == null) {
+      return _FieldComparisonResult(
+        errors: [],
+        metrics: const FieldMetrics(precision: 1.0, recall: 1.0, f1: 1.0),
+      );
+    }
+
+    // Expected but missing
+    if (expected != null && (actual == null || actual.isEmpty)) {
+      errors.add(EvaluationError(
+        field: field,
+        severity: _getSeverity(field, isMissing: true),
+        message: 'Missing expected assessment',
+        expected: expected,
+        actual: actual,
+      ));
+      return _FieldComparisonResult(
+        errors: errors,
+        metrics: FieldMetrics.compute(
+          truePositives: 0,
+          falsePositives: 0,
+          falseNegatives: 1,
+        ),
+      );
+    }
+
+    // Check for generic placeholder in actual
+    // "X a estudio", "a determinar", "pendiente" are generic placeholders
+    if (actual != null && _isGenericAssessment(actual)) {
+      // If CC is available, derive assessment from CC
+      if (actualChiefComplaint != null && actualChiefComplaint.isNotEmpty) {
+        // Canonicalize the CC
+        final ccCanon = _normalizer.canonicalizeSymptom(actualChiefComplaint);
+
+        // Check if expected assessment contains the same symptom
+        if (expected != null) {
+          final expectedCanon = _normalizer.canonicalizeSymptom(expected);
+
+          // If symptoms match, consider this a match
+          if (ccCanon.symptom == expectedCanon.symptom &&
+              ccCanon.laterality == expectedCanon.laterality) {
+            // Match! "X a estudio" with CC=otalgia ≡ "Otalgia a estudio"
+            return _FieldComparisonResult(
+              errors: [],
+              metrics: FieldMetrics.compute(
+                truePositives: 1,
+                falsePositives: 0,
+                falseNegatives: 0,
+              ),
+            );
+          }
+        }
+      }
+    }
+
+    // Standard canonical comparison
+    if (expected != null && actual != null) {
+      if (_normalizer.chiefComplaintsMatch(expected, actual)) {
+        return _FieldComparisonResult(
+          errors: [],
+          metrics: FieldMetrics.compute(
+            truePositives: 1,
+            falsePositives: 0,
+            falseNegatives: 0,
+          ),
+        );
+      }
+    }
+
+    // No match
+    errors.add(EvaluationError(
+      field: field,
+      severity: _getSeverity(field),
+      message: 'Value mismatch',
+      expected: expected,
+      actual: actual,
+    ));
+    return _FieldComparisonResult(
+      errors: errors,
+      metrics: FieldMetrics.compute(
+        truePositives: 0,
+        falsePositives: 1,
+        falseNegatives: 1,
+      ),
+    );
+  }
+
+  /// Check if assessment is a generic placeholder.
+  bool _isGenericAssessment(String text) {
+    final lower = text.toLowerCase().trim();
+    return lower == 'x a estudio' ||
+        lower == 'a determinar' ||
+        lower == 'pendiente' ||
+        lower == 'por definir' ||
+        lower == 'no especificado';
   }
 
   _FieldComparisonResult _compareSemanticString({
@@ -280,7 +422,71 @@ class FactComparator {
   }) {
     final errors = <EvaluationError>[];
 
-    // Normalize for comparison
+    // ÉPICA 1: Use canonical normalization for ROS fields
+    final isROSField = field == 'ros.positives' || field == 'ros.negatives';
+
+    if (isROSField) {
+      // Normalize both lists to canonical symptom codes
+      final expectedNormalized = _normalizer.normalizeROSList(expected);
+      final actualNormalized = _normalizer.normalizeROSList(actual);
+
+      final expectedSymptoms = expectedNormalized.symptoms;
+      final actualSymptoms = actualNormalized.symptoms;
+
+      // Calculate metrics using canonical symptom codes
+      final truePositives =
+          expectedSymptoms.intersection(actualSymptoms).length;
+      final falseNegatives = expectedSymptoms.difference(actualSymptoms).length;
+
+      // Exclude modifiers from FP count - they belong in HPI, not considered as hallucinations
+      final nonModifierActual = actualSymptoms.difference(actualNormalized
+          .modifierItems
+          .map((m) => _normalizer.canonicalizeSymptom(m).symptom)
+          .toSet());
+      final falsePositives =
+          nonModifierActual.difference(expectedSymptoms).length;
+
+      // Report missing expected symptoms
+      for (final missing in expectedSymptoms.difference(actualSymptoms)) {
+        final original = expected.firstWhereOrNull(
+          (e) => _normalizer.canonicalizeSymptom(e).symptom == missing,
+        );
+        errors.add(EvaluationError(
+          field: field,
+          severity: _getSeverity(field, isMissing: true),
+          message: 'Missing expected symptom (canonical)',
+          expected: original ?? missing,
+        ));
+      }
+
+      // Report unexpected symptoms (possible hallucinations) - excluding modifiers
+      for (final extra in nonModifierActual.difference(expectedSymptoms)) {
+        final original = actual.firstWhereOrNull(
+          (e) => _normalizer.canonicalizeSymptom(e).symptom == extra,
+        );
+        // Only report if it's a real symptom, not a temporal modifier
+        final canon = _normalizer.canonicalizeSymptom(original ?? extra);
+        if (!canon.hasModifiers || !_isPrimarilyModifier(canon)) {
+          errors.add(EvaluationError(
+            field: field,
+            severity: _getSeverity(field),
+            message: 'Unexpected symptom (canonical)',
+            actual: original ?? extra,
+          ));
+        }
+      }
+
+      return _FieldComparisonResult(
+        errors: errors,
+        metrics: FieldMetrics.compute(
+          truePositives: truePositives,
+          falsePositives: falsePositives,
+          falseNegatives: falseNegatives,
+        ),
+      );
+    }
+
+    // Standard comparison for non-ROS fields
     final expectedNorm = expected.map(_normalize).toSet();
     final actualNorm = actual.map(_normalize).toSet();
 
@@ -322,6 +528,25 @@ class FactComparator {
         falseNegatives: falseNegatives,
       ),
     );
+  }
+
+  /// Check if a canonicalized symptom is primarily a temporal modifier.
+  bool _isPrimarilyModifier(CanonicalSymptom canon) {
+    if (canon.symptom.length < 3) return true;
+    const modifierWords = [
+      'empeora',
+      'mejora',
+      'noches',
+      'noche',
+      'manana',
+      'intermitente',
+      'constante',
+      'punzante',
+      'pulsatil',
+      'agudo',
+      'cronico'
+    ];
+    return modifierWords.any((m) => canon.symptom.contains(m));
   }
 
   _FieldComparisonResult _compareClinicalItems({
@@ -390,6 +615,13 @@ class FactComparator {
     final value = _getPath(json, path);
     if (value is List) {
       return value.cast<T>();
+    }
+    // Handle allergies as object with 'known' subfield
+    if (value is Map<String, dynamic> && value.containsKey('known')) {
+      final known = value['known'];
+      if (known is List) {
+        return known.cast<T>();
+      }
     }
     return [];
   }

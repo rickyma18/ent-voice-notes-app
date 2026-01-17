@@ -1,25 +1,48 @@
 // lib/src/features/medical_notes/application/medicalization/medicalization_glossary.dart
 
-import 'dart:convert';
-
-import 'package:flutter/services.dart' show rootBundle;
-
 import '../../../../core/logger/log.dart';
+import 'glossary_loader.dart';
 
 /// Cached loader for medicalization glossary (colloquial → clinical mappings).
 ///
-/// Singleton pattern for app-wide caching.
-/// Loads mappings from bundled JSON asset.
+/// Uses [GlossaryLoader] abstraction to support both Flutter (rootBundle) and
+/// Dart-only (dart:io) environments.
+///
+/// **IMPORTANT**: For new code, prefer using [GlossaryLoader] directly.
+/// This class exists for backward compatibility with singleton usage.
 class MedicalizationGlossary {
-  /// Singleton instance.
-  factory MedicalizationGlossary() => _instance;
+  /// Create a glossary with a specific loader.
+  ///
+  /// For Flutter app: use [FlutterGlossaryLoader]
+  /// For CLI/harness: use [FileGlossaryLoader]
+  MedicalizationGlossary({required GlossaryLoader loader}) : _loader = loader;
 
-  MedicalizationGlossary._();
+  /// Legacy singleton - uses default loader.
+  ///
+  /// **DEPRECATED**: Prefer explicit loader injection. This exists for
+  /// backward compatibility and requires setting [defaultLoader] before use.
+  factory MedicalizationGlossary.singleton() {
+    _instance ??= MedicalizationGlossary(
+      loader:
+          defaultLoader ??
+          (throw StateError(
+            'MedicalizationGlossary.defaultLoader must be set before using singleton. '
+            'Set it at app startup or use explicit GlossaryLoader injection.',
+          )),
+    );
+    return _instance!;
+  }
 
-  static final MedicalizationGlossary _instance = MedicalizationGlossary._();
+  /// Default loader for singleton pattern.
+  /// Must be set at app startup before using [MedicalizationGlossary.singleton()].
+  ///
+  /// For Flutter: `MedicalizationGlossary.defaultLoader = FlutterGlossaryLoader();`
+  /// For CLI: `MedicalizationGlossary.defaultLoader = FileGlossaryLoader();`
+  static GlossaryLoader? defaultLoader;
 
-  static const _glossaryAssetPath =
-      'lib/src/features/medical_notes/resources/medical_lexicon/colloquial_to_clinical_es.json';
+  static MedicalizationGlossary? _instance;
+
+  final GlossaryLoader _loader;
 
   /// Cached flattened mappings: colloquial → clinical term.
   Map<String, String>? _cachedMappings;
@@ -30,7 +53,7 @@ class MedicalizationGlossary {
   /// Returns flattened map of colloquial → clinical terms.
   ///
   /// Loaded once and cached in memory.
-  /// Returns empty map if asset loading fails (graceful degradation).
+  /// Returns empty map if loading fails (graceful degradation).
   Future<Map<String, String>> getMappings() async {
     if (_cachedMappings != null) {
       return _cachedMappings!;
@@ -52,49 +75,28 @@ class MedicalizationGlossary {
     return _cachedFullMappings ?? {};
   }
 
-  /// Loads the glossary from the asset bundle.
+  /// Loads the glossary using the configured loader.
   Future<void> _loadGlossary() async {
     try {
       Log.info('📖 [Medicalization] Loading glossary...');
 
-      final jsonString = await rootBundle.loadString(_glossaryAssetPath);
-      final data = jsonDecode(jsonString) as Map<String, dynamic>;
+      final fullMappings = await _loader.loadFullMappings();
 
       final flatMappings = <String, String>{};
-      final fullMappings = <String, MedicalizationMapping>{};
+      final fullMappingsConverted = <String, MedicalizationMapping>{};
 
-      // Process each category
-      final categories = [
-        'symptoms',
-        'symptoms_orl',
-        'antecedentes',
-        'habits',
-        'voice_transforms',
-      ];
-
-      for (final category in categories) {
-        final categoryData = data[category] as Map<String, dynamic>?;
-        if (categoryData == null) continue;
-
-        for (final entry in categoryData.entries) {
-          final colloquial = entry.key.toLowerCase();
-          final mapping = entry.value as Map<String, dynamic>;
-
-          final clinical = mapping['clinical'] as String;
-          final note = mapping['note'] as String?;
-
-          flatMappings[colloquial] = clinical;
-          fullMappings[colloquial] = MedicalizationMapping(
-            colloquial: colloquial,
-            clinical: clinical,
-            category: category,
-            note: note,
-          );
-        }
+      for (final entry in fullMappings.entries) {
+        flatMappings[entry.key] = entry.value.clinical;
+        fullMappingsConverted[entry.key] = MedicalizationMapping(
+          colloquial: entry.value.colloquial,
+          clinical: entry.value.clinical,
+          category: entry.value.category,
+          note: entry.value.note,
+        );
       }
 
       _cachedMappings = flatMappings;
-      _cachedFullMappings = fullMappings;
+      _cachedFullMappings = fullMappingsConverted;
 
       Log.info(
         '📖 [Medicalization] Loaded ${flatMappings.length} mappings from glossary',
@@ -111,6 +113,11 @@ class MedicalizationGlossary {
   void clearCache() {
     _cachedMappings = null;
     _cachedFullMappings = null;
+  }
+
+  /// Reset singleton (for tests).
+  static void resetSingleton() {
+    _instance = null;
   }
 }
 

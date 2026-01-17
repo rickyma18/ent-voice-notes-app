@@ -138,8 +138,12 @@ class MedicalizationStats {
 ///
 /// NO LLM calls - purely local text transformation.
 class LocalMedicalizationService implements MedicalizationService {
+  /// Creates a LocalMedicalizationService.
+  ///
+  /// [glossary] - Optional custom glossary. If not provided, uses singleton.
+  /// The singleton requires [MedicalizationGlossary.defaultLoader] to be set.
   LocalMedicalizationService({MedicalizationGlossary? glossary})
-    : _glossary = glossary ?? MedicalizationGlossary();
+    : _glossary = glossary ?? MedicalizationGlossary.singleton();
 
   final MedicalizationGlossary _glossary;
 

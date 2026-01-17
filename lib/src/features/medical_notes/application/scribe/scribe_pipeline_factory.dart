@@ -11,6 +11,8 @@ import '../../data/scribe/repositories_impl/note_composer_repository_impl.dart';
 import '../../domain/scribe/entities/transcript_with_speakers.dart';
 import '../../domain/scribe/repositories/transcription_repository.dart';
 import '../medicalization/medicalization_service.dart';
+import '../medicalization/glossary_loader.dart';
+import '../medicalization/medicalization_glossary.dart';
 import '../note_ai_service_impl.dart';
 import 'process_encounter_usecase.dart';
 
@@ -21,7 +23,10 @@ import 'process_encounter_usecase.dart';
 ///
 /// Usage:
 /// ```dart
-/// final useCase = ScribePipelineFactory.forEval(apiKey: 'sk-...');
+/// final useCase = ScribePipelineFactory.forEval(
+///   apiKey: 'sk-...',
+///   glossaryLoader: FileGlossaryLoader(),
+/// );
 /// final result = await useCase.callFromTranscript(transcript);
 /// ```
 class ScribePipelineFactory {
@@ -37,14 +42,14 @@ class ScribePipelineFactory {
   /// - Dummy TranscriptionRepository (not used in eval)
   ///
   /// [apiKey] - OpenAI API key (required)
+  /// [glossaryLoader] - Loade logic for medical terms (required, e.g. FileGlossaryLoader)
   /// [extractorModel] - Model for extraction (default: gpt-4o-mini)
   /// [composerModel] - Model for composition (default: gpt-4o-mini)
-  /// [disableFallbacks] - If true, disables generated fallback content
   static ProcessEncounterUseCase forEval({
     required String apiKey,
+    required GlossaryLoader glossaryLoader,
     String extractorModel = 'gpt-4o-mini',
     String composerModel = 'gpt-4o-mini',
-    bool disableFallbacks = true,
   }) {
     // Create OpenAI client
     final openAIClient = OpenAIClient(apiKey: apiKey);
@@ -72,7 +77,9 @@ class ScribePipelineFactory {
     );
 
     // Create medicalization service (local, no LLM)
-    final medicalizationService = MedicalizationServiceFactory.create();
+    final medicalizationService = MedicalizationServiceFactory.create(
+      glossary: MedicalizationGlossary(loader: glossaryLoader),
+    );
 
     // Create dummy transcription repository (not used in eval)
     final transcriptionRepository = _DummyTranscriptionRepository();
@@ -94,17 +101,25 @@ class ScribePipelineFactory {
   ///
   /// Throws if no key is found.
   static String getApiKeyFromEnv() {
-    final key =
+    // 1) dart-define
+    const fromDefineOpenAI = String.fromEnvironment('OPENAI_API_KEY');
+    const fromDefineDocsoft = String.fromEnvironment('DOCSOFT_OPENAI_KEY');
+
+    if (fromDefineOpenAI.isNotEmpty) return fromDefineOpenAI;
+    if (fromDefineDocsoft.isNotEmpty) return fromDefineDocsoft;
+
+    // 2) OS env (mostly works on desktop runners, not on Android)
+    final keyFromEnv =
         Platform.environment['OPENAI_API_KEY'] ??
         Platform.environment['DOCSOFT_OPENAI_KEY'];
 
-    if (key == null || key.isEmpty) {
+    if (keyFromEnv == null || keyFromEnv.isEmpty) {
       throw StateError(
-        'No OpenAI API key found. Set OPENAI_API_KEY or DOCSOFT_OPENAI_KEY environment variable.',
+        'No OpenAI API key found. Use --dart-define=OPENAI_API_KEY=... (preferred) or set env var.',
       );
     }
 
-    return key;
+    return keyFromEnv;
   }
 }
 
@@ -127,7 +142,11 @@ final class _DummyTranscriptionRepository extends TranscriptionRepository {
 /// Extension to create MedicalizationService without Riverpod.
 extension MedicalizationServiceFactory on MedicalizationService {
   /// Creates a LocalMedicalizationService instance.
-  static MedicalizationService create() {
-    return LocalMedicalizationService();
+  ///
+  /// [glossary] - Optional custom glossary. If not provided, uses singleton.
+  /// For CLI/harness: pass a glossary with [FileGlossaryLoader]
+  /// For Flutter app: ensure [MedicalizationGlossary.defaultLoader] is set.
+  static MedicalizationService create({MedicalizationGlossary? glossary}) {
+    return LocalMedicalizationService(glossary: glossary);
   }
 }

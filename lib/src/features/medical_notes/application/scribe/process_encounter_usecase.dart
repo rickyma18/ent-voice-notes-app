@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:equatable/equatable.dart';
-import 'package:flutter/foundation.dart';
 
 import '../../../../core/base/failure.dart';
 import '../../../../core/base/result.dart';
@@ -224,7 +223,7 @@ final class ProcessEncounterUseCase {
     );
 
     // Debug: log applied mappings and negated findings for QA
-    if (kDebugMode) {
+    assert(() {
       if (medicalized.appliedMappings.isNotEmpty) {
         final preview = medicalized.appliedMappings
             .take(10)
@@ -236,7 +235,8 @@ final class ProcessEncounterUseCase {
           '[Medicalization] Negated: ${sanitizedNegatedFindings.join(', ')}',
         );
       }
-    }
+      return true;
+    }());
 
     // Build new TranscriptWithSpeakers with medicalized text for extractor
     final medicalizedTranscript = TranscriptWithSpeakers(

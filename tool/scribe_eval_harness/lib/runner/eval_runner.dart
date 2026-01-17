@@ -9,16 +9,31 @@ import '../comparators/fact_comparator.dart';
 import '../validators/evidence_validator.dart';
 import '../validators/coherence_validator.dart';
 import '../validators/hallucination_detector.dart';
+import '../validators/laterality_validator.dart';
+import '../validators/dosage_preservation_validator.dart';
+import '../validators/negation_temporal_validator.dart';
 import '../report/report_generator.dart';
+import 'eval_data_resolver.dart';
 
 /// Pipeline runner interface for evaluation.
 ///
 /// This abstraction allows us to inject either:
 /// - A real pipeline runner (calls ProcessEncounterUseCase)
 /// - A mock pipeline runner (for offline testing)
+/// - A recording pipeline runner (saves snapshots)
+/// - A replay pipeline runner (loads snapshots)
 abstract class PipelineRunner {
   /// Run the pipeline on a transcript and return the results.
   Future<PipelineResult> run(String transcript);
+}
+
+/// Mixin for pipeline runners that need to know the current case ID.
+///
+/// Used by [RecordingPipelineRunner] and [ReplayPipelineRunner] to
+/// associate snapshots with their corresponding test cases.
+mixin CaseAwarePipelineRunner on PipelineRunner {
+  /// Set the current case ID before calling [run].
+  set currentCaseId(String? caseId);
 }
 
 /// Result from running the pipeline on a transcript.
@@ -72,6 +87,9 @@ class EvalRunner {
   final _evidenceValidator = const EvidenceValidator();
   final _coherenceValidator = const CoherenceValidator();
   final _hallucinationDetector = const HallucinationDetector();
+  final _lateralityValidator = const LateralityValidator();
+  final _dosageValidator = const DosagePreservationValidator();
+  final _negationTemporalValidator = const NegationTemporalValidator();
   final _reportGenerator = const ReportGenerator();
 
   /// Run evaluation on all test cases.
@@ -80,10 +98,19 @@ class EvalRunner {
     _log('  SCRIBE V2 CLINICAL EVALUATION HARNESS');
     _log('═══════════════════════════════════════════════════════════\n');
 
+    // Resolve data path (handles different execution contexts)
+    final resolvedDataPath = EvalDataResolver.resolveDataPath(
+      dataPath: options.dataPath,
+    );
+
+    if (options.verbose) {
+      _log('Data path resolved to: $resolvedDataPath');
+    }
+
     // Load test cases
     final testCases = await loadTestCases(
       caseFilter: options.caseFilter,
-      dataPath: options.dataPath,
+      dataPath: resolvedDataPath,
     );
 
     if (testCases.isEmpty) {
@@ -120,14 +147,17 @@ class EvalRunner {
 
     // Save reports if output path specified
     if (options.outputPath.isNotEmpty) {
-      final baseDir = p.dirname(options.outputPath);
+      final resolvedOutputPath = EvalDataResolver.resolveOutputPath(
+        outputPath: options.outputPath,
+      );
+      final baseDir = p.dirname(resolvedOutputPath);
       await Directory(baseDir).create(recursive: true);
 
-      await _reportGenerator.saveJson(report, options.outputPath);
-      _log('\nJSON report saved to: ${options.outputPath}');
+      await _reportGenerator.saveJson(report, resolvedOutputPath);
+      _log('\nJSON report saved to: $resolvedOutputPath');
 
       final summaryPath =
-          options.outputPath.replaceAll('.json', '_summary.txt');
+          resolvedOutputPath.replaceAll('.json', '_summary.txt');
       await _reportGenerator.saveSummary(report, summaryPath);
       _log('Summary saved to: $summaryPath');
     }
@@ -140,6 +170,11 @@ class EvalRunner {
 
   /// Evaluate a single test case.
   Future<EvaluationResult> _evaluateTestCase(TestCase testCase) async {
+    // Set case ID for snapshot-aware runners (record/replay modes)
+    if (_pipelineRunner case CaseAwarePipelineRunner caseAware) {
+      caseAware.currentCaseId = testCase.id;
+    }
+
     // Run pipeline
     final pipelineResult = await _pipelineRunner.run(testCase.transcript);
 
@@ -164,12 +199,33 @@ class EvalRunner {
       testCase.transcript,
     );
 
+    // Validate laterality consistency
+    final lateralityResult = _lateralityValidator.validate(
+      pipelineResult.facts,
+      testCase.transcript,
+    );
+
+    // Validate dosage preservation
+    final dosageResult = _dosageValidator.validate(
+      pipelineResult.facts,
+      testCase.transcript,
+    );
+
+    // Validate temporal negation handling
+    final negationResult = _negationTemporalValidator.validate(
+      pipelineResult.facts,
+      testCase.transcript,
+    );
+
     // Combine all errors
     final allErrors = [
       ...comparison.errors,
       ...evidenceResult.errors,
       ...coherenceResult.errors,
       ...hallucinationResult.errors,
+      ...lateralityResult.errors,
+      ...dosageResult.errors,
+      ...negationResult.errors,
     ];
 
     final metrics = TestCaseMetrics(

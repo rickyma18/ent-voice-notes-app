@@ -1,10 +1,7 @@
-// lib/src/features/medical_notes/application/note_ai_service_impl.dart
-
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show kReleaseMode;
 
 import '../../../core/logger/log.dart';
 import 'medical_lexicon_loader.dart';
@@ -15,6 +12,9 @@ import 'note_ai_service.dart';
 import 'structured_fields_parser.dart';
 import 'structured_fields_prompt_v2.dart';
 import 'structured_fields_schema_v1.dart';
+
+// Dart-only replacement for kReleaseMode
+const bool kReleaseMode = bool.fromEnvironment('dart.vm.product');
 
 /// Production implementation of NoteAIService using OpenAI APIs.
 ///

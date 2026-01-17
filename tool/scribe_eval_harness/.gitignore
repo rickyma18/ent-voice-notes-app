@@ -1,6 +1,10 @@
 # Generated outputs
 output/
 
+# Snapshots (gitignored by default, can be promoted manually)
+# To commit specific snapshots, use: git add -f output/snapshots/<case>.actual.json
+output/snapshots/
+
 # Dart
 .dart_tool/
 .packages
@@ -10,3 +14,9 @@ pubspec.lock
 .idea/
 .vscode/
 *.iml
+
+# DO NOT COMMIT – frozen baseline
+data/expected_facts/*.json
+data/thresholds*.json
+data/input_transcripts/*.txt
+snapshot/

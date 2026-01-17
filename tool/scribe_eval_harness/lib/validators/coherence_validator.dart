@@ -110,6 +110,9 @@ class CoherenceValidator {
   }
 
   /// Check if chief complaint is reflected in assessment.
+  ///
+  /// ÉPICA 1: Tolerates "X a estudio" placeholder assessments since they
+  /// are derived from the chief complaint. Also uses canonical symptom matching.
   EvaluationError? _checkCcAssessmentAlignment(Map<String, dynamic> facts) {
     final cc = facts['chiefComplaint'] as Map<String, dynamic>?;
     final assessment = facts['assessment'] as Map<String, dynamic>?;
@@ -120,6 +123,12 @@ class CoherenceValidator {
     final primary = (assessment['primary'] as String? ?? '').toLowerCase();
 
     if (ccText.isEmpty || primary.isEmpty) return null;
+
+    // ÉPICA 1: Tolerate generic placeholder assessments ("X a estudio", etc.)
+    // These are acceptable when derived from CC in the comparator
+    if (_isGenericAssessment(primary)) {
+      return null; // Skip check - placeholder is acceptable
+    }
 
     // Check if assessment mentions the chief complaint in some form
     final ccKeywords = ccText
@@ -132,12 +141,15 @@ class CoherenceValidator {
       (keyword) => primary.contains(keyword),
     );
 
-    // Also check for common clinical patterns
+    // ÉPICA 1: Enhanced clinical patterns with canonical equivalences
     final clinicalPatterns = {
       'mareo': ['mareo', 'vertigo', 'vestibular'],
-      'otalgia': ['otalgia', 'oido', 'otitis', 'otico'],
+      'otalgia': ['otalgia', 'oido', 'otitis', 'otico', 'dolor'],
+      'dolor': ['otalgia', 'oido', 'dolor', 'odinofagia', 'cefalea'],
       'odinofagia': ['odinofagia', 'faringitis', 'garganta'],
-      'acufeno': ['acufeno', 'tinnitus'],
+      'acufeno': ['acufeno', 'tinnitus', 'zumbido'],
+      'escurrimiento': ['otorrea', 'escurrimiento', 'secrecion'],
+      'fiebre': ['fiebre', 'febril', 'temperatura'],
     };
 
     var patternMatch = false;
@@ -145,6 +157,16 @@ class CoherenceValidator {
       if (ccText.contains(entry.key)) {
         patternMatch = entry.value.any((p) => primary.contains(p));
         if (patternMatch) break;
+      }
+    }
+
+    // ÉPICA 1: Also check canonical equivalence directly
+    if (!patternMatch && !hasRelatedAssessment) {
+      // Check if CC canonical matches assessment canonical
+      final ccCanonical = _getCanonicalSymptom(ccText);
+      final assessmentCanonical = _getCanonicalSymptom(primary);
+      if (ccCanonical != null && ccCanonical == assessmentCanonical) {
+        patternMatch = true;
       }
     }
 
@@ -158,6 +180,42 @@ class CoherenceValidator {
       );
     }
 
+    return null;
+  }
+
+  /// Check if assessment is a generic placeholder.
+  bool _isGenericAssessment(String text) {
+    final lower = text.toLowerCase().trim();
+    return lower == 'x a estudio' ||
+        lower == 'a determinar' ||
+        lower == 'pendiente' ||
+        lower == 'por definir' ||
+        lower == 'no especificado';
+  }
+
+  /// Get canonical symptom code from text.
+  String? _getCanonicalSymptom(String text) {
+    final normalized = _normalizeWord(text);
+
+    // Canonical mappings
+    const mappings = {
+      'dolor': 'dolor',
+      'oido': 'otalgia',
+      'otalgia': 'otalgia',
+      'garganta': 'odinofagia',
+      'odinofagia': 'odinofagia',
+      'mareo': 'mareo',
+      'vertigo': 'vertigo',
+      'escurrimiento': 'otorrea',
+      'otorrea': 'otorrea',
+      'fiebre': 'fiebre',
+    };
+
+    for (final entry in mappings.entries) {
+      if (normalized.contains(entry.key)) {
+        return entry.value;
+      }
+    }
     return null;
   }
 

@@ -6,6 +6,10 @@
 // Run with:
 //   flutter test integration_test/scribe_eval_integration_test.dart
 //
+// For record mode (saves snapshots for later replay):
+//   flutter test integration_test/scribe_eval_integration_test.dart \
+//     --dart-define=EVAL_MODE=record
+//
 // Requirements:
 //   - OPENAI_API_KEY environment variable must be set
 //   - Test cases must exist in tool/scribe_eval_harness/data/
@@ -25,6 +29,7 @@ import 'package:medical_notes_app/src/features/medical_notes/application/scribe/
 
 // Import from the eval harness
 import '../tool/scribe_eval_harness/lib/runner/eval_runner.dart';
+import '../tool/scribe_eval_harness/lib/snapshot/snapshot.dart';
 
 /// Adapter connecting the harness to the real Scribe pipeline.
 class RealPipelineRunnerAdapter implements PipelineRunner {
@@ -44,26 +49,72 @@ class RealPipelineRunnerAdapter implements PipelineRunner {
   }
 }
 
+const _dataPath = String.fromEnvironment(
+  'EVAL_DATA_PATH',
+  defaultValue: 'tool/scribe_eval_harness/data',
+);
+
+const _outputPath = String.fromEnvironment(
+  'EVAL_OUTPUT_PATH',
+  defaultValue: 'tool/scribe_eval_harness/output/integration_report.json',
+);
+
+/// Check if record mode is enabled via --dart-define=EVAL_MODE=record
+const _evalMode = String.fromEnvironment('EVAL_MODE', defaultValue: 'live');
+const _snapshotsDir = String.fromEnvironment(
+  'SNAPSHOTS_DIR',
+  defaultValue: 'tool/scribe_eval_harness/output/snapshots',
+);
+
 void main() {
   late EvalRunner evalRunner;
   late String? apiKey;
+  final isRecordMode = _evalMode == 'record';
+  const k = String.fromEnvironment('OPENAI_API_KEY');
+  print('OPENAI_API_KEY length = ${k.length}');
 
   setUpAll(() {
-    // Get API key from environment
-    apiKey =
-        Platform.environment['OPENAI_API_KEY'] ??
-        Platform.environment['DOCSOFT_OPENAI_KEY'];
+    // Get API key from --dart-define (works on Android integration tests)
+    const apiKeyFromDefine = String.fromEnvironment('OPENAI_API_KEY');
+    const apiKeyFromDefine2 = String.fromEnvironment('DOCSOFT_OPENAI_KEY');
+
+    apiKey = apiKeyFromDefine.isNotEmpty
+        ? apiKeyFromDefine
+        : (apiKeyFromDefine2.isNotEmpty ? apiKeyFromDefine2 : null);
 
     if (apiKey == null || apiKey!.isEmpty) {
-      fail('No OpenAI API key found. Set OPENAI_API_KEY environment variable.');
+      fail(
+        'No OpenAI API key found. Pass --dart-define=OPENAI_API_KEY=... (Platform.environment is empty on Android).',
+      );
     }
 
-    // Create pipeline runner and eval runner
-    final pipelineRunner = RealPipelineRunnerAdapter(apiKey: apiKey);
+    // Create pipeline runner based on mode
+    final realRunner = RealPipelineRunnerAdapter(apiKey: apiKey);
+    final PipelineRunner pipelineRunner;
+
+    if (isRecordMode) {
+      // Record mode: wrap real runner to save snapshots
+      final snapshotStore = SnapshotStore(snapshotsDir: _snapshotsDir);
+      pipelineRunner = RecordingPipelineRunner(
+        delegate: realRunner,
+        snapshotStore: snapshotStore,
+        modelInfo: {'provider': 'openai', 'mode': 'record'},
+      );
+      // ignore: avoid_print
+      print(
+        'Recording mode enabled. Snapshots will be saved to: $_snapshotsDir',
+      );
+    } else {
+      // Live mode: use real runner directly
+      pipelineRunner = realRunner;
+    }
+
     evalRunner = EvalRunner(
       pipelineRunner: pipelineRunner,
       options: const EvalRunnerOptions(
         verbose: true,
+        // dataPath uses auto-detection via EvalDataResolver internally
+        // For Android with flutter drive, pass --dart-define=EVAL_DATA_PATH=/abs/path
         dataPath: 'tool/scribe_eval_harness/data',
         outputPath: 'tool/scribe_eval_harness/output/integration_report.json',
       ),

@@ -10,6 +10,10 @@ dependencies:
   args: ^2.4.0
   path: ^1.8.0
   collection: ^1.17.0
+  crypto: ^3.0.3
+  # Use Dart-only runtime package instead of Flutter app
+  docsoft_scribe_runtime:
+    path: ../../packages/docsoft_scribe_runtime
 
 dev_dependencies:
   test: ^1.24.0

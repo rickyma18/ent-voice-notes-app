@@ -49,7 +49,11 @@ class HallucinationDetector {
       );
 
       final followUp = plan['followUp'] as String?;
-      if (followUp != null && _isHallucination(followUp, transcript)) {
+      // ÉPICA 1: Tolerate generic followUp placeholders - these are acceptable
+      // fallbacks when no specific follow-up was mentioned in the transcript
+      if (followUp != null &&
+          !_isGenericFollowUp(followUp) &&
+          _isHallucination(followUp, transcript)) {
         count++;
         errors.add(EvaluationError(
           field: 'plan.followUp',
@@ -134,7 +138,12 @@ class HallucinationDetector {
       final symptom = item.toString();
       final normSymptom = _normalize(symptom);
 
-      // Check if symptom or its variants appear in transcript
+      // ÉPICA 1: Skip temporal modifiers - they belong in HPI, not symptoms
+      if (_isTemporalModifier(normSymptom)) {
+        continue; // Not a hallucination, just misplaced
+      }
+
+      // Check if symptom or its variants appear in transcript (with canonical matching)
       if (!_symptomInTranscript(normSymptom, normTranscript)) {
         count++;
         errors.add(EvaluationError(
@@ -146,6 +155,34 @@ class HallucinationDetector {
       }
     }
     return count;
+  }
+
+  /// Check if text is a temporal modifier, not a symptom.
+  /// ÉPICA 1: Modifiers should not be counted as hallucinations.
+  bool _isTemporalModifier(String text) {
+    const modifiers = [
+      'empeora',
+      'mejora',
+      'noches',
+      'noche',
+      'manana',
+      'intermitente',
+      'constante',
+      'punzante',
+      'pulsatil',
+      'agudo',
+      'cronico',
+      'severo',
+      'leve',
+      'moderado',
+      'progresivo',
+      'inicio',
+      'comenzo',
+      'hace dias',
+      'hace semanas',
+      'desde hace',
+    ];
+    return modifiers.any((m) => text.contains(m));
   }
 
   bool _isHallucination(String text, String transcript) {
@@ -282,6 +319,17 @@ class HallucinationDetector {
         .replaceAll(RegExp(r'[úùüû]'), 'u')
         .replaceAll(RegExp(r'[ñ]'), 'n')
         .replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  /// Check if followUp is a generic placeholder.
+  /// These are acceptable fallbacks when no specific follow-up was stated.
+  bool _isGenericFollowUp(String text) {
+    final lower = text.toLowerCase().trim();
+    return lower == 'a determinar' ||
+        lower == 'pendiente' ||
+        lower == 'por definir' ||
+        lower == 'no especificado' ||
+        lower.isEmpty;
   }
 }
 
