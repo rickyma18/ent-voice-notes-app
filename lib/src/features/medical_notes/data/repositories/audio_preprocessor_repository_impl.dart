@@ -91,7 +91,7 @@ final class AudioPreprocessorRepositoryImpl
             return result;
           }
         } catch (e) {
-          Log.warning('🎵 [AudioPreprocessor] FFmpeg failed, falling back: $e');
+          Log.info('🎵 [AudioPreprocessor] FFmpeg failed, falling back: $e');
         }
       } else {
         Log.info(
@@ -260,7 +260,7 @@ final class AudioPreprocessorRepositoryImpl
       ]);
 
       if (result.exitCode != 0) {
-        Log.warning('🎵 [AudioPreprocessor] ffprobe failed: ${result.stderr}');
+        Log.info('🎵 [AudioPreprocessor] ffprobe failed: ${result.stderr}');
         return 0;
       }
 
@@ -268,7 +268,7 @@ final class AudioPreprocessorRepositoryImpl
       final durationSec = double.tryParse(durationStr) ?? 0.0;
       return (durationSec * 1000).round();
     } catch (e) {
-      Log.warning('🎵 [AudioPreprocessor] Failed to get duration: $e');
+      Log.info('🎵 [AudioPreprocessor] Failed to get duration: $e');
       return 0;
     }
   }

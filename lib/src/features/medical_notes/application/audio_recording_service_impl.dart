@@ -1,6 +1,7 @@
 // lib/src/features/medical_notes/application/audio_recording_service_impl.dart
 
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -52,10 +53,7 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
       Log.warning(
         '🎤 startRecording called but already recording (state: $_state, actual: $isActuallyRecording)',
       );
-      throw AudioRecordingException(
-        'Ya hay una grabación en curso',
-        reason: RecordingFailureReason.alreadyRecording,
-      );
+      return false; // Already recording - return false instead of throwing
     }
 
     try {
@@ -95,8 +93,8 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
         path: _currentRecordingPath!,
       );
 
-      // Keep screen on while recording
-      await WakelockPlus.enable();
+      // Keep screen on while recording (nice-to-have, don't fail if unavailable)
+      await _safeWakelockEnable();
 
       _state = RecordingState.recording;
       Log.info('🎤 Recording started successfully');
@@ -105,7 +103,7 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
       Log.error('🎤 Error starting recording: $e');
       _state = RecordingState.idle;
       _currentRecordingPath = null;
-      await WakelockPlus.disable(); // Ensure screen lock is released on error
+      await _safeWakelockDisable(); // Ensure screen lock is released on error
 
       if (e is AudioRecordingException) {
         rethrow;
@@ -184,8 +182,8 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
       // 1. Stop the recorder
       final path = await _recorder.stop();
 
-      // Release screen lock
-      await WakelockPlus.disable();
+      // Release screen lock (nice-to-have)
+      await _safeWakelockDisable();
 
       _state = RecordingState.idle;
 
@@ -249,7 +247,7 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
 
     try {
       await _recorder.stop();
-      await WakelockPlus.disable(); // Release screen lock
+      await _safeWakelockDisable(); // Release screen lock
       _state = RecordingState.idle;
 
       // Delete the temp file if it exists
@@ -338,7 +336,7 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
       if (_state != RecordingState.idle || isActuallyRecording || isPaused) {
         Log.info('🎤 ensureStopped: Cleaning up orphaned recording state');
         await _recorder.stop();
-        await WakelockPlus.disable(); // Release screen lock
+        await _safeWakelockDisable(); // Release screen lock
         _state = RecordingState.idle;
 
         // Delete any orphaned temp file
@@ -365,5 +363,33 @@ class AudioRecordingServiceImpl implements AudioRecordingService {
       await cancelRecording();
     }
     await _recorder.dispose();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // WAKELOCK HELPERS - Safe wrappers that don't break on missing platform channel
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// Safely enables wakelock. Swallows PlatformException in test environments.
+  Future<void> _safeWakelockEnable() async {
+    try {
+      await WakelockPlus.enable();
+    } on PlatformException catch (e) {
+      // Expected in unit tests where native channel is unavailable
+      Log.info('🎤 Wakelock enable skipped (platform unavailable): ${e.code}');
+    } catch (e) {
+      Log.info('🎤 Wakelock enable failed (non-critical): $e');
+    }
+  }
+
+  /// Safely disables wakelock. Swallows PlatformException in test environments.
+  Future<void> _safeWakelockDisable() async {
+    try {
+      await WakelockPlus.disable();
+    } on PlatformException catch (e) {
+      // Expected in unit tests where native channel is unavailable
+      Log.info('🎤 Wakelock disable skipped (platform unavailable): ${e.code}');
+    } catch (e) {
+      Log.info('🎤 Wakelock disable failed (non-critical): $e');
+    }
   }
 }
