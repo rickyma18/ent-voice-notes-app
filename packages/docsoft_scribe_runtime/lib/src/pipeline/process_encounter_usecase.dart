@@ -13,6 +13,9 @@ import 'package:docsoft_scribe_core/src/pipeline/clinical_facts_sanitizer.dart';
 import 'package:docsoft_scribe_core/src/pipeline/ros_reconciliation_service.dart';
 import 'package:docsoft_scribe_core/src/repositories/encounter_extractor_repository.dart';
 import 'package:docsoft_scribe_core/src/repositories/note_composer_repository.dart';
+import 'package:docsoft_scribe_core/src/validation/validation.dart';
+
+import '../validation/validation_pipeline.dart';
 
 /// Result of processing a medical encounter.
 class ScribePipelineResult {
@@ -184,6 +187,43 @@ class ProcessEncounterUseCase {
 
       _logger
           .info('[ProcessEncounter] Sanitization and reconciliation complete');
+
+      // Stage 2.6: Pre-composer validation (ÉPICA 4)
+      final validationPipeline = ValidationPipeline(logger: _logger);
+      final validationContext = ValidationContext(
+        negatedFindings: negatedFindings,
+        transcriptHash: transcript.hashCode.toRadixString(16),
+      );
+      final validationResult = validationPipeline.run(
+        clinicalFacts,
+        context: validationContext,
+      );
+
+      // If CRITICAL issues, skip composition
+      if (validationResult.shouldBlockComposer) {
+        totalStopwatch.stop();
+        _logger.error(
+          '[ProcessEncounter] Validation BLOCKED composition: '
+          '${validationResult.result.criticalIssues.length} critical issues',
+        );
+
+        // Return result without SOAP (as if skipComposition=true)
+        return Result.success(
+          ScribePipelineResult(
+            rawTranscript: transcript,
+            medicalizedTranscript: medicalizedText,
+            clinicalFacts: clinicalFacts,
+            soapNote: '', // Empty SOAP due to validation failure
+            negatedFindings: negatedFindings,
+            timings: PipelineTimings(
+              medicalizationMs: medicalizationMs,
+              extractionMs: extractionMs,
+              compositionMs: null,
+              totalMs: totalStopwatch.elapsedMilliseconds,
+            ),
+          ),
+        );
+      }
 
       // Stage 3: Composition (optional)
       int? compositionMs;
