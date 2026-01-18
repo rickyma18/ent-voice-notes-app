@@ -37,6 +37,9 @@ export 'package:docsoft_scribe_core/src/pipeline/ros_reconciliation_service.dart
 export 'package:docsoft_scribe_core/src/prompts/extractor_prompts.dart';
 export 'package:docsoft_scribe_core/src/prompts/composer_prompts.dart';
 
+// Config re-exports
+export 'package:docsoft_scribe_core/src/config/feature_flags.dart';
+
 // Runtime components
 export 'src/clients/openai_client.dart';
 export 'src/clients/openai_extractor_client.dart';
@@ -46,6 +49,10 @@ export 'src/repositories/note_composer_repository_impl.dart';
 export 'src/pipeline/process_encounter_usecase.dart';
 export 'src/pipeline/scribe_pipeline_runner.dart';
 export 'src/pipeline/scribe_pipeline_factory.dart';
+export 'src/pipeline/extractor_pipeline_selector.dart';
 export 'src/glossary/file_glossary_loader.dart' show RuntimeFileGlossaryLoader;
 export 'src/validation/json_extractor.dart';
 export 'src/validation/clinical_facts_validator.dart';
+
+// Heuristics
+export 'src/heuristics/heuristics.dart';

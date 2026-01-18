@@ -26,6 +26,7 @@ class ScribePipelineResult {
     required this.timings,
     this.rawTranscript,
     this.negatedFindings = const [],
+    this.pipelineMetadata,
   });
 
   /// The original transcript (if available).
@@ -45,6 +46,10 @@ class ScribePipelineResult {
 
   /// List of explicitly negated clinical findings.
   final List<String> negatedFindings;
+
+  /// Pipeline selection metadata (for UI indicators).
+  /// Contains: pipelineUsed, fallbackTriggered, complexityScore, etc.
+  final Map<String, dynamic>? pipelineMetadata;
 }
 
 /// Timing information for pipeline stages.

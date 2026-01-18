@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:docsoft_scribe_runtime/docsoft_scribe_runtime.dart' as runtime;
 import 'package:equatable/equatable.dart';
 
 import '../../../../core/base/failure.dart';
@@ -23,6 +24,7 @@ class MedicalScribeResult extends Equatable {
     required this.soapText,
     required this.timings,
     this.negatedFindings = const [],
+    this.pipelineMetadata,
   });
 
   /// The transcribed audio with speaker diarization.
@@ -41,6 +43,11 @@ class MedicalScribeResult extends Equatable {
   /// Example: ['fiebre', 'tos', 'mocos', 'alergias']
   final List<String> negatedFindings;
 
+  /// Pipeline selection metadata (for UI indicators).
+  /// Contains: pipelineUsed, fallbackTriggered, complexityScore, etc.
+  /// Only populated when ExtractorPipelineSelector is used.
+  final Map<String, dynamic>? pipelineMetadata;
+
   @override
   List<Object?> get props => [
     transcript,
@@ -48,6 +55,7 @@ class MedicalScribeResult extends Equatable {
     soapText,
     timings,
     negatedFindings,
+    pipelineMetadata,
   ];
 }
 
@@ -111,6 +119,8 @@ final class ProcessEncounterUseCase {
     required this.extractorRepository,
     required this.composerRepository,
     required this.medicalizationService,
+    this.advancedExtractorRepository,
+    this.featureFlags = runtime.FeatureFlags.prod,
     this.sanitizer = const ClinicalFactsSanitizer(),
   });
 
@@ -118,6 +128,12 @@ final class ProcessEncounterUseCase {
   final EncounterExtractorRepository extractorRepository;
   final NoteComposerRepository composerRepository;
   final MedicalizationService medicalizationService;
+
+  /// Optional advanced extractor (MedGemma). If null, always uses baseline.
+  final EncounterExtractorRepository? advancedExtractorRepository;
+
+  /// Feature flags controlling pipeline behavior (from runtime package).
+  final runtime.FeatureFlags featureFlags;
 
   final ClinicalFactsSanitizer sanitizer;
 
@@ -252,59 +268,85 @@ final class ProcessEncounterUseCase {
       durationMs: transcript.durationMs,
     );
 
-    // Stage 2: Extract clinical facts (using medicalized transcript)
+    // ─────────────────────────────────────────────────────────────────────────
+    // Stage 2: Extract clinical facts with Pipeline Selector (ÉPICA 5)
+    // ─────────────────────────────────────────────────────────────────────────
     final extractStart = DateTime.now().millisecondsSinceEpoch;
-    final extractResult = await extractorRepository.extract(
-      medicalizedTranscript,
-      context: options.extractionContext,
+
+    final selector = runtime.ExtractorPipelineSelector(
+      baselineExtractor: _RuntimeExtractorAdapter(extractorRepository),
+      advancedExtractor: advancedExtractorRepository != null
+          ? _RuntimeExtractorAdapter(advancedExtractorRepository!)
+          : null,
+      featureFlags: featureFlags,
+      logger: const _AppLogSink(),
     );
 
-    return extractResult.when(
-      success: (extractedFacts) async {
-        final extractEnd = DateTime.now().millisecondsSinceEpoch;
-        final extractionMs = extractEnd - extractStart;
+    final runtimeTWS = _appToRuntimeTWS(medicalizedTranscript);
+    final runtimeContext = _appToRuntimeContext(options.extractionContext);
 
-        // ─────────────────────────────────────────────────────────────
-        // Stage 2.5: Apply fallback for missing diagnosis/plan
-        // ─────────────────────────────────────────────────────────────
-        // If extractor returned empty assessment/plan but we have
-        // chief complaint or HPI, apply conservative fallback values.
-        final facts = _applyExtractorFallback(
-          extractedFacts,
-          hasNegatedFindings: sanitizedNegatedFindings.isNotEmpty,
-          negatedFindings: sanitizedNegatedFindings,
-        );
+    final extractResult = await selector.extract(
+      transcript: runtimeTWS,
+      context: runtimeContext,
+    );
 
-        // Stage 3: Compose SOAP note
-        final composeStart = DateTime.now().millisecondsSinceEpoch;
-        final composeResult = await composerRepository.composeSoap(
-          facts,
-          template: options.noteTemplate,
-        );
+    final extractedSelection = extractResult.when(
+      success: (selection) => selection,
+      error: (failure) => null,
+    );
 
-        return composeResult.when(
-          success: (soapText) {
-            final composeEnd = DateTime.now().millisecondsSinceEpoch;
-            final compositionMs = composeEnd - composeStart;
+    if (extractedSelection == null) {
+      // Get the failure from result
+      final failure = extractResult.when(
+        success: (_) => throw StateError('unreachable'),
+        error: (f) => f,
+      );
+      // Map back to App Failure
+      return Result.error(_runtimeToAppFailure(failure));
+    }
 
-            return Result.success(
-              MedicalScribeResult(
-                // Return original transcript (not medicalized) for traceability
-                transcript: transcript,
-                facts: facts,
-                soapText: soapText,
-                timings: PipelineTimings(
-                  transcriptionMs: transcriptionMs,
-                  medicalizationMs: medicalizationMs,
-                  extractionMs: extractionMs,
-                  compositionMs: compositionMs,
-                ),
-                negatedFindings: sanitizedNegatedFindings,
-              ),
-            );
-          },
-          error: (failure) =>
-              Result<MedicalScribeResult, Failure>.error(failure),
+    // Convert runtime Facts to App Facts
+    final extractedFacts = _runtimeToAppFacts(extractedSelection.facts);
+    final pipelineMetadata = extractedSelection.metadata.toJson();
+
+    final extractEnd = DateTime.now().millisecondsSinceEpoch;
+    final extractionMs = extractEnd - extractStart;
+
+    // ─────────────────────────────────────────────────────────────
+    // Stage 2.5: Apply fallback for missing diagnosis/plan
+    // ─────────────────────────────────────────────────────────────
+    final facts = _applyExtractorFallback(
+      extractedFacts,
+      hasNegatedFindings: sanitizedNegatedFindings.isNotEmpty,
+      negatedFindings: sanitizedNegatedFindings,
+    );
+
+    // Stage 3: Compose SOAP note
+    final composeStart = DateTime.now().millisecondsSinceEpoch;
+    final composeResult = await composerRepository.composeSoap(
+      facts,
+      template: options.noteTemplate,
+    );
+
+    return composeResult.when(
+      success: (soapText) {
+        final composeEnd = DateTime.now().millisecondsSinceEpoch;
+        final compositionMs = composeEnd - composeStart;
+
+        return Result.success(
+          MedicalScribeResult(
+            transcript: transcript,
+            facts: facts,
+            soapText: soapText,
+            timings: PipelineTimings(
+              transcriptionMs: transcriptionMs,
+              medicalizationMs: medicalizationMs,
+              extractionMs: extractionMs,
+              compositionMs: compositionMs,
+            ),
+            negatedFindings: sanitizedNegatedFindings,
+            pipelineMetadata: pipelineMetadata,
+          ),
         );
       },
       error: (failure) => Result<MedicalScribeResult, Failure>.error(failure),
@@ -446,4 +488,139 @@ final class ProcessEncounterUseCase {
 
     return result.toList();
   }
+}
+
+/// App implementation of LogSink that delegates to the app's Log class.
+class _AppLogSink implements runtime.LogSink {
+  const _AppLogSink();
+
+  @override
+  void info(String message) {
+    Log.info(message);
+  }
+
+  @override
+  void debug(String message) {
+    Log.debug(message);
+  }
+
+  @override
+  void error(String message, [Object? error, StackTrace? stackTrace]) {
+    final fullMessage = error != null
+        ? '$message\nError: $error\nStack: $stackTrace'
+        : message;
+    Log.error(fullMessage);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADAPTERS (App <-> Runtime Types)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Adapts App [EncounterExtractorRepository] to Runtime interface.
+class _RuntimeExtractorAdapter implements runtime.EncounterExtractorRepository {
+  _RuntimeExtractorAdapter(this._repository);
+
+  final EncounterExtractorRepository _repository;
+
+  @override
+  Future<runtime.Result<runtime.ClinicalFactsDTO, runtime.Failure>> extract(
+    runtime.TranscriptWithSpeakers transcript, {
+    runtime.ExtractionContext context = const runtime.ExtractionContext(),
+  }) async {
+    // Convert Runtime TWS -> App TWS
+    final appTWS = _runtimeToAppTWS(transcript);
+    final appContext = _runtimeToAppContext(context);
+
+    final result = await _repository.extract(appTWS, context: appContext);
+
+    return result.when(
+      success: (appFacts) {
+        // Convert App Facts -> Runtime Facts
+        final runtimeFacts = _appToRuntimeFacts(appFacts);
+        return runtime.Result.success(runtimeFacts);
+      },
+      error: (appFailure) {
+        // Convert App Failure -> Runtime Failure
+        final runtimeFailure = runtime.Failure(
+          type: runtime.FailureType.unknown,
+          message: appFailure.message,
+          code: appFailure.code,
+          stackTrace: appFailure.stackTrace,
+        );
+        return runtime.Result.error(runtimeFailure);
+      },
+    );
+  }
+}
+
+// --- Converters ---
+
+runtime.TranscriptWithSpeakers _appToRuntimeTWS(TranscriptWithSpeakers app) {
+  return runtime.TranscriptWithSpeakers(
+    segments: app.segments
+        .map(
+          (s) => runtime.TranscriptSegment(
+            text: s.text,
+            speaker: s.speaker,
+            startMs: s.startMs,
+            endMs: s.endMs,
+          ),
+        )
+        .toList(),
+    language: app.language,
+    durationMs: app.durationMs,
+  );
+}
+
+TranscriptWithSpeakers _runtimeToAppTWS(runtime.TranscriptWithSpeakers rt) {
+  return TranscriptWithSpeakers(
+    segments: rt.segments
+        .map(
+          (s) => TranscriptSegment(
+            text: s.text,
+            speaker: s.speaker,
+            startMs: s.startMs,
+            endMs: s.endMs,
+          ),
+        )
+        .toList(),
+    language: rt.language,
+    durationMs: rt.durationMs,
+  );
+}
+
+runtime.ExtractionContext _appToRuntimeContext(ExtractionContext ctx) {
+  return runtime.ExtractionContext(
+    specialty: ctx.specialty,
+    patientAge: ctx.patientAge,
+    priorDiagnoses: ctx.priorDiagnoses,
+    // Note: runtime context might lack encounterType/gender if not updated,
+    // but basic fields usually match.
+  );
+}
+
+ExtractionContext _runtimeToAppContext(runtime.ExtractionContext ctx) {
+  return ExtractionContext(
+    specialty: ctx.specialty,
+    patientAge: ctx.patientAge,
+    priorDiagnoses: ctx.priorDiagnoses,
+  );
+}
+
+runtime.ClinicalFactsDTO _appToRuntimeFacts(ClinicalFactsDTO appFacts) {
+  return runtime.ClinicalFactsDTO.fromJson(appFacts.toJson());
+}
+
+ClinicalFactsDTO _runtimeToAppFacts(runtime.ClinicalFactsDTO rtFacts) {
+  return ClinicalFactsDTO.fromJson(rtFacts.toJson());
+}
+
+Failure _runtimeToAppFailure(runtime.Failure rtFailure) {
+  return Failure(
+    type: FailureType.unknown,
+    message: rtFailure.message,
+    code: rtFailure.code,
+    stackTrace: rtFailure.stackTrace,
+  );
 }

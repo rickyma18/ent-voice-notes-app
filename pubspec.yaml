@@ -81,6 +81,11 @@ dependencies:
   wakelock_plus: ^1.2.8
   # Digital signature pad
   signature: ^5.5.0
+  # Scribe pipeline packages (local monorepo)
+  docsoft_scribe_core:
+    path: packages/docsoft_scribe_core
+  docsoft_scribe_runtime:
+    path: packages/docsoft_scribe_runtime
 
 dev_dependencies:
   flutter_test:

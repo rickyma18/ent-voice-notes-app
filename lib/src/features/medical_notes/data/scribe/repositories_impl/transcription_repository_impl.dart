@@ -40,7 +40,7 @@ final class TranscriptionRepositoryImpl extends TranscriptionRepository {
     File audioFile, {
     TranscriptionOptions options = const TranscriptionOptions(),
   }) async {
-    return asyncGuard(() async {
+    try {
       Log.info('[TranscriptionRepository] Starting transcription');
       Log.info(
         '[TranscriptionRepository] Diarization: '
@@ -56,13 +56,23 @@ final class TranscriptionRepositoryImpl extends TranscriptionRepository {
       );
 
       if (result.segments.isEmpty) {
-        throw Exception('Transcription service returned no segments');
+        return Result.error(
+          Failure(
+            type: FailureType.unknown,
+            message: 'Transcription service returned no segments',
+          ),
+        );
       }
 
       // Validate at least one segment has text
       final hasText = result.segments.any((s) => s.text.trim().isNotEmpty);
       if (!hasText) {
-        throw Exception('Transcription service returned empty text');
+        return Result.error(
+          Failure(
+            type: FailureType.unknown,
+            message: 'Transcription service returned empty text',
+          ),
+        );
       }
 
       Log.info(
@@ -114,8 +124,16 @@ final class TranscriptionRepositoryImpl extends TranscriptionRepository {
         );
       }
 
-      return transcript;
-    });
+      return Result.success(transcript);
+    } catch (e, s) {
+      return Result.error(
+        Failure(
+          type: FailureType.unknown,
+          message: e.toString(),
+          stackTrace: s,
+        ),
+      );
+    }
   }
 
   /// Applies speaker diarization to the transcript.
