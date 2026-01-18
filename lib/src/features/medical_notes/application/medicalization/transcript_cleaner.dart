@@ -25,7 +25,7 @@
 /// Input: "Eh... pues me duele la cabeza, este... desde hace 3 días"
 /// Output: "me duele la cabeza, desde hace 3 días"
 String cleanTranscriptForExtraction(String input) {
-  if (input.trim().isEmpty) return input;
+  if (input.trim().isEmpty) return '';
 
   var result = input;
 

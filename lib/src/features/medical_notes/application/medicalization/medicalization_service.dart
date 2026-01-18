@@ -54,8 +54,10 @@ class MedicalizationOutput {
   /// This captures negations even when there's no mapping for the term.
   final List<String> negatedFindings;
 
-  /// Returns true if any transformations were applied.
-  bool get hasChanges => appliedMappings.isNotEmpty;
+  /// Returns true if any transformations were applied or negations preserved.
+  /// Negations preserved count as "changes" because they represent intentional
+  /// skipping of mappings due to negation context.
+  bool get hasChanges => appliedMappings.isNotEmpty || negationsPreserved > 0;
 
   /// Returns true if any negations were detected (with or without mappings).
   bool get hasNegations => negationsPreserved > 0 || negatedFindings.isNotEmpty;

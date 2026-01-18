@@ -171,20 +171,23 @@ void main() {
       expect(antecedentes['medicamentos_habituales'], equals(['omeprazol']));
     });
 
-    test('17. nulls arrays that become empty after filtering', () {
-      final parsed = {
-        'antecedentes': {
-          'alergias': ['ninguna', 'no sé'],
-          'medicamentos_habituales': ['nada'],
-        },
-      };
+    test(
+      '17. keeps arrays as empty list if they become empty after filtering',
+      () {
+        final parsed = {
+          'antecedentes': {
+            'alergias': ['ninguna', 'no sé'],
+            'medicamentos_habituales': ['nada'],
+          },
+        };
 
-      final sanitized = sanitizeStructuredFieldsV1(parsed);
-      final antecedentes = sanitized['antecedentes'] as Map;
+        final sanitized = sanitizeStructuredFieldsV1(parsed);
+        final antecedentes = sanitized['antecedentes'] as Map;
 
-      expect(antecedentes['alergias'], isNull);
-      expect(antecedentes['medicamentos_habituales'], isNull);
-    });
+        expect(antecedentes['alergias'], isEmpty);
+        expect(antecedentes['medicamentos_habituales'], isEmpty);
+      },
+    );
 
     test('18. cleans residual fillers from text fields', () {
       final parsed = {

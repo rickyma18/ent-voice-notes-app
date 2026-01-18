@@ -26,6 +26,7 @@ import '../widgets/clinical_history_wizard/clinical_history_wizard.dart';
 import '../widgets/clinical_history_wizard/dictation_quick_sheet.dart';
 import '../widgets/clinical_history_wizard/vitals_card.dart';
 import '../../../../ui/docsoft_ui.dart';
+import '../../../../ui/widgets/advanced_analysis_badge.dart';
 
 /// Multi-step wizard page for creating/editing clinical history notes.
 ///
@@ -2240,12 +2241,18 @@ class _ClinicalHistoryWizardPageState
                               ),
                           ],
                         ),
-                        // Second Row for Chip
-                        if (_showAiChip) ...[
+                        // Second Row for Chip + Advanced Analysis Badge
+                        if (_showAiChip || _showAdvancedBadge) ...[
                           const SizedBox(height: DocsoftSpacing.xs),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.end,
-                            children: [_buildAIChip()],
+                            children: [
+                              _buildAdvancedBadge(),
+                              if (_showAiChip) ...[
+                                const SizedBox(width: DocsoftSpacing.xs),
+                                _buildAIChip(),
+                              ],
+                            ],
                           ),
                         ],
                       ],
@@ -2377,6 +2384,27 @@ class _ClinicalHistoryWizardPageState
       _hasDictation && !_isGeneratingSuggestions && !_suggestionsGenerated;
 
   bool get _showAiChip => _hasActiveSuggestions || _canUseAiChip;
+
+  /// Whether to show the advanced analysis badge.
+  /// Only shown when advanced pipeline was used successfully (no fallback).
+  bool get _showAdvancedBadge {
+    final controller = ref.read(medicalNotesControllerProvider.notifier);
+    final meta = controller.lastScribeResult?.pipelineMetadata;
+    if (meta == null) return false;
+    return meta['pipelineUsed'] == 'advanced' &&
+        meta['fallbackTriggered'] == false;
+  }
+
+  /// Gets the pipeline metadata for the badge.
+  Map<String, dynamic>? get _pipelineMetadata {
+    final controller = ref.read(medicalNotesControllerProvider.notifier);
+    return controller.lastScribeResult?.pipelineMetadata;
+  }
+
+  /// Builds the advanced analysis badge if applicable.
+  Widget _buildAdvancedBadge() {
+    return AdvancedAnalysisBadge(pipelineMetadata: _pipelineMetadata);
+  }
 
   Widget _buildAIChip() {
     // 1. Sugerencias listas (Prioridad: alta)
