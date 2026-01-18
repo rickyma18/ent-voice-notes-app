@@ -26,9 +26,8 @@ abstract base class DoctorsRemoteDatasource {
 
 /// Firestore implementation of DoctorsRemoteDatasource
 final class DoctorsRemoteDatasourceImpl implements DoctorsRemoteDatasource {
-  DoctorsRemoteDatasourceImpl({
-    FirebaseFirestore? firestore,
-  }) : _firestore = firestore ?? FirebaseFirestore.instance;
+  DoctorsRemoteDatasourceImpl({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
@@ -60,14 +59,11 @@ final class DoctorsRemoteDatasourceImpl implements DoctorsRemoteDatasource {
     final now = FieldValue.serverTimestamp();
 
     // Set created_at only if creating, always update updated_at
-    await _collection.doc(doctor.id).set(
-      {
-        ...data,
-        'created_at': now,
-        'updated_at': now,
-      },
-      SetOptions(merge: true),
-    );
+    await _collection.doc(doctor.id).set({
+      ...data,
+      'created_at': now,
+      'updated_at': now,
+    }, SetOptions(merge: true));
   }
 
   @override

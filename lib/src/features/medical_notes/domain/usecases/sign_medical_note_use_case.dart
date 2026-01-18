@@ -90,7 +90,7 @@ final class SignMedicalNoteUseCase {
   /// Callback to update doctor's signature info in Firestore.
   /// This is injected to avoid circular dependencies with DoctorRepository.
   final Future<void> Function(String doctorId, DoctorSignatureInfo info)
-      onUpdateDoctorSignature;
+  onUpdateDoctorSignature;
 
   Future<Result<SignMedicalNoteResult, Failure>> call(
     SignMedicalNoteParams params,
@@ -135,10 +135,8 @@ final class SignMedicalNoteUseCase {
           );
         }
 
-        final defaultBytes =
-            await signatureStorage.downloadDoctorDefaultSignature(
-          doctorId: params.doctor.id,
-        );
+        final defaultBytes = await signatureStorage
+            .downloadDoctorDefaultSignature(doctorId: params.doctor.id);
 
         if (defaultBytes == null) {
           return const Result.error(
@@ -169,10 +167,11 @@ final class SignMedicalNoteUseCase {
       // ─────────────────────────────────────────────────────────────────────
       // STEP 2: Upload signature snapshot to note storage
       // ─────────────────────────────────────────────────────────────────────
-      final signatureSnapshotUrl = await signatureStorage.uploadNoteSignatureSnapshot(
-        noteId: params.note.id,
-        signatureBytes: signatureBytes,
-      );
+      final signatureSnapshotUrl = await signatureStorage
+          .uploadNoteSignatureSnapshot(
+            noteId: params.note.id,
+            signatureBytes: signatureBytes,
+          );
 
       // ─────────────────────────────────────────────────────────────────────
       // STEP 3: Optionally save as doctor's default signature
@@ -180,10 +179,11 @@ final class SignMedicalNoteUseCase {
       String? newDefaultSignatureUrl;
 
       if (params.saveAsDefault && !params.useDefaultSignature) {
-        newDefaultSignatureUrl = await signatureStorage.uploadDoctorDefaultSignature(
-          doctorId: params.doctor.id,
-          signatureBytes: signatureBytes,
-        );
+        newDefaultSignatureUrl = await signatureStorage
+            .uploadDoctorDefaultSignature(
+              doctorId: params.doctor.id,
+              signatureBytes: signatureBytes,
+            );
 
         // Update doctor's signature info in Firestore
         await onUpdateDoctorSignature(
@@ -242,20 +242,20 @@ final class SignMedicalNoteUseCase {
 
       return switch (updateResult) {
         Success(:final data) => Result.success(
-            SignMedicalNoteResult(
-              signedNote: data,
-              signatureSnapshotUrl: signatureSnapshotUrl,
-              signedPdfUrl: signedPdfUrl,
-              newDefaultSignatureUrl: newDefaultSignatureUrl,
-            ),
+          SignMedicalNoteResult(
+            signedNote: data,
+            signatureSnapshotUrl: signatureSnapshotUrl,
+            signedPdfUrl: signedPdfUrl,
+            newDefaultSignatureUrl: newDefaultSignatureUrl,
           ),
+        ),
         Error(:final error) => Result.error(error),
         _ => Result.error(
-            const Failure(
-              type: FailureType.unknown,
-              message: 'Error inesperado al actualizar la nota.',
-            ),
+          const Failure(
+            type: FailureType.unknown,
+            message: 'Error inesperado al actualizar la nota.',
           ),
+        ),
       };
     } catch (e) {
       return Result.error(

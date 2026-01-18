@@ -41,9 +41,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         case AsyncData(:final value) when value != null:
           context.goNamed(RouteNames.home);
         case AsyncError(:final error):
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(error.toString())),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(error.toString())));
       }
     });
 
@@ -53,9 +53,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         case AsyncData(:final value) when value != null:
           context.goNamed(RouteNames.home);
         case AsyncError(:final error):
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(error.toString())),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(error.toString())));
       }
     });
   }
@@ -108,14 +108,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   void _onSubmit() {
     if (_formKey.currentState!.validate()) {
       if (_isLoginMode) {
-        ref.read(loginProvider.notifier).login(
+        ref
+            .read(loginProvider.notifier)
+            .login(
               email: _emailController.text,
               password: _passwordController.text,
               shouldRemember: _shouldRemember.value,
             );
       } else {
         // Register directly using registerProvider
-        ref.read(registerProvider.notifier).register(
+        ref
+            .read(registerProvider.notifier)
+            .register(
               firstName: _firstNameController.text.trim(),
               lastName: _lastNameController.text.trim(),
               email: _emailController.text.trim(),
@@ -131,8 +135,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final registerState = ref.watch(registerProvider);
 
     // Combine loading states based on current mode
-    final isLoading =
-        _isLoginMode ? loginState.isLoading : registerState.isLoading;
+    final isLoading = _isLoginMode
+        ? loginState.isLoading
+        : registerState.isLoading;
 
     return Scaffold(
       backgroundColor: DocsoftColors.background,
@@ -400,9 +405,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         // Submit button
         DocsoftPrimaryButton(
           onPressed: isLoading ? null : _onSubmit,
-          label: _isLoginMode
-              ? context.locale.login
-              : 'Crear cuenta',
+          label: _isLoginMode ? context.locale.login : 'Crear cuenta',
           isLoading: isLoading,
           fullWidth: true,
         ),

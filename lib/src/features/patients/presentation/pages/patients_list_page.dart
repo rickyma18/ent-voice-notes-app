@@ -264,7 +264,8 @@ class _PatientsListPageState extends ConsumerState<PatientsListPage> {
               final confirmed = await DocsoftConfirmations.confirmDelete(
                 context: context,
                 title: 'Eliminar paciente',
-                message: '¿Seguro que deseas eliminar a ${displayData.name}? '
+                message:
+                    '¿Seguro que deseas eliminar a ${displayData.name}? '
                     'Esta acción no se puede deshacer.',
               );
 

@@ -12,23 +12,21 @@ void main() {
   group('Scribe V2 Persistence Invocation', () {
     // Note: This test is skipped because it requires Firebase initialization.
     // The provider is tested indirectly through the controller tests.
-    test(
-      'scribeV2StorageDatasourceProvider is available',
-      () {
-        // This test requires Firebase initialization which is not available
-        // in unit tests. The provider functionality is tested through
-        // integration tests with Firebase emulator.
-        expect(scribeV2StorageDatasourceProvider, isNotNull);
-      },
-    );
+    test('scribeV2StorageDatasourceProvider is available', () {
+      // This test requires Firebase initialization which is not available
+      // in unit tests. The provider functionality is tested through
+      // integration tests with Firebase emulator.
+      expect(scribeV2StorageDatasourceProvider, isNotNull);
+    });
 
     test('persistScribeV2Result skips when source is legacy', () async {
       // Arrange
       final container = ProviderContainer();
       addTearDown(container.dispose);
 
-      final controller =
-          container.read(medicalNotesControllerProvider.notifier);
+      final controller = container.read(
+        medicalNotesControllerProvider.notifier,
+      );
 
       // Act
       final result = await controller.persistScribeV2Result(
@@ -45,8 +43,9 @@ void main() {
       final container = ProviderContainer();
       addTearDown(container.dispose);
 
-      final controller =
-          container.read(medicalNotesControllerProvider.notifier);
+      final controller = container.read(
+        medicalNotesControllerProvider.notifier,
+      );
 
       // Make sure no cached result
       controller.clearLastScribeResult();
@@ -66,8 +65,9 @@ void main() {
       final container = ProviderContainer();
       addTearDown(container.dispose);
 
-      final controller =
-          container.read(medicalNotesControllerProvider.notifier);
+      final controller = container.read(
+        medicalNotesControllerProvider.notifier,
+      );
 
       // Assert
       expect(controller.lastScribeResult, isNull);
@@ -78,8 +78,9 @@ void main() {
       final container = ProviderContainer();
       addTearDown(container.dispose);
 
-      final controller =
-          container.read(medicalNotesControllerProvider.notifier);
+      final controller = container.read(
+        medicalNotesControllerProvider.notifier,
+      );
 
       // Act
       controller.clearLastScribeResult();
@@ -117,29 +118,35 @@ void main() {
         final container = ProviderContainer();
         addTearDown(container.dispose);
 
-        final controller =
-            container.read(medicalNotesControllerProvider.notifier);
+        final controller = container.read(
+          medicalNotesControllerProvider.notifier,
+        );
 
         // Verify the source constants used for conditional persistence
         expect(
-          MedicalNotesController.kSourceScribeV2 != MedicalNotesController.kSourceLegacy,
+          MedicalNotesController.kSourceScribeV2 !=
+              MedicalNotesController.kSourceLegacy,
           isTrue,
         );
         expect(
-          MedicalNotesController.kSourceFallback != MedicalNotesController.kSourceLegacy,
+          MedicalNotesController.kSourceFallback !=
+              MedicalNotesController.kSourceLegacy,
           isTrue,
         );
       });
 
-      test('should persist for fallback_from_scribe_v2 source when result is cached', () {
-        // Fallback should also trigger persistence if we have cached result
-        // (the Scribe V2 pipeline was attempted, even if it fell back)
+      test(
+        'should persist for fallback_from_scribe_v2 source when result is cached',
+        () {
+          // Fallback should also trigger persistence if we have cached result
+          // (the Scribe V2 pipeline was attempted, even if it fell back)
 
-        expect(
-          MedicalNotesController.kSourceFallback,
-          isNot(MedicalNotesController.kSourceLegacy),
-        );
-      });
+          expect(
+            MedicalNotesController.kSourceFallback,
+            isNot(MedicalNotesController.kSourceLegacy),
+          );
+        },
+      );
 
       test('should NOT persist for legacy source', () {
         // Legacy source means Scribe V2 was never used,

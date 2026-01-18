@@ -25,9 +25,7 @@ void main() {
     test('useScribeV2ForNoteCreation can be overridden to true', () {
       // Arrange
       final container = ProviderContainer(
-        overrides: [
-          useScribeV2ForNoteCreationProvider.overrideWithValue(true),
-        ],
+        overrides: [useScribeV2ForNoteCreationProvider.overrideWithValue(true)],
       );
       addTearDown(container.dispose);
 
@@ -38,39 +36,41 @@ void main() {
       expect(flagValue, isTrue);
     });
 
-    test('MedicalNotesController.isScribeV2EnabledForCreation reflects flag', () {
-      // Test with flag OFF
-      final containerOff = ProviderContainer(
-        overrides: [
-          useScribeV2ForNoteCreationProvider.overrideWithValue(false),
-        ],
-      );
-      addTearDown(containerOff.dispose);
+    test(
+      'MedicalNotesController.isScribeV2EnabledForCreation reflects flag',
+      () {
+        // Test with flag OFF
+        final containerOff = ProviderContainer(
+          overrides: [
+            useScribeV2ForNoteCreationProvider.overrideWithValue(false),
+          ],
+        );
+        addTearDown(containerOff.dispose);
 
-      final controllerOff =
-          containerOff.read(medicalNotesControllerProvider.notifier);
-      expect(controllerOff.isScribeV2EnabledForCreation, isFalse);
+        final controllerOff = containerOff.read(
+          medicalNotesControllerProvider.notifier,
+        );
+        expect(controllerOff.isScribeV2EnabledForCreation, isFalse);
 
-      // Test with flag ON
-      final containerOn = ProviderContainer(
-        overrides: [
-          useScribeV2ForNoteCreationProvider.overrideWithValue(true),
-        ],
-      );
-      addTearDown(containerOn.dispose);
+        // Test with flag ON
+        final containerOn = ProviderContainer(
+          overrides: [
+            useScribeV2ForNoteCreationProvider.overrideWithValue(true),
+          ],
+        );
+        addTearDown(containerOn.dispose);
 
-      final controllerOn =
-          containerOn.read(medicalNotesControllerProvider.notifier);
-      expect(controllerOn.isScribeV2EnabledForCreation, isTrue);
-    });
+        final controllerOn = containerOn.read(
+          medicalNotesControllerProvider.notifier,
+        );
+        expect(controllerOn.isScribeV2EnabledForCreation, isTrue);
+      },
+    );
 
     test('Source constants are defined correctly', () {
       expect(MedicalNotesController.kSourceScribeV2, 'scribe_v2');
       expect(MedicalNotesController.kSourceLegacy, 'legacy');
-      expect(
-        MedicalNotesController.kSourceFallback,
-        'fallback_from_scribe_v2',
-      );
+      expect(MedicalNotesController.kSourceFallback, 'fallback_from_scribe_v2');
     });
   });
 

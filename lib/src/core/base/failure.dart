@@ -90,7 +90,8 @@ abstract class Failure with _$Failure {
       return switch (e.code) {
         'permission-denied' => Failure(
           type: FailureType.unauthorized,
-          message: 'Permission denied. You do not have access to this resource.',
+          message:
+              'Permission denied. You do not have access to this resource.',
           code: e.code,
           stackTrace: e.stackTrace,
         ),

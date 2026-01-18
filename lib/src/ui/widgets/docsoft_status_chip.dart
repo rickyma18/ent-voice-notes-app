@@ -83,11 +83,7 @@ class DocsoftStatusChip extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (icon != null) ...[
-          Icon(
-            icon,
-            size: 14,
-            color: _foregroundColor,
-          ),
+          Icon(icon, size: 14, color: _foregroundColor),
           const SizedBox(width: DocsoftSpacing.xs + 2), // 6px
         ],
         Text(
@@ -104,9 +100,7 @@ class DocsoftStatusChip extends StatelessWidget {
     final decoration = BoxDecoration(
       color: _backgroundColor,
       borderRadius: BorderRadius.circular(DocsoftRadii.full),
-      border: _borderColor != null
-          ? Border.all(color: _borderColor!)
-          : null,
+      border: _borderColor != null ? Border.all(color: _borderColor!) : null,
     );
 
     if (onTap != null) {
@@ -164,11 +158,7 @@ class DocsoftDictationReadyChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.check_circle,
-            size: 14,
-            color: DocsoftColors.primary,
-          ),
+          Icon(Icons.check_circle, size: 14, color: DocsoftColors.primary),
           const SizedBox(width: DocsoftSpacing.xs + 2), // 6px
           Text(
             'Dictado listo',

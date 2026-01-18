@@ -502,7 +502,10 @@ ClinicalFactsDTO get fixtureEpica5Otalgia => const ClinicalFactsDTO(
     confidenceOverall: ConfidenceLevel.alta,
   ),
   patient: PatientInfo(),
-  chiefComplaint: ChiefComplaintSection(text: 'Otalgia derecha', evidence: null),
+  chiefComplaint: ChiefComplaintSection(
+    text: 'Otalgia derecha',
+    evidence: null,
+  ),
   hpi: HPISection(
     narrative:
         'Refiere otalgia derecha de tres días de evolución, punzante, sin fiebre ni líquido, con dolor al masticar.',
@@ -554,7 +557,11 @@ ClinicalFactsDTO get fixtureEpica5TosSeca => const ClinicalFactsDTO(
   chiefComplaint: ChiefComplaintSection(text: 'Tos seca', evidence: null),
   hpi: HPISection(
     narrative: 'Refiere tos seca desde hace una semana, intermitente.',
-    keyPoints: ['tos seca desde hace una semana', 'no falta de aire', 'no dolor en el pecho'],
+    keyPoints: [
+      'tos seca desde hace una semana',
+      'no falta de aire',
+      'no dolor en el pecho',
+    ],
     evidence: [],
   ),
   ros: ROSSection(
@@ -593,7 +600,10 @@ ClinicalFactsDTO get fixtureEpica5DolorAbdominal => const ClinicalFactsDTO(
     confidenceOverall: ConfidenceLevel.alta,
   ),
   patient: PatientInfo(),
-  chiefComplaint: ChiefComplaintSection(text: 'Dolor abdominal', evidence: null),
+  chiefComplaint: ChiefComplaintSection(
+    text: 'Dolor abdominal',
+    evidence: null,
+  ),
   hpi: HPISection(
     narrative: 'Refiere dolor abdominal tipo retortijón desde ayer.',
     keyPoints: ['dolor abdominal desde ayer', 'niega vómito', 'niega diarrea'],
@@ -601,7 +611,10 @@ ClinicalFactsDTO get fixtureEpica5DolorAbdominal => const ClinicalFactsDTO(
   ),
   ros: ROSSection(
     positives: ['dolor abdominal'],
-    negatives: ['vómito', 'diarrea'], // "he vomitado", "he tenido", "sé si" filtered
+    negatives: [
+      'vómito',
+      'diarrea',
+    ], // "he vomitado", "he tenido", "sé si" filtered
     evidence: [],
   ),
   pmh: [],
@@ -628,7 +641,8 @@ ClinicalFactsDTO get fixtureEpica5DolorAbdominal => const ClinicalFactsDTO(
 /// ÉPICA 5 CASO 3: Cefalea con paracetamol efectivo - plan.treatments = "Continuar paracetamol"
 /// Speech: "Me duele la cabeza en las tardes, como presión...
 ///          Se me quita con paracetamol."
-ClinicalFactsDTO get fixtureEpica5CefaleaConParacetamol => const ClinicalFactsDTO(
+ClinicalFactsDTO
+get fixtureEpica5CefaleaConParacetamol => const ClinicalFactsDTO(
   metadata: ExtractionMetadata(
     specialty: 'general',
     language: 'es',
@@ -644,7 +658,10 @@ ClinicalFactsDTO get fixtureEpica5CefaleaConParacetamol => const ClinicalFactsDT
   ),
   ros: ROSSection(
     positives: [],
-    negatives: ['visión borrosa', 'náusea'], // "veo borroso" normalized to "visión borrosa"
+    negatives: [
+      'visión borrosa',
+      'náusea',
+    ], // "veo borroso" normalized to "visión borrosa"
     evidence: [],
   ),
   pmh: [],
@@ -660,7 +677,9 @@ ClinicalFactsDTO get fixtureEpica5CefaleaConParacetamol => const ClinicalFactsDT
   ),
   plan: PlanSection(
     diagnostics: [],
-    treatments: ['Continuar paracetamol'], // P1: "Continuar" not just "paracetamol"
+    treatments: [
+      'Continuar paracetamol',
+    ], // P1: "Continuar" not just "paracetamol"
     referrals: [],
     education: [],
     followUp: null,
@@ -681,10 +700,7 @@ ClinicalFactsDTO get fixtureEpica5ConsultaReferida => const ClinicalFactsDTO(
   patient: PatientInfo(),
   chiefComplaint: ChiefComplaintSection(
     text: 'Consulta referida',
-    evidence: EvidenceDTO(
-      quote: 'vine porque me mandaron',
-      speaker: 'Patient',
-    ),
+    evidence: EvidenceDTO(quote: 'vine porque me mandaron', speaker: 'Patient'),
   ),
   hpi: HPISection(
     narrative: 'Niega síntomas importantes.',
@@ -700,11 +716,7 @@ ClinicalFactsDTO get fixtureEpica5ConsultaReferida => const ClinicalFactsDTO(
   medications: [],
   allergies: [],
   physicalExam: null,
-  assessment: AssessmentSection(
-    primary: null,
-    differential: [],
-    evidence: [],
-  ),
+  assessment: AssessmentSection(primary: null, differential: [], evidence: []),
   plan: PlanSection(
     diagnostics: [],
     treatments: [],
@@ -985,65 +997,72 @@ void main() {
   // ═══════════════════════════════════════════════════════════════════════════
 
   group('E2E NO-ALUCINACIÓN: SOAP final no contiene frases inventadas', () {
-    test('Caso A (Mareo): SOAP final no contiene signos de alarma inventados',
-        () async {
-      final soapFinal = await generateSoapFinal(fixtureMareoConPlanVacio);
-      final jsonString = fixtureMareoConPlanVacio.toString();
+    test(
+      'Caso A (Mareo): SOAP final no contiene signos de alarma inventados',
+      () async {
+        final soapFinal = await generateSoapFinal(fixtureMareoConPlanVacio);
+        final jsonString = fixtureMareoConPlanVacio.toString();
 
-      for (final phrase in prohibitedHallucinationPhrases) {
-        // If the phrase is in the JSON, it's allowed in the SOAP
-        final isInJson = containsNormalized(jsonString, phrase);
-        if (isInJson) continue;
+        for (final phrase in prohibitedHallucinationPhrases) {
+          // If the phrase is in the JSON, it's allowed in the SOAP
+          final isInJson = containsNormalized(jsonString, phrase);
+          if (isInJson) continue;
 
+          expect(
+            containsNormalized(soapFinal, phrase),
+            isFalse,
+            reason:
+                'SOAP final no debe contener "$phrase" si no está en el JSON',
+          );
+        }
+      },
+    );
+
+    test(
+      'Caso B (Solo negaciones): SOAP final no contiene diagnóstico inventado',
+      () async {
+        final soapFinal = await generateSoapFinal(fixtureSoloNegaciones);
+        final jsonString = fixtureSoloNegaciones.toString();
+
+        for (final phrase in prohibitedHallucinationPhrases) {
+          final isInJson = containsNormalized(jsonString, phrase);
+          if (isInJson) continue;
+
+          expect(
+            containsNormalized(soapFinal, phrase),
+            isFalse,
+            reason:
+                'SOAP final no debe contener "$phrase" si no está en el JSON',
+          );
+        }
+      },
+    );
+
+    test(
+      'Caso A (Mareo): Plan vacío no genera tratamiento inventado en SOAP',
+      () async {
+        final soapFinal = await generateSoapFinal(fixtureMareoConPlanVacio);
+
+        // El plan está vacío en el fixture
+        // No debe contener signos de alarma genéricos
         expect(
-          containsNormalized(soapFinal, phrase),
+          containsNormalized(soapFinal, 'fiebre alta'),
           isFalse,
           reason:
-              'SOAP final no debe contener "$phrase" si no está en el JSON',
+              'SOAP final no debe inventar "fiebre alta" como signo de alarma',
         );
-      }
-    });
-
-    test('Caso B (Solo negaciones): SOAP final no contiene diagnóstico inventado',
-        () async {
-      final soapFinal = await generateSoapFinal(fixtureSoloNegaciones);
-      final jsonString = fixtureSoloNegaciones.toString();
-
-      for (final phrase in prohibitedHallucinationPhrases) {
-        final isInJson = containsNormalized(jsonString, phrase);
-        if (isInJson) continue;
-
         expect(
-          containsNormalized(soapFinal, phrase),
+          containsNormalized(soapFinal, '>38.5'),
           isFalse,
-          reason:
-              'SOAP final no debe contener "$phrase" si no está en el JSON',
+          reason: 'SOAP final no debe inventar temperaturas específicas',
         );
-      }
-    });
-
-    test('Caso A (Mareo): Plan vacío no genera tratamiento inventado en SOAP',
-        () async {
-      final soapFinal = await generateSoapFinal(fixtureMareoConPlanVacio);
-
-      // El plan está vacío en el fixture
-      // No debe contener signos de alarma genéricos
-      expect(
-        containsNormalized(soapFinal, 'fiebre alta'),
-        isFalse,
-        reason: 'SOAP final no debe inventar "fiebre alta" como signo de alarma',
-      );
-      expect(
-        containsNormalized(soapFinal, '>38.5'),
-        isFalse,
-        reason: 'SOAP final no debe inventar temperaturas específicas',
-      );
-      expect(
-        containsNormalized(soapFinal, 'deterioro del estado'),
-        isFalse,
-        reason: 'SOAP final no debe inventar signos de deterioro',
-      );
-    });
+        expect(
+          containsNormalized(soapFinal, 'deterioro del estado'),
+          isFalse,
+          reason: 'SOAP final no debe inventar signos de deterioro',
+        );
+      },
+    );
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1051,8 +1070,7 @@ void main() {
   // ═══════════════════════════════════════════════════════════════════════════
 
   group('E2E NO-TRANSFORMACIÓN: SOAP final no transforma datos', () {
-    test('Caso A: Si JSON no contiene "vértigo", SOAP final tampoco',
-        () async {
+    test('Caso A: Si JSON no contiene "vértigo", SOAP final tampoco', () async {
       final soapFinal = await generateSoapFinal(fixtureMareoConPlanVacio);
       final jsonString = fixtureMareoConPlanVacio.toString();
 
@@ -1073,65 +1091,69 @@ void main() {
       }
     });
 
-    test('Caso D: SOAP final no resuelve ambigüedad como diagnóstico definitivo',
-        () async {
-      final soapFinal = await generateSoapFinal(fixtureConAmbiguedad);
+    test(
+      'Caso D: SOAP final no resuelve ambigüedad como diagnóstico definitivo',
+      () async {
+        final soapFinal = await generateSoapFinal(fixtureConAmbiguedad);
 
-      // El fixture tiene ambiguousInfo con "mareo vs vértigo"
-      // El SOAP NO debe convertir esto en un diagnóstico definitivo
+        // El fixture tiene ambiguousInfo con "mareo vs vértigo"
+        // El SOAP NO debe convertir esto en un diagnóstico definitivo
 
-      // No debe aparecer "síndrome vertiginoso" como diagnóstico
-      expect(
-        containsNormalized(soapFinal, 'sindrome vertiginoso'),
-        isFalse,
-        reason:
-            'SOAP final no debe resolver ambigüedad "mareo vs vértigo" '
-            'a "síndrome vertiginoso"',
-      );
+        // No debe aparecer "síndrome vertiginoso" como diagnóstico
+        expect(
+          containsNormalized(soapFinal, 'sindrome vertiginoso'),
+          isFalse,
+          reason:
+              'SOAP final no debe resolver ambigüedad "mareo vs vértigo" '
+              'a "síndrome vertiginoso"',
+        );
 
-      // No debe aparecer "vértigo periférico" ni "vértigo central"
-      expect(
-        containsNormalized(soapFinal, 'vertigo periferico'),
-        isFalse,
-        reason: 'SOAP final no debe diagnosticar vértigo periférico',
-      );
-      expect(
-        containsNormalized(soapFinal, 'vertigo central'),
-        isFalse,
-        reason: 'SOAP final no debe diagnosticar vértigo central',
-      );
+        // No debe aparecer "vértigo periférico" ni "vértigo central"
+        expect(
+          containsNormalized(soapFinal, 'vertigo periferico'),
+          isFalse,
+          reason: 'SOAP final no debe diagnosticar vértigo periférico',
+        );
+        expect(
+          containsNormalized(soapFinal, 'vertigo central'),
+          isFalse,
+          reason: 'SOAP final no debe diagnosticar vértigo central',
+        );
 
-      // Debe mantener el diagnóstico conservador del JSON
-      expect(
-        containsNormalized(soapFinal, 'mareo a estudio') ||
-            containsNormalized(soapFinal, 'mareo'),
-        isTrue,
-        reason: 'SOAP final debe mantener "Mareo a estudio" del JSON',
-      );
-    });
+        // Debe mantener el diagnóstico conservador del JSON
+        expect(
+          containsNormalized(soapFinal, 'mareo a estudio') ||
+              containsNormalized(soapFinal, 'mareo'),
+          isTrue,
+          reason: 'SOAP final debe mantener "Mareo a estudio" del JSON',
+        );
+      },
+    );
 
-    test('Caso A: physicalExam null no genera exploración normal en SOAP',
-        () async {
-      final soapFinal = await generateSoapFinal(fixtureMareoConPlanVacio);
+    test(
+      'Caso A: physicalExam null no genera exploración normal en SOAP',
+      () async {
+        final soapFinal = await generateSoapFinal(fixtureMareoConPlanVacio);
 
-      // physicalExam es null en el fixture
-      // SOAP no debe inventar exploración normal
-      expect(
-        containsNormalized(soapFinal, 'exploracion fisica normal'),
-        isFalse,
-        reason: 'SOAP final no debe inventar "exploración física normal"',
-      );
-      expect(
-        containsNormalized(soapFinal, 'examen fisico normal'),
-        isFalse,
-        reason: 'SOAP final no debe inventar "examen físico normal"',
-      );
-      expect(
-        containsNormalized(soapFinal, 'sin alteraciones'),
-        isFalse,
-        reason: 'SOAP final no debe inventar "sin alteraciones"',
-      );
-    });
+        // physicalExam es null en el fixture
+        // SOAP no debe inventar exploración normal
+        expect(
+          containsNormalized(soapFinal, 'exploracion fisica normal'),
+          isFalse,
+          reason: 'SOAP final no debe inventar "exploración física normal"',
+        );
+        expect(
+          containsNormalized(soapFinal, 'examen fisico normal'),
+          isFalse,
+          reason: 'SOAP final no debe inventar "examen físico normal"',
+        );
+        expect(
+          containsNormalized(soapFinal, 'sin alteraciones'),
+          isFalse,
+          reason: 'SOAP final no debe inventar "sin alteraciones"',
+        );
+      },
+    );
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1163,16 +1185,19 @@ void main() {
       expect(prompt.contains('[VACÍO - Sin plan explícito]'), isTrue);
     });
 
-    test('Dolor abdominal: plan.treatments está vacío (no mencionado en speech)', () {
-      final fixture = fixtureEpica5DolorAbdominal;
+    test(
+      'Dolor abdominal: plan.treatments está vacío (no mencionado en speech)',
+      () {
+        final fixture = fixtureEpica5DolorAbdominal;
 
-      expect(fixture.plan.treatments, isEmpty);
-      expect(fixture.plan.education, isEmpty);
-      expect(fixture.plan.followUp, isNull);
+        expect(fixture.plan.treatments, isEmpty);
+        expect(fixture.plan.education, isEmpty);
+        expect(fixture.plan.followUp, isNull);
 
-      final prompt = generateComposerPrompt(fixture);
-      expect(prompt.contains('[VACÍO - Sin plan explícito]'), isTrue);
-    });
+        final prompt = generateComposerPrompt(fixture);
+        expect(prompt.contains('[VACÍO - Sin plan explícito]'), isTrue);
+      },
+    );
 
     test('Prompt no contiene frases de plan inventado', () {
       // Test all three empty-plan fixtures
@@ -1190,8 +1215,7 @@ void main() {
           expect(
             containsNormalized(factsSection, phrase),
             isFalse,
-            reason:
-                'Datos no deben contener "$phrase" si plan vacío',
+            reason: 'Datos no deben contener "$phrase" si plan vacío',
           );
         }
       }

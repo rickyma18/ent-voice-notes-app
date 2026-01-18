@@ -165,7 +165,8 @@ class AudioRecordingServiceStub implements AudioRecordingService {
         '/fake/audio/recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
     print(
-        '🎤 [STUB] Grabación simulada de ${duration.inSeconds}s guardada en: $fakeFilePath');
+      '🎤 [STUB] Grabación simulada de ${duration.inSeconds}s guardada en: $fakeFilePath',
+    );
 
     return fakeFilePath;
   }

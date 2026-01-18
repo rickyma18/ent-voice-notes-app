@@ -8,9 +8,7 @@ final class UpdatePatientUseCase {
 
   final PatientsRepository repository;
 
-  Future<Result<PatientEntity, Failure>> call(
-    PatientEntity patient,
-  ) async {
+  Future<Result<PatientEntity, Failure>> call(PatientEntity patient) async {
     return repository.updatePatient(patient);
   }
 }

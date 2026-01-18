@@ -39,53 +39,49 @@ class QuickActionButtons extends StatelessWidget {
   final VoidCallback? onTextInserted;
 
   static List<QuickAction> get defaultActions => [
-        const QuickAction(
-          label: 'Niega antecedentes',
-          text: 'Niega antecedentes',
-          icon: Icons.close,
-        ),
-        const QuickAction(
-          label: 'Sin alteraciones',
-          text: 'Sin alteraciones',
-          icon: Icons.check_circle_outline,
-        ),
-        const QuickAction(
-          label: 'Sin datos',
-          text: 'Sin datos relevantes',
-          icon: Icons.remove_circle_outline,
-        ),
-      ];
+    const QuickAction(
+      label: 'Niega antecedentes',
+      text: 'Niega antecedentes',
+      icon: Icons.close,
+    ),
+    const QuickAction(
+      label: 'Sin alteraciones',
+      text: 'Sin alteraciones',
+      icon: Icons.check_circle_outline,
+    ),
+    const QuickAction(
+      label: 'Sin datos',
+      text: 'Sin datos relevantes',
+      icon: Icons.remove_circle_outline,
+    ),
+  ];
 
   static List<QuickAction> get historyActions => [
-        const QuickAction(
-          label: 'Niega',
-          text: 'Niega',
-          icon: Icons.close,
-        ),
-        const QuickAction(
-          label: 'Desconoce',
-          text: 'Desconoce',
-          icon: Icons.help_outline,
-        ),
-        const QuickAction(
-          label: 'Sin datos',
-          text: 'Sin datos relevantes',
-          icon: Icons.remove_circle_outline,
-        ),
-      ];
+    const QuickAction(label: 'Niega', text: 'Niega', icon: Icons.close),
+    const QuickAction(
+      label: 'Desconoce',
+      text: 'Desconoce',
+      icon: Icons.help_outline,
+    ),
+    const QuickAction(
+      label: 'Sin datos',
+      text: 'Sin datos relevantes',
+      icon: Icons.remove_circle_outline,
+    ),
+  ];
 
   static List<QuickAction> get examActions => [
-        const QuickAction(
-          label: 'Normal',
-          text: 'Sin alteraciones',
-          icon: Icons.check_circle_outline,
-        ),
-        const QuickAction(
-          label: 'DNL',
-          text: 'Dentro de límites normales',
-          icon: Icons.done,
-        ),
-      ];
+    const QuickAction(
+      label: 'Normal',
+      text: 'Sin alteraciones',
+      icon: Icons.check_circle_outline,
+    ),
+    const QuickAction(
+      label: 'DNL',
+      text: 'Dentro de límites normales',
+      icon: Icons.done,
+    ),
+  ];
 
   void _insertText(String text) {
     final currentText = controller.text;
@@ -137,11 +133,7 @@ class QuickActionButtons extends StatelessWidget {
 
 /// Data class for a quick action.
 class QuickAction {
-  const QuickAction({
-    required this.label,
-    required this.text,
-    this.icon,
-  });
+  const QuickAction({required this.label, required this.text, this.icon});
 
   final String label;
   final String text;
@@ -149,10 +141,7 @@ class QuickAction {
 }
 
 class _ActionChip extends StatelessWidget {
-  const _ActionChip({
-    required this.action,
-    required this.onTap,
-  });
+  const _ActionChip({required this.action, required this.onTap});
 
   final QuickAction action;
   final VoidCallback onTap;
@@ -163,16 +152,9 @@ class _ActionChip extends StatelessWidget {
 
     return ActionChip(
       avatar: action.icon != null
-          ? Icon(
-              action.icon,
-              size: 16,
-              color: theme.colorScheme.primary,
-            )
+          ? Icon(action.icon, size: 16, color: theme.colorScheme.primary)
           : null,
-      label: Text(
-        action.label,
-        style: theme.textTheme.labelSmall,
-      ),
+      label: Text(action.label, style: theme.textTheme.labelSmall),
       onPressed: onTap,
       backgroundColor: theme.colorScheme.surfaceContainerHighest,
       padding: const EdgeInsets.symmetric(horizontal: 4),

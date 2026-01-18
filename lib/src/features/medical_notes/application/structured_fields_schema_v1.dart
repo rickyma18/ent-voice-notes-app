@@ -52,11 +52,7 @@ const List<String> kDiagnosticoKeys = [
 ];
 
 /// Subclaves de metadata.
-const List<String> kMetadataKeys = [
-  'idioma',
-  'fuente',
-  'version_schema',
-];
+const List<String> kMetadataKeys = ['idioma', 'fuente', 'version_schema'];
 
 /// Tipos de diagnóstico válidos.
 const List<String> kTiposDiagnostico = [
@@ -91,10 +87,7 @@ Map<String, dynamic> getEmptySchemaV1() {
       'cuello': null,
       'laringoscopia': null,
     },
-    'diagnostico': {
-      'texto': null,
-      'tipo': null,
-    },
+    'diagnostico': {'texto': null, 'tipo': null},
     'plan_tratamiento': null,
     'estudios_indicados': <String>[],
     'notas_adicionales': null,
@@ -182,8 +175,7 @@ class StructuredFieldsV1 {
       _getNestedString('antecedentes', 'no_patologicos');
   String? get antecedentesPatologicos =>
       _getNestedString('antecedentes', 'patologicos');
-  List<String> get alergias =>
-      _getNestedList('antecedentes', 'alergias');
+  List<String> get alergias => _getNestedList('antecedentes', 'alergias');
   List<String> get medicamentosHabituales =>
       _getNestedList('antecedentes', 'medicamentos_habituales');
   String? get antecedentesQuirurgicos =>

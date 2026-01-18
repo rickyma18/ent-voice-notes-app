@@ -20,9 +20,7 @@ import '../models/patient_model.dart';
 ///   in patients_providers.dart to use real Firestore
 /// - This file (repository implementation) requires NO changes when switching
 final class PatientsRepositoryImpl extends PatientsRepository {
-  PatientsRepositoryImpl({
-    required this.remoteDatasource,
-  });
+  PatientsRepositoryImpl({required this.remoteDatasource});
 
   final PatientsRemoteDatasource remoteDatasource;
 

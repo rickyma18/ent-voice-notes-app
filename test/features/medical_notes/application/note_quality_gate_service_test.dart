@@ -219,10 +219,7 @@ void main() {
       // Assert
       // Note: canSign is false for signed notes, so warning is added
       expect(result.warnings, isNotEmpty);
-      expect(
-        result.warnings.any((w) => w.contains('Firmada')),
-        isTrue,
-      );
+      expect(result.warnings.any((w) => w.contains('Firmada')), isTrue);
     });
 
     test('should FAIL when critical fields are missing', () {
@@ -259,7 +256,10 @@ void main() {
     test('failed factory creates failing result', () {
       // Act
       final result = QualityGateResult.failed(
-        missingCritical: [CriticalField.chiefComplaint, CriticalField.diagnosis],
+        missingCritical: [
+          CriticalField.chiefComplaint,
+          CriticalField.diagnosis,
+        ],
         warnings: ['Some warning'],
       );
 

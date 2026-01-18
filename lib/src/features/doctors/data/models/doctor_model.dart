@@ -51,8 +51,9 @@ class DoctorModel extends DoctorEntity {
       'last_name': lastName,
       'photo_url': photoUrl,
       if (signatureInfo != null)
-        'signature_info':
-            DoctorSignatureInfoModel.fromEntity(signatureInfo!).toJson(),
+        'signature_info': DoctorSignatureInfoModel.fromEntity(
+          signatureInfo!,
+        ).toJson(),
       'created_at': createdAt != null ? Timestamp.fromDate(createdAt!) : null,
       'updated_at': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
     };

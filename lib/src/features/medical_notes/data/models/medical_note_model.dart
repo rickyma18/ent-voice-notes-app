@@ -175,14 +175,16 @@ class MedicalNoteModel extends MedicalNoteEntity {
 
     // Only include surgical_data for surgical notes
     if (type == MedicalNoteType.surgicalNote && surgicalData != null) {
-      data['surgical_data'] =
-          SurgicalNoteDataModel.fromEntity(surgicalData!).toJson();
+      data['surgical_data'] = SurgicalNoteDataModel.fromEntity(
+        surgicalData!,
+      ).toJson();
     }
 
     // Only include signature_data for signed notes
     if (signatureData != null) {
-      data['signature_data'] =
-          SignatureDataModel.fromEntity(signatureData!).toJson();
+      data['signature_data'] = SignatureDataModel.fromEntity(
+        signatureData!,
+      ).toJson();
     }
 
     return data;

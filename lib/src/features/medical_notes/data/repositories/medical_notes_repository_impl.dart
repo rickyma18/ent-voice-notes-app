@@ -56,24 +56,21 @@ final class MedicalNotesRepositoryImpl extends MedicalNotesRepository {
     }
   }
 
-@override
-Future<Result<List<MedicalNoteEntity>, Failure>> getNotesByDoctor(
-  String doctorId,
-) async {
-  try {
-    final models = await remoteDatasource.getNotesByDoctor(doctorId);
-    final entities = models.map((m) => m.toEntity()).toList();
-    return Result.success(entities);
-  } catch (e) {
-    return Result.error(Failure.mapExceptionToFailure(e));
+  @override
+  Future<Result<List<MedicalNoteEntity>, Failure>> getNotesByDoctor(
+    String doctorId,
+  ) async {
+    try {
+      final models = await remoteDatasource.getNotesByDoctor(doctorId);
+      final entities = models.map((m) => m.toEntity()).toList();
+      return Result.success(entities);
+    } catch (e) {
+      return Result.error(Failure.mapExceptionToFailure(e));
+    }
   }
-}
-
 
   @override
-  Future<Result<MedicalNoteEntity?, Failure>> getNoteById(
-    String id,
-  ) async {
+  Future<Result<MedicalNoteEntity?, Failure>> getNoteById(String id) async {
     try {
       final model = await remoteDatasource.getNoteById(id);
       final entity = model?.toEntity();

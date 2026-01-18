@@ -11,10 +11,7 @@ import 'signature_preview_widget.dart';
 ///
 /// Shows the signature image, doctor name, and signing timestamp.
 class SignatureDisplaySection extends StatelessWidget {
-  const SignatureDisplaySection({
-    super.key,
-    required this.signatureData,
-  });
+  const SignatureDisplaySection({super.key, required this.signatureData});
 
   /// Signature data with URL, doctor info, and timestamp
   final SignatureDataEntity signatureData;
@@ -67,10 +64,7 @@ class SignatureDisplaySection extends StatelessWidget {
           const SizedBox(height: DocsoftSpacing.md),
 
           // Divider
-          Container(
-            height: 1,
-            color: DocsoftColors.border,
-          ),
+          Container(height: 1, color: DocsoftColors.border),
 
           const SizedBox(height: DocsoftSpacing.md),
 

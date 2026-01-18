@@ -116,31 +116,31 @@ void main() {
       // Mock permission_handler platform channel
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
-        const MethodChannel('flutter.baseflow.com/permissions/methods'),
-        (MethodCall methodCall) async {
-          if (methodCall.method == 'requestPermissions') {
-            // Return permission granted (value 1 = granted)
-            return {7: 1}; // 7 is the permission type for microphone
-          }
-          if (methodCall.method == 'checkPermissionStatus') {
-            return 1; // granted
-          }
-          return null;
-        },
-      );
+            const MethodChannel('flutter.baseflow.com/permissions/methods'),
+            (MethodCall methodCall) async {
+              if (methodCall.method == 'requestPermissions') {
+                // Return permission granted (value 1 = granted)
+                return {7: 1}; // 7 is the permission type for microphone
+              }
+              if (methodCall.method == 'checkPermissionStatus') {
+                return 1; // granted
+              }
+              return null;
+            },
+          );
 
       // Mock path_provider platform channel
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
-        const MethodChannel('plugins.flutter.io/path_provider'),
-        (MethodCall methodCall) async {
-          if (methodCall.method == 'getApplicationDocumentsDirectory') {
-            // Return a temp directory for testing
-            return Directory.systemTemp.path;
-          }
-          return null;
-        },
-      );
+            const MethodChannel('plugins.flutter.io/path_provider'),
+            (MethodCall methodCall) async {
+              if (methodCall.method == 'getApplicationDocumentsDirectory') {
+                // Return a temp directory for testing
+                return Directory.systemTemp.path;
+              }
+              return null;
+            },
+          );
 
       mockRecorder = MockAudioRecorder();
       service = AudioRecordingServiceImpl(
@@ -160,12 +160,15 @@ void main() {
       expect(service.isRecording, false);
     });
 
-    test('startRecording should return true and set isRecording to true', () async {
-      final result = await service.startRecording();
+    test(
+      'startRecording should return true and set isRecording to true',
+      () async {
+        final result = await service.startRecording();
 
-      expect(result, true);
-      expect(service.isRecording, true);
-    });
+        expect(result, true);
+        expect(service.isRecording, true);
+      },
+    );
 
     test('startRecording when already recording should return false', () async {
       // Start recording first time
@@ -178,17 +181,20 @@ void main() {
       expect(service.isRecording, true);
     });
 
-    test('stopRecording should return path and set isRecording to false', () async {
-      // Start recording
-      await service.startRecording();
+    test(
+      'stopRecording should return path and set isRecording to false',
+      () async {
+        // Start recording
+        await service.startRecording();
 
-      // Stop recording
-      final path = await service.stopRecording();
+        // Stop recording
+        final path = await service.stopRecording();
 
-      expect(path, isNotNull);
-      expect(path, isA<String>());
-      expect(service.isRecording, false);
-    });
+        expect(path, isNotNull);
+        expect(path, isA<String>());
+        expect(service.isRecording, false);
+      },
+    );
 
     test('stopRecording without startRecording should return null', () async {
       final path = await service.stopRecording();
@@ -197,16 +203,19 @@ void main() {
       expect(service.isRecording, false);
     });
 
-    test('cancelRecording should stop recording and set isRecording to false', () async {
-      // Start recording
-      await service.startRecording();
-      expect(service.isRecording, true);
+    test(
+      'cancelRecording should stop recording and set isRecording to false',
+      () async {
+        // Start recording
+        await service.startRecording();
+        expect(service.isRecording, true);
 
-      // Cancel recording
-      await service.cancelRecording();
+        // Cancel recording
+        await service.cancelRecording();
 
-      expect(service.isRecording, false);
-    });
+        expect(service.isRecording, false);
+      },
+    );
 
     test('cancelRecording when not recording should not throw', () async {
       // Should not throw even when not recording
@@ -215,17 +224,20 @@ void main() {
       expect(service.isRecording, false);
     });
 
-    test('startRecording without permission should throw AudioRecordingException', () async {
-      // Set recorder to deny permission
-      mockRecorder.setHasPermission(false);
+    test(
+      'startRecording without permission should throw AudioRecordingException',
+      () async {
+        // Set recorder to deny permission
+        mockRecorder.setHasPermission(false);
 
-      expect(
-        () async => await service.startRecording(),
-        throwsA(isA<AudioRecordingException>()),
-      );
+        expect(
+          () async => await service.startRecording(),
+          throwsA(isA<AudioRecordingException>()),
+        );
 
-      expect(service.isRecording, false);
-    });
+        expect(service.isRecording, false);
+      },
+    );
 
     test('stopRecording should verify file exists and has content', () async {
       // Start recording

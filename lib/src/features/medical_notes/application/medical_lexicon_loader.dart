@@ -119,9 +119,7 @@ class MedicalLexiconLoader {
       // Step 1: Load raw JSON string from asset bundle
       Log.info('📦 [Lexicon] Step 1: Calling rootBundle.loadString()...');
       final jsonString = await rootBundle.loadString(_medicationsAssetPath);
-      Log.info(
-        '📦 [Lexicon] Step 1 OK: Loaded ${jsonString.length} chars',
-      );
+      Log.info('📦 [Lexicon] Step 1 OK: Loaded ${jsonString.length} chars');
 
       // Log first 150 chars for debugging (truncated, safe)
       final preview = jsonString.length > 150
@@ -151,9 +149,7 @@ class MedicalLexiconLoader {
         Log.info('📦 [Lexicon] Top-level is List (${decoded.length} items)');
         items = decoded;
       } else {
-        Log.error(
-          '📦 [Lexicon] Unexpected JSON type: ${decoded.runtimeType}',
-        );
+        Log.error('📦 [Lexicon] Unexpected JSON type: ${decoded.runtimeType}');
       }
 
       // Step 4: Normalize and add to set
@@ -187,8 +183,9 @@ class MedicalLexiconLoader {
       Log.error('📦 [Lexicon] Exception: $e');
       Log.error('📦 [Lexicon] Stack trace (first 500 chars):');
       final stackStr = stack.toString();
-      final stackPreview =
-          stackStr.length > 500 ? stackStr.substring(0, 500) : stackStr;
+      final stackPreview = stackStr.length > 500
+          ? stackStr.substring(0, 500)
+          : stackStr;
       Log.error(stackPreview);
 
       // Graceful degradation: Phase 1.5 simply won't activate

@@ -6,10 +6,6 @@ class MedicalNoteForm extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // TODO: Implement MedicalNoteForm
-    return const Column(
-      children: [
-        Text('Medical Note Form'),
-      ],
-    );
+    return const Column(children: [Text('Medical Note Form')]);
   }
 }

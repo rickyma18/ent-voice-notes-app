@@ -424,14 +424,23 @@ void main() {
       expect(result, equals(['fiebre']));
     });
 
-    test('Real ÉPICA 5 case: Dolor abdominal - filters "he vomitado", "he tenido", "sé si"', () {
-      // From CASO 4: ros.negatives = ["vómito","diarrea","he vomitado","he tenido","sé si"]
-      final input = ['vómito', 'diarrea', 'he vomitado', 'he tenido', 'sé si'];
+    test(
+      'Real ÉPICA 5 case: Dolor abdominal - filters "he vomitado", "he tenido", "sé si"',
+      () {
+        // From CASO 4: ros.negatives = ["vómito","diarrea","he vomitado","he tenido","sé si"]
+        final input = [
+          'vómito',
+          'diarrea',
+          'he vomitado',
+          'he tenido',
+          'sé si',
+        ];
 
-      final result = sanitizer.sanitizeROSNegatives(input);
+        final result = sanitizer.sanitizeROSNegatives(input);
 
-      expect(result, equals(['vómito', 'diarrea']));
-    });
+        expect(result, equals(['vómito', 'diarrea']));
+      },
+    );
   });
 
   group('ÉPICA 5: General Non-Symptom Phrases', () {
@@ -479,11 +488,7 @@ void main() {
     });
 
     test('Normalizes GI colloquialisms', () {
-      final input = [
-        'dolor de estómago',
-        'dolor de panza',
-        'ganas de vomitar',
-      ];
+      final input = ['dolor de estómago', 'dolor de panza', 'ganas de vomitar'];
 
       final result = sanitizer.sanitizeROSPositives(input);
 
@@ -582,7 +587,10 @@ void main() {
       final result = sanitizer.sanitizePlan(plan);
 
       expect(result.treatments, equals(['Ibuprofeno 400mg']));
-      expect(result.treatments, isNot(contains('Manejo sintomático según hallazgos de exploración')));
+      expect(
+        result.treatments,
+        isNot(contains('Manejo sintomático según hallazgos de exploración')),
+      );
     });
 
     test('Removes generic "signos de alarma" from education', () {
@@ -643,7 +651,9 @@ void main() {
         diagnostics: [],
         treatments: ['Manejo sintomático según hallazgos'],
         referrals: [],
-        education: ['Signos de alarma: fiebre alta persistente, dificultad respiratoria, deterioro general'],
+        education: [
+          'Signos de alarma: fiebre alta persistente, dificultad respiratoria, deterioro general',
+        ],
         followUp: 'Revalorar tras exploración física completa',
         evidence: [],
       );

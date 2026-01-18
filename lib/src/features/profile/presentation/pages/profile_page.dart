@@ -237,8 +237,8 @@ class _ProfileAvatarRow extends StatelessWidget {
                     color: Colors.white.withValues(alpha: 0.2),
                     width: 2,
                   ),
-                  image: profile.imageUrl != null &&
-                          profile.imageUrl!.isNotEmpty
+                  image:
+                      profile.imageUrl != null && profile.imageUrl!.isNotEmpty
                       ? DecorationImage(
                           image: NetworkImage(profile.imageUrl!),
                           fit: BoxFit.cover,
@@ -268,10 +268,7 @@ class _ProfileAvatarRow extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: DocsoftColors.surface,
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: DocsoftColors.primary,
-                    width: 2,
-                  ),
+                  border: Border.all(color: DocsoftColors.primary, width: 2),
                 ),
                 child: const Icon(
                   Icons.camera_alt_rounded,

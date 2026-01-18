@@ -104,18 +104,19 @@ class DoctorEntity extends Equatable {
 
   @override
   List<Object?> get props => [
-        id,
-        email,
-        firstName,
-        lastName,
-        gender,
-        photoUrl,
-        signatureInfo,
-        createdAt,
-        updatedAt,
-      ];
+    id,
+    email,
+    firstName,
+    lastName,
+    gender,
+    photoUrl,
+    signatureInfo,
+    createdAt,
+    updatedAt,
+  ];
 
   @override
-  String toString() => 'DoctorEntity(id: $id, email: $email, '
+  String toString() =>
+      'DoctorEntity(id: $id, email: $email, '
       'fullName: $fullName)';
 }

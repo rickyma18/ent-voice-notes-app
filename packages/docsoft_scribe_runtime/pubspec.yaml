@@ -1,0 +1,28 @@
+name: docsoft_scribe_runtime
+description: >
+  Dart-only runtime for the DocSoft Scribe pipeline.
+  Contains OpenAI clients, repository implementations, and orchestration.
+  NO Flutter dependencies - can be used with `dart run`.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  # Core package with DTOs, interfaces, and domain logic
+  docsoft_scribe_core:
+    path: ../docsoft_scribe_core
+
+  # HTTP client (Dart-only, no Flutter required)
+  dio: ^5.8.0
+
+  # Utilities
+  path: ^1.8.0
+  equatable: ^2.0.5
+  logger: ^2.4.0
+  crypto: ^3.0.3
+
+dev_dependencies:
+  test: ^1.24.0
+  lints: ^2.1.0

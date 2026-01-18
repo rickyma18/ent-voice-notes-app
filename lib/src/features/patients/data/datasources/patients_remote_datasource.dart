@@ -32,9 +32,8 @@ abstract base class PatientsRemoteDatasource {
 /// Handles CRUD operations for patients in Firestore.
 /// Collection: 'patients'
 final class PatientsRemoteDatasourceImpl implements PatientsRemoteDatasource {
-  PatientsRemoteDatasourceImpl({
-    FirebaseFirestore? firestore,
-  }) : _firestore = firestore ?? FirebaseFirestore.instance;
+  PatientsRemoteDatasourceImpl({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 

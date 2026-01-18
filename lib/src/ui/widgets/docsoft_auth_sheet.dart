@@ -104,28 +104,25 @@ class _DocsoftAuthSheetState extends State<DocsoftAuthSheet>
       vsync: this,
       duration: _floatDuration,
     );
-    _floatAnimation = Tween<double>(
-      begin: 0,
-      end: _floatDistance,
-    ).animate(CurvedAnimation(
-      parent: _floatController,
-      curve: Curves.easeInOut,
-    ));
+    _floatAnimation = Tween<double>(begin: 0, end: _floatDistance).animate(
+      CurvedAnimation(parent: _floatController, curve: Curves.easeInOut),
+    );
 
     // First-time hint bump animation (single shot)
-    _hintController = AnimationController(
-      vsync: this,
-      duration: _hintDuration,
-    );
+    _hintController = AnimationController(vsync: this, duration: _hintDuration);
     _hintAnimation = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween(begin: 0.0, end: _hintDistance)
-            .chain(CurveTween(curve: Curves.easeOut)),
+        tween: Tween(
+          begin: 0.0,
+          end: _hintDistance,
+        ).chain(CurveTween(curve: Curves.easeOut)),
         weight: 40,
       ),
       TweenSequenceItem(
-        tween: Tween(begin: _hintDistance, end: 0.0)
-            .chain(CurveTween(curve: Curves.elasticOut)),
+        tween: Tween(
+          begin: _hintDistance,
+          end: 0.0,
+        ).chain(CurveTween(curve: Curves.elasticOut)),
         weight: 60,
       ),
     ]).animate(_hintController);
@@ -135,13 +132,12 @@ class _DocsoftAuthSheetState extends State<DocsoftAuthSheet>
       vsync: this,
       duration: const Duration(milliseconds: 100),
     );
-    _tapAnimation = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.92), weight: 50),
-      TweenSequenceItem(tween: Tween(begin: 0.92, end: 1.0), weight: 50),
-    ]).animate(CurvedAnimation(
-      parent: _tapController,
-      curve: Curves.easeInOut,
-    ));
+    _tapAnimation = TweenSequence<double>(
+      [
+        TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.92), weight: 50),
+        TweenSequenceItem(tween: Tween(begin: 0.92, end: 1.0), weight: 50),
+      ],
+    ).animate(CurvedAnimation(parent: _tapController, curve: Curves.easeInOut));
 
     // Start animations based on initial state
     _updateAnimations(widget.visible);
@@ -299,18 +295,16 @@ class _DocsoftAuthSheetState extends State<DocsoftAuthSheet>
                   ]),
                   builder: (context, child) {
                     // Combine float + hint animations
-                    final floatY =
-                        widget.visible ? 0.0 : -_floatAnimation.value;
+                    final floatY = widget.visible
+                        ? 0.0
+                        : -_floatAnimation.value;
                     final hintY = _hintAnimation.value;
                     final totalY = floatY + hintY;
                     final scale = _tapAnimation.value;
 
                     return Transform.translate(
                       offset: Offset(0, totalY),
-                      child: Transform.scale(
-                        scale: scale,
-                        child: child,
-                      ),
+                      child: Transform.scale(scale: scale, child: child),
                     );
                   },
                   child: GestureDetector(

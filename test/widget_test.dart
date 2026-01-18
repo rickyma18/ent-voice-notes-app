@@ -8,7 +8,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 void main() {
-  testWidgets('App smoke test - MyApp can be created', (WidgetTester tester) async {
+  testWidgets('App smoke test - MyApp can be created', (
+    WidgetTester tester,
+  ) async {
     // This is a minimal smoke test that verifies the app structure compiles.
     // We don't import main.dart to avoid Firebase initialization in tests.
 

@@ -8,7 +8,7 @@ import '../../domain/repositories/attachments_repository.dart';
 /// Use case for uploading a PDF attachment.
 class UploadPdfAttachmentUseCase {
   UploadPdfAttachmentUseCase({required AttachmentsRepository repository})
-      : _repository = repository;
+    : _repository = repository;
 
   final AttachmentsRepository _repository;
 

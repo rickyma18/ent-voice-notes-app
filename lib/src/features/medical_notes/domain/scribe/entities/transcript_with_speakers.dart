@@ -23,9 +23,8 @@ class TranscriptWithSpeakers extends Equatable {
   String get fullText => segments.map((s) => s.text).join(' ');
 
   /// Returns the transcript formatted with speaker labels.
-  String get formattedText => segments
-      .map((s) => '[${s.speaker}]: ${s.text}')
-      .join('\n');
+  String get formattedText =>
+      segments.map((s) => '[${s.speaker}]: ${s.text}').join('\n');
 
   /// Returns unique speaker identifiers found in the transcript.
   Set<String> get speakers => segments.map((s) => s.speaker).toSet();

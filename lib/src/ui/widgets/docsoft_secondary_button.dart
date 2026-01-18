@@ -22,22 +22,22 @@ class DocsoftSecondaryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Widget buttonContent = isLoading
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (icon != null) ...[
-                    Icon(icon, size: 20),
-                    const SizedBox(width: 8),
-                  ],
-                  Text(label),
-                ],
-              );
+        ? const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 20),
+                const SizedBox(width: 8),
+              ],
+              Text(label),
+            ],
+          );
 
     // Force the app theme style (prevents unexpected defaults anywhere)
     final themedStyle = Theme.of(context).textButtonTheme.style;
@@ -47,7 +47,7 @@ class DocsoftSecondaryButton extends StatelessWidget {
       style: themedStyle,
       child: buttonContent,
     );
-    
+
     if (fullWidth) {
       return SizedBox(width: double.infinity, child: widget);
     }

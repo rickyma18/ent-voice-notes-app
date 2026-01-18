@@ -12,10 +12,7 @@ import '../../controllers/sign_note_controller.dart';
 /// Shows animated progress through the signing steps with
 /// a premium visual design matching DocSoft UI Kit.
 class SigningOverlay extends StatefulWidget {
-  const SigningOverlay({
-    super.key,
-    required this.state,
-  });
+  const SigningOverlay({super.key, required this.state});
 
   /// Current signing state
   final SignNoteState state;
@@ -140,21 +137,13 @@ class _SigningOverlayState extends State<SigningOverlay>
                 children: [
                   // Icon
                   if (disableAnimations || !widget.state.isSigning)
-                    Icon(
-                      _icon,
-                      size: 40,
-                      color: _iconColor,
-                    )
+                    Icon(_icon, size: 40, color: _iconColor)
                   else
                     ScaleTransition(
                       scale: _scaleAnimation,
                       child: FadeTransition(
                         opacity: _fadeAnimation,
-                        child: Icon(
-                          _icon,
-                          size: 40,
-                          color: _iconColor,
-                        ),
+                        child: Icon(_icon, size: 40, color: _iconColor),
                       ),
                     ),
 

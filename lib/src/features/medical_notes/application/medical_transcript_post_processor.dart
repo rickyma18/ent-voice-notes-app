@@ -233,11 +233,7 @@ String _tryNormalizeMedications(String input, Set<String> knownMedications) {
     }
 
     // Try to find a medication match using token windows (1-3 tokens)
-    final matchResult = _findMedicationMatch(
-      tokens,
-      i,
-      medicationPhonetics,
-    );
+    final matchResult = _findMedicationMatch(tokens, i, medicationPhonetics);
 
     if (matchResult != null) {
       // Found a high-confidence medication match
@@ -298,9 +294,31 @@ class _MedicationMatchResult {
 /// Stopwords that should NEVER be part of a multi-token medication window.
 /// If a 2+ token window contains any of these, skip it and try single-token.
 const Set<String> _multiTokenStopwords = {
-  'con', 'de', 'del', 'la', 'el', 'los', 'las', 'y', 'o',
-  'para', 'por', 'en', 'al', 'a', 'un', 'una', 'que', 'se',
-  'cada', 'mas', 'sin', 'sobre', 'como', 'pero', 'si',
+  'con',
+  'de',
+  'del',
+  'la',
+  'el',
+  'los',
+  'las',
+  'y',
+  'o',
+  'para',
+  'por',
+  'en',
+  'al',
+  'a',
+  'un',
+  'una',
+  'que',
+  'se',
+  'cada',
+  'mas',
+  'sin',
+  'sobre',
+  'como',
+  'pero',
+  'si',
 };
 
 /// Attempts to match a sequence of tokens to a known medication.
@@ -316,9 +334,11 @@ _MedicationMatchResult? _findMedicationMatch(
   Map<String, String> medicationPhonetics,
 ) {
   // Try larger windows first (catches split meds like "homem prazón")
-  for (int windowSize = _maxMedicationTokenWindow;
-      windowSize >= 1;
-      windowSize--) {
+  for (
+    int windowSize = _maxMedicationTokenWindow;
+    windowSize >= 1;
+    windowSize--
+  ) {
     if (startIndex + windowSize > tokens.length) continue;
 
     // Collect word tokens in this window, tracking indices
@@ -326,9 +346,11 @@ _MedicationMatchResult? _findMedicationMatch(
     int lastWordIndex = startIndex;
     int actualTokens = 0;
 
-    for (int j = startIndex;
-        j < tokens.length && actualTokens < windowSize;
-        j++) {
+    for (
+      int j = startIndex;
+      j < tokens.length && actualTokens < windowSize;
+      j++
+    ) {
       final t = tokens[j];
       if (_isWordToken(t)) {
         windowTokens.add(t);
@@ -360,10 +382,7 @@ _MedicationMatchResult? _findMedicationMatch(
     double bestSimilarity = 0.0;
 
     for (final entry in medicationPhonetics.entries) {
-      final similarity = _phoneticitySimilarity(
-        combinedPhonetic,
-        entry.value,
-      );
+      final similarity = _phoneticitySimilarity(combinedPhonetic, entry.value);
 
       if (similarity > bestSimilarity &&
           similarity >= _medicationSimilarityThreshold) {

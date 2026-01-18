@@ -77,14 +77,9 @@ class DocsoftDictationBanner extends StatelessWidget {
               color: _iconBgColor,
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              Icons.mic,
-              size: 16,
-              color: DocsoftColors.primary,
-            ),
+            child: Icon(Icons.mic, size: 16, color: DocsoftColors.primary),
           ),
           const SizedBox(width: DocsoftSpacing.sm + 4), // 12px
-
           // Text content
           Expanded(
             child: Column(

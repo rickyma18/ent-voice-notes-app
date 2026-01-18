@@ -42,9 +42,8 @@ abstract base class MedicalNotesRemoteDatasource {
 
 final class MedicalNotesRemoteDatasourceImpl
     implements MedicalNotesRemoteDatasource {
-  MedicalNotesRemoteDatasourceImpl({
-    FirebaseFirestore? firestore,
-  }) : _firestore = firestore ?? FirebaseFirestore.instance;
+  MedicalNotesRemoteDatasourceImpl({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
@@ -74,9 +73,7 @@ final class MedicalNotesRemoteDatasourceImpl
   }
 
   @override
-  Future<List<MedicalNoteModel>> getNotesByDoctor(
-    String doctorId,
-  ) async {
+  Future<List<MedicalNoteModel>> getNotesByDoctor(String doctorId) async {
     final querySnapshot = await _collection
         .where('doctor_id', isEqualTo: doctorId)
         .orderBy('created_at', descending: true)

@@ -34,7 +34,10 @@ class WizardStepIndicator extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.primaryContainer,
                   borderRadius: BorderRadius.circular(16),
@@ -92,10 +95,7 @@ class WizardStepIndicator extends StatelessWidget {
                         ? theme.colorScheme.primary
                         : theme.colorScheme.surfaceContainerHighest,
                     border: isCurrent
-                        ? Border.all(
-                            color: theme.colorScheme.primary,
-                            width: 2,
-                          )
+                        ? Border.all(color: theme.colorScheme.primary, width: 2)
                         : null,
                   ),
                 ),
@@ -275,11 +275,7 @@ class CompactStepIndicator extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: DocsoftColors.primaryMuted,
-        border: Border(
-          bottom: BorderSide(
-            color: DocsoftColors.border,
-          ),
-        ),
+        border: Border(bottom: BorderSide(color: DocsoftColors.border)),
       ),
       child: Row(
         children: [

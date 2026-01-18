@@ -11,9 +11,7 @@ import '../models/doctor_model.dart';
 
 /// Implementation of DoctorsRepository
 final class DoctorsRepositoryImpl extends DoctorsRepository {
-  DoctorsRepositoryImpl({
-    required this.remoteDatasource,
-  });
+  DoctorsRepositoryImpl({required this.remoteDatasource});
 
   final DoctorsRemoteDatasource remoteDatasource;
 

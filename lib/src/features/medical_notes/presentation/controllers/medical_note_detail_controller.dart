@@ -28,8 +28,9 @@ class MedicalNoteDetailController extends _$MedicalNoteDetailController {
 
   Future<void> _loadNote(String noteId) async {
     try {
-      final result =
-          await ref.read(getMedicalNoteByIdUseCaseProvider).call(noteId);
+      final result = await ref
+          .read(getMedicalNoteByIdUseCaseProvider)
+          .call(noteId);
 
       result.when(
         success: (note) {

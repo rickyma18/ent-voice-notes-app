@@ -9,9 +9,7 @@ import 'validation.dart';
 /// - Minimum 2 characters
 /// - Maximum 60 characters
 class NameValidation extends Validation<String> {
-  const NameValidation({
-    this.fieldName = 'nombre',
-  });
+  const NameValidation({this.fieldName = 'nombre'});
 
   /// Field name for error messages (e.g., "nombre", "apellido")
   final String fieldName;

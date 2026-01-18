@@ -11,7 +11,7 @@ import 'study_entity.dart';
 import 'surgical_note_data_entity.dart';
 
 /// Entidad de dominio para Notas Clínicas
-/// 
+///
 /// Representa una nota clínica completa generada durante una consulta médica.
 /// Incluye información estructurada del paciente, doctor, y detalles clínicos.
 class MedicalNoteEntity extends Equatable {
@@ -244,7 +244,8 @@ class MedicalNoteEntity extends Equatable {
       resumen: resumen ?? this.resumen,
       notaAdicional: notaAdicional ?? this.notaAdicional,
       status: status ?? this.status,
-      medicamentosRecetados: medicamentosRecetados ?? this.medicamentosRecetados,
+      medicamentosRecetados:
+          medicamentosRecetados ?? this.medicamentosRecetados,
       estudiosIndicados: estudiosIndicados ?? this.estudiosIndicados,
       proximaCita: proximaCita ?? this.proximaCita,
       attachments: attachments ?? this.attachments,
@@ -257,7 +258,8 @@ class MedicalNoteEntity extends Equatable {
 
   // Validación de completitud
   bool get isComplete {
-    final baseComplete = motivoConsulta.isNotEmpty &&
+    final baseComplete =
+        motivoConsulta.isNotEmpty &&
         exploracionFisicaOrl.isNotEmpty &&
         diagnostico.isNotEmpty &&
         planTratamiento.isNotEmpty;
@@ -320,41 +322,42 @@ class MedicalNoteEntity extends Equatable {
 
   @override
   List<Object?> get props => [
-        id,
-        patientId,
-        doctorId,
-        createdAt,
-        updatedAt,
-        type,
-        motivoConsulta,
-        antecedentes,
-        exploracionFisicaOrl,
-        diagnostico,
-        planTratamiento,
-        weightKg,
-        heightCm,
-        bpSystolic,
-        bpDiastolic,
-        heartRate,
-        respiratoryRate,
-        temperatureC,
-        spo2,
-        prognosis,
-        rawTranscript,
-        resumen,
-        notaAdicional,
-        status,
-        medicamentosRecetados,
-        estudiosIndicados,
-        proximaCita,
-        attachments,
-        tags,
-        isFavorite,
-        surgicalData,
-        signatureData,
-      ];
+    id,
+    patientId,
+    doctorId,
+    createdAt,
+    updatedAt,
+    type,
+    motivoConsulta,
+    antecedentes,
+    exploracionFisicaOrl,
+    diagnostico,
+    planTratamiento,
+    weightKg,
+    heightCm,
+    bpSystolic,
+    bpDiastolic,
+    heartRate,
+    respiratoryRate,
+    temperatureC,
+    spo2,
+    prognosis,
+    rawTranscript,
+    resumen,
+    notaAdicional,
+    status,
+    medicamentosRecetados,
+    estudiosIndicados,
+    proximaCita,
+    attachments,
+    tags,
+    isFavorite,
+    surgicalData,
+    signatureData,
+  ];
 
   @override
-  String toString() => 'MedicalNoteEntity(id: $id, patientId: $patientId, '
+  String toString() =>
+      'MedicalNoteEntity(id: $id, patientId: $patientId, '
       'type: $type, status: $status, createdAt: $createdAt)';
 }

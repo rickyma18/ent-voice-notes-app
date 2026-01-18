@@ -179,8 +179,9 @@ class NotesListController extends _$NotesListController {
       success: (notes) {
         // DEBUG ASSERTION: Verify all returned notes belong to the requested patient.
         assert(() {
-          final wrongPatientNotes =
-              notes.where((n) => n.patientId != patientId);
+          final wrongPatientNotes = notes.where(
+            (n) => n.patientId != patientId,
+          );
           if (wrongPatientNotes.isNotEmpty) {
             throw StateError(
               'loadPatientNotes: Data layer returned notes for wrong patient!\n'

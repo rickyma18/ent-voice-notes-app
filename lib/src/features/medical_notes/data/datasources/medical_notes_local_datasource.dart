@@ -11,10 +11,7 @@ abstract base class MedicalNotesLocalDatasource {
   Future<List<MedicalNoteModel>> getCachedNotes(String patientId);
 
   /// Guarda en caché las notas de un paciente.
-  Future<void> cacheNotes(
-    String patientId,
-    List<MedicalNoteModel> notes,
-  );
+  Future<void> cacheNotes(String patientId, List<MedicalNoteModel> notes);
 
   /// Limpia la caché de notas de un paciente.
   Future<void> clearCachedNotes(String patientId);

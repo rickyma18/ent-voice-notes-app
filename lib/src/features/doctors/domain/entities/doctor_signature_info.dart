@@ -44,7 +44,8 @@ class DoctorSignatureInfo extends Equatable {
   List<Object?> get props => [hasDefault, defaultUrl, updatedAt];
 
   @override
-  String toString() => 'DoctorSignatureInfo('
+  String toString() =>
+      'DoctorSignatureInfo('
       'hasDefault: $hasDefault, '
       'defaultUrl: $defaultUrl, '
       'updatedAt: $updatedAt)';

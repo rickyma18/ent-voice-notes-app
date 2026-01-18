@@ -7,11 +7,7 @@ import 'package:flutter/material.dart';
 /// Used to display image attachments internally instead of relying on
 /// external applications, which may fail on some Android devices.
 class ImageViewerPage extends StatefulWidget {
-  const ImageViewerPage({
-    super.key,
-    required this.imageUrl,
-    this.title,
-  });
+  const ImageViewerPage({super.key, required this.imageUrl, this.title});
 
   /// The URL of the image to display
   final String imageUrl;
@@ -97,7 +93,7 @@ class _LoadingIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     final progress = loadingProgress.expectedTotalBytes != null
         ? loadingProgress.cumulativeBytesLoaded /
-            loadingProgress.expectedTotalBytes!
+              loadingProgress.expectedTotalBytes!
         : null;
 
     return Column(
@@ -156,10 +152,7 @@ class _ErrorDisplay extends StatelessWidget {
           const Text(
             'Verifica tu conexión a internet\ne intenta de nuevo',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white54,
-              fontSize: 14,
-            ),
+            style: TextStyle(color: Colors.white54, fontSize: 14),
           ),
           const SizedBox(height: 24),
           OutlinedButton.icon(

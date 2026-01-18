@@ -54,8 +54,7 @@ class StructuredFieldsParser {
     final errors = <String>[];
 
     // Check required root structure
-    if (!parsed.containsKey('antecedentes') ||
-        parsed['antecedentes'] is! Map) {
+    if (!parsed.containsKey('antecedentes') || parsed['antecedentes'] is! Map) {
       errors.add('Missing or invalid "antecedentes" object');
     }
 
@@ -64,8 +63,7 @@ class StructuredFieldsParser {
       errors.add('Missing or invalid "exploracion_orl" object');
     }
 
-    if (!parsed.containsKey('diagnostico') ||
-        parsed['diagnostico'] is! Map) {
+    if (!parsed.containsKey('diagnostico') || parsed['diagnostico'] is! Map) {
       errors.add('Missing or invalid "diagnostico" object');
     }
 
@@ -107,9 +105,7 @@ class StructuredFieldsParser {
     // Handle case where response starts with text before JSON
     final jsonStart = cleaned.indexOf('{');
     if (jsonStart > 0) {
-      Log.warning(
-        '⚠️ Found text before JSON, stripping ${jsonStart} chars',
-      );
+      Log.warning('⚠️ Found text before JSON, stripping ${jsonStart} chars');
       cleaned = cleaned.substring(jsonStart);
     }
 
@@ -140,7 +136,9 @@ class StructuredFieldsParser {
       return Map<String, dynamic>.from(decoded);
     } on FormatException catch (e) {
       Log.error('❌ JSON decode failed: $e');
-      Log.error('❌ Raw (first 200 chars): ${cleaned.substring(0, cleaned.length.clamp(0, 200))}');
+      Log.error(
+        '❌ Raw (first 200 chars): ${cleaned.substring(0, cleaned.length.clamp(0, 200))}',
+      );
       rethrow;
     }
   }
@@ -172,8 +170,7 @@ class StructuredFieldsParser {
 
     // Preserve any extra keys from LLM (don't discard unknown fields)
     for (final entry in parsed.entries) {
-      if (!result.containsKey(entry.key) &&
-          !_isLegacyKey(entry.key)) {
+      if (!result.containsKey(entry.key) && !_isLegacyKey(entry.key)) {
         result[entry.key] = entry.value;
       }
     }
@@ -196,9 +193,7 @@ class StructuredFieldsParser {
       } else if (value is String) {
         // Legacy: value is a string but should be a map
         // Return the schema default but try to preserve the string somewhere
-        Log.warning(
-          '⚠️ Expected Map but got String, using schema default',
-        );
+        Log.warning('⚠️ Expected Map but got String, using schema default');
         return schemaDefault;
       }
       return schemaDefault;
@@ -282,13 +277,9 @@ class StructuredFieldsParser {
 
 /// Result of parsing attempt with success/failure info.
 class ParseResult {
-  const ParseResult.success(this.data)
-      : error = null,
-        isValid = true;
+  const ParseResult.success(this.data) : error = null, isValid = true;
 
-  const ParseResult.failure(this.error)
-      : data = null,
-        isValid = false;
+  const ParseResult.failure(this.error) : data = null, isValid = false;
 
   final Map<String, dynamic>? data;
   final String? error;

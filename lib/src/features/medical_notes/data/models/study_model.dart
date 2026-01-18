@@ -17,7 +17,9 @@ class StudyModel extends StudyEntity {
       urgencia: _parseStudyUrgency(json['urgencia'] as String?),
       resultadoAdjunto: json['resultado_adjunto'] as String?,
       // Use FirestoreTimestampParser to handle both Timestamp and ISO String
-      fechaRealizado: FirestoreTimestampParser.tryParse(json['fecha_realizado']),
+      fechaRealizado: FirestoreTimestampParser.tryParse(
+        json['fecha_realizado'],
+      ),
     );
   }
 

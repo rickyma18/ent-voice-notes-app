@@ -21,14 +21,10 @@ abstract base class MedicalNotesRepository extends Repository {
   Future<Result<MedicalNoteEntity?, Failure>> getNoteById(String id);
 
   /// Crea una nueva nota médica
-  Future<Result<MedicalNoteEntity, Failure>> createNote(
-    MedicalNoteEntity note,
-  );
+  Future<Result<MedicalNoteEntity, Failure>> createNote(MedicalNoteEntity note);
 
   /// Actualiza una nota médica existente
-  Future<Result<MedicalNoteEntity, Failure>> updateNote(
-    MedicalNoteEntity note,
-  );
+  Future<Result<MedicalNoteEntity, Failure>> updateNote(MedicalNoteEntity note);
 
   /// Elimina una nota médica por su ID
   Future<Result<void, Failure>> deleteNote(String id);

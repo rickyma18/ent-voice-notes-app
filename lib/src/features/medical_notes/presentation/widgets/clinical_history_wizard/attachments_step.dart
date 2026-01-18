@@ -76,8 +76,9 @@ class AttachmentsStep extends StatelessWidget {
 
             // Add PDF (disabled until storage is ready)
             Tooltip(
-              message:
-                  isUploadEnabled ? 'Agregar PDF' : 'Requiere activar Storage',
+              message: isUploadEnabled
+                  ? 'Agregar PDF'
+                  : 'Requiere activar Storage',
               child: OutlinedButton.icon(
                 onPressed: isUploadEnabled ? onAddPdf : null,
                 icon: const Icon(Icons.picture_as_pdf, size: 18),
@@ -94,11 +95,11 @@ class AttachmentsStep extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: theme.colorScheme.outlineVariant,
+              color: theme.colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.5,
               ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: theme.colorScheme.outlineVariant),
             ),
             child: Column(
               children: [
@@ -239,10 +240,7 @@ class _AddLinkDialogState extends State<_AddLinkDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancelar'),
         ),
-        FilledButton(
-          onPressed: _submit,
-          child: const Text('Agregar'),
-        ),
+        FilledButton(onPressed: _submit, child: const Text('Agregar')),
       ],
     );
   }
@@ -250,10 +248,7 @@ class _AddLinkDialogState extends State<_AddLinkDialog> {
 
 /// Tile displaying a single attachment with remove action.
 class _AttachmentTile extends StatelessWidget {
-  const _AttachmentTile({
-    required this.attachment,
-    required this.onRemove,
-  });
+  const _AttachmentTile({required this.attachment, required this.onRemove});
 
   final AttachmentEntity attachment;
   final VoidCallback onRemove;
@@ -302,11 +297,7 @@ class _AttachmentTile extends StatelessWidget {
       child: ListTile(
         leading: CircleAvatar(
           backgroundColor: _getIconColor(theme).withValues(alpha: 0.1),
-          child: Icon(
-            _getIcon(),
-            color: _getIconColor(theme),
-            size: 20,
-          ),
+          child: Icon(_getIcon(), color: _getIconColor(theme), size: 20),
         ),
         title: Text(
           attachment.nombre,

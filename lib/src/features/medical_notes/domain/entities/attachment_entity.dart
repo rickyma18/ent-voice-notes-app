@@ -22,20 +22,21 @@ class AttachmentEntity extends Equatable {
 
   String get size_in_bytesLegible {
     if (size_in_bytes < 1024) return '$size_in_bytes B';
-    if (size_in_bytes < 1024 * 1024) return '${(size_in_bytes / 1024).toStringAsFixed(1)} KB';
+    if (size_in_bytes < 1024 * 1024)
+      return '${(size_in_bytes / 1024).toStringAsFixed(1)} KB';
     return '${(size_in_bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
   @override
   List<Object?> get props => [
-        id,
-        nombre,
-        url,
-        tipo,
-        size_in_bytes,
-        fechaSubida,
-        thumbnail,
-      ];
+    id,
+    nombre,
+    url,
+    tipo,
+    size_in_bytes,
+    fechaSubida,
+    thumbnail,
+  ];
 }
 
 enum AttachmentType {

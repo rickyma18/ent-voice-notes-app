@@ -98,7 +98,9 @@ class StartupCoordinator extends _$StartupCoordinator {
 
     _videoCompleted = true;
     final elapsed = DateTime.now().difference(_splashStartTime!);
-    Log.info('[StartupCoordinator] Video completed after ${elapsed.inMilliseconds}ms');
+    Log.info(
+      '[StartupCoordinator] Video completed after ${elapsed.inMilliseconds}ms',
+    );
 
     _checkReadyToNavigate();
   }
@@ -163,7 +165,9 @@ class StartupCoordinator extends _$StartupCoordinator {
 
     // Mark startup as complete
     state = StartupPhase.completed;
-    Log.info('[StartupCoordinator] Startup completed, destination: $destination');
+    Log.info(
+      '[StartupCoordinator] Startup completed, destination: $destination',
+    );
   }
 
   /// Returns the current phase (for external reads).

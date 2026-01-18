@@ -7,11 +7,7 @@ import '../../../../../ui/docsoft_ui.dart';
 /// When [patientName] is provided, displays "Notas de <patientName>".
 /// Otherwise, displays just "Notas".
 class NotesHeader extends StatelessWidget {
-  const NotesHeader({
-    super.key,
-    required this.onNewNote,
-    this.patientName,
-  });
+  const NotesHeader({super.key, required this.onNewNote, this.patientName});
 
   /// Callback when "Nueva nota" button is pressed
   final VoidCallback onNewNote;
@@ -20,8 +16,7 @@ class NotesHeader extends StatelessWidget {
   /// When provided, title becomes "Notas de <patientName>".
   final String? patientName;
 
-  String get _title =>
-      patientName != null ? 'Notas de $patientName' : 'Notas';
+  String get _title => patientName != null ? 'Notas de $patientName' : 'Notas';
 
   /// Use smaller text style when showing patient name to fit longer titles
   TextStyle get _titleStyle => patientName != null

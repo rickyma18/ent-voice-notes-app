@@ -133,10 +133,11 @@ class _SelectPatientPageState extends ConsumerState<SelectPatientPage> {
                   }
 
                   // Sort alphabetically by name (A-Z, case-insensitive)
-                  final sortedPatients = [...filteredPatients]..sort(
-                      (a, b) => a.fullName
-                          .toLowerCase()
-                          .compareTo(b.fullName.toLowerCase()),
+                  final sortedPatients = [...filteredPatients]
+                    ..sort(
+                      (a, b) => a.fullName.toLowerCase().compareTo(
+                        b.fullName.toLowerCase(),
+                      ),
                     );
 
                   // Get all medical notes (data or empty list)

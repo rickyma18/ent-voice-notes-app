@@ -403,8 +403,9 @@ class MedicalNotePdfBuilder {
                   ),
                   decoration: pw.BoxDecoration(
                     color: PdfColors.green100,
-                    borderRadius:
-                        const pw.BorderRadius.all(pw.Radius.circular(4)),
+                    borderRadius: const pw.BorderRadius.all(
+                      pw.Radius.circular(4),
+                    ),
                   ),
                   child: pw.Text(
                     'FIRMADO',

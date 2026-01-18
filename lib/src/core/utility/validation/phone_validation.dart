@@ -11,9 +11,7 @@ import 'validation.dart';
 /// Note: This is a lenient validation. Phone number formats vary by country.
 /// The formatter restricts input characters, this validates the result.
 class PhoneValidation extends Validation<String> {
-  const PhoneValidation({
-    this.required = false,
-  });
+  const PhoneValidation({this.required = false});
 
   /// Whether the phone is required. If false, empty is valid.
   final bool required;

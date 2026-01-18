@@ -37,9 +37,7 @@ class PatientsController extends _$PatientsController {
         return;
       }
 
-      final result = await ref
-          .read(getPatientsUseCaseProvider)
-          .call(doctorId);
+      final result = await ref.read(getPatientsUseCaseProvider).call(doctorId);
 
       result.when(
         success: (patients) {
@@ -66,8 +64,7 @@ class PatientsController extends _$PatientsController {
   Future<Result<PatientEntity, Failure>> updatePatient(
     PatientEntity patient,
   ) async {
-    final result =
-        await ref.read(updatePatientUseCaseProvider).call(patient);
+    final result = await ref.read(updatePatientUseCaseProvider).call(patient);
 
     result.when(
       success: (_) {
@@ -84,8 +81,7 @@ class PatientsController extends _$PatientsController {
 
   /// Elimina un paciente por ID (US 4.6)
   Future<Result<void, Failure>> deletePatient(String patientId) async {
-    final result =
-        await ref.read(deletePatientUseCaseProvider).call(patientId);
+    final result = await ref.read(deletePatientUseCaseProvider).call(patientId);
 
     result.when(
       success: (_) {

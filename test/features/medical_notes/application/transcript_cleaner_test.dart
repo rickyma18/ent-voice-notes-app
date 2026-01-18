@@ -199,9 +199,7 @@ void main() {
     });
 
     test('19. nulls text fields that are only fillers', () {
-      final parsed = {
-        'notas_adicionales': 'eh... mmm... pues...',
-      };
+      final parsed = {'notas_adicionales': 'eh... mmm... pues...'};
 
       final sanitized = sanitizeStructuredFieldsV1(parsed);
 
@@ -233,9 +231,7 @@ void main() {
 
     test('21. does not mutate original map', () {
       final parsed = {
-        'antecedentes': {
-          'heredofamiliares': 'no que yo sepa',
-        },
+        'antecedentes': {'heredofamiliares': 'no que yo sepa'},
       };
 
       sanitizeStructuredFieldsV1(parsed);

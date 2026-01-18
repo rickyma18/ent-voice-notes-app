@@ -11,14 +11,10 @@ abstract base class PatientsRepository extends Repository {
   Future<Result<List<PatientEntity>, Failure>> getPatients(String doctorId);
 
   /// Crea un nuevo paciente (US 4.3)
-  Future<Result<PatientEntity, Failure>> createPatient(
-    PatientEntity patient,
-  );
+  Future<Result<PatientEntity, Failure>> createPatient(PatientEntity patient);
 
   /// Actualiza un paciente existente (US 4.5)
-  Future<Result<PatientEntity, Failure>> updatePatient(
-    PatientEntity patient,
-  );
+  Future<Result<PatientEntity, Failure>> updatePatient(PatientEntity patient);
 
   /// Elimina un paciente por ID (US 4.6)
   Future<Result<void, Failure>> deletePatient(String patientId);

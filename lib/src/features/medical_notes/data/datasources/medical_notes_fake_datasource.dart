@@ -109,7 +109,8 @@ final class FakeMedicalNotesRemoteDatasource
           diagnostico: 'Hipoacusia neurosensorial por ruido',
           planTratamiento:
               'Valoración para adaptación de audífonos. Protección auditiva.',
-          rawTranscript: 'Paciente con dificultad para escuchar conversaciones...',
+          rawTranscript:
+              'Paciente con dificultad para escuchar conversaciones...',
           resumen: 'Hipoacusia ocupacional. Requiere audífonos.',
           status: NoteStatus.sent,
           tags: const ['hipoacusia', 'laboral'],
@@ -136,7 +137,9 @@ final class FakeMedicalNotesRemoteDatasource
     // CRITICAL: Filter by BOTH patient_id AND doctor_id for security
     // Matches real Firestore implementation behavior
     final notes = _notesStore.values
-        .where((note) => note.patientId == patientId && note.doctorId == doctorId)
+        .where(
+          (note) => note.patientId == patientId && note.doctorId == doctorId,
+        )
         .toList();
 
     // Sort by createdAt descending (most recent first)

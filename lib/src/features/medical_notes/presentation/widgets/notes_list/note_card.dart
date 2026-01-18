@@ -81,9 +81,7 @@ class NoteCard extends StatelessWidget {
                           ),
                           const Text(
                             ' \u00b7 ',
-                            style: TextStyle(
-                              color: DocsoftColors.textTertiary,
-                            ),
+                            style: TextStyle(color: DocsoftColors.textTertiary),
                           ),
                           Text(
                             note.status.label,

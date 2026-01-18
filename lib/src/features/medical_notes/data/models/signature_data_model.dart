@@ -17,15 +17,17 @@ class SignatureDataModel extends SignatureDataEntity {
   /// Creates a model from Firestore JSON
   factory SignatureDataModel.fromJson(Map<String, dynamic> json) {
     return SignatureDataModel(
-      signedAt: FirestoreTimestampParser.tryParse(json['signed_at']) ??
+      signedAt:
+          FirestoreTimestampParser.tryParse(json['signed_at']) ??
           DateTime.now(),
       signedByDoctorId: json['signed_by_doctor_id'] as String,
       signedByDoctorDisplayName:
           json['signed_by_doctor_display_name'] as String,
       signatureSnapshotUrl: json['signature_snapshot_url'] as String,
       signedPdfUrl: json['signed_pdf_url'] as String,
-      signatureMethod:
-          SignatureMethod.fromString(json['signature_method'] as String?),
+      signatureMethod: SignatureMethod.fromString(
+        json['signature_method'] as String?,
+      ),
     );
   }
 

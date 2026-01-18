@@ -41,14 +41,22 @@ abstract class DocsoftRadii {
   // ────────────────────────────────────────────────────────────────────────────
 
   /// Card Radius: 20.0
-  static const BorderRadius card = BorderRadius.all(Radius.circular(cardRadiusValue));
+  static const BorderRadius card = BorderRadius.all(
+    Radius.circular(cardRadiusValue),
+  );
 
   /// Input Radius: 14.0
-  static const BorderRadius input = BorderRadius.all(Radius.circular(inputRadiusValue));
+  static const BorderRadius input = BorderRadius.all(
+    Radius.circular(inputRadiusValue),
+  );
 
   /// Button Radius: 16.0
-  static const BorderRadius button = BorderRadius.all(Radius.circular(buttonRadiusValue));
+  static const BorderRadius button = BorderRadius.all(
+    Radius.circular(buttonRadiusValue),
+  );
 
   /// BottomSheet Radius: 24.0 (Top only)
-  static const BorderRadius bottomSheet = BorderRadius.vertical(top: Radius.circular(bottomSheetRadiusValue));
+  static const BorderRadius bottomSheet = BorderRadius.vertical(
+    top: Radius.circular(bottomSheetRadiusValue),
+  );
 }

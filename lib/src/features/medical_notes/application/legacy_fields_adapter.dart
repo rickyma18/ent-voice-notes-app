@@ -40,9 +40,7 @@ class LegacyFieldsAdapter {
     result['resumen'] = _buildResumenString(v1Data, result);
 
     // Filter out empty strings
-    return Map.fromEntries(
-      result.entries.where((e) => e.value.isNotEmpty),
-    );
+    return Map.fromEntries(result.entries.where((e) => e.value.isNotEmpty));
   }
 
   /// Extrae las secciones estructuradas para uso directo en UI.

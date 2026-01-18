@@ -49,14 +49,17 @@ class DocsoftActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveIconColor = iconColor ??
+    final effectiveIconColor =
+        iconColor ??
         (isHighlighted ? DocsoftColors.primary : DocsoftColors.textSecondary);
 
-    final backgroundColor =
-        isHighlighted ? DocsoftColors.primaryMuted : DocsoftColors.surface;
+    final backgroundColor = isHighlighted
+        ? DocsoftColors.primaryMuted
+        : DocsoftColors.surface;
 
-    final borderColor =
-        isHighlighted ? DocsoftColors.primary : DocsoftColors.border;
+    final borderColor = isHighlighted
+        ? DocsoftColors.primary
+        : DocsoftColors.border;
 
     final borderWidth = isHighlighted ? 1.5 : 1.0;
 
@@ -73,10 +76,7 @@ class DocsoftActionTile extends StatelessWidget {
             padding: const EdgeInsets.all(DocsoftSpacing.md),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(DocsoftRadii.lg),
-              border: Border.all(
-                color: borderColor,
-                width: borderWidth,
-              ),
+              border: Border.all(color: borderColor, width: borderWidth),
             ),
             child: Row(
               children: [
@@ -90,11 +90,7 @@ class DocsoftActionTile extends StatelessWidget {
                         : DocsoftColors.surfaceAlt,
                     borderRadius: BorderRadius.circular(DocsoftRadii.md),
                   ),
-                  child: Icon(
-                    icon,
-                    size: 24,
-                    color: effectiveIconColor,
-                  ),
+                  child: Icon(icon, size: 24, color: effectiveIconColor),
                 ),
                 const SizedBox(width: DocsoftSpacing.md),
                 // Text content
@@ -107,8 +103,9 @@ class DocsoftActionTile extends StatelessWidget {
                         title,
                         style: DocsoftTextStyles.subtitle.copyWith(
                           color: DocsoftColors.textPrimary,
-                          fontWeight:
-                              isHighlighted ? FontWeight.w600 : FontWeight.w500,
+                          fontWeight: isHighlighted
+                              ? FontWeight.w600
+                              : FontWeight.w500,
                         ),
                       ),
                       if (description != null) ...[

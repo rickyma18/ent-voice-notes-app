@@ -49,9 +49,7 @@ final class AuthenticationRepositoryImpl extends AuthenticationRepository {
       await _saveSession();
       await local.save(CacheKey.doctorId, user.uid);
 
-      return SignUpResponseEntity(
-        accessToken: token ?? 'firebase-auth-token',
-      );
+      return SignUpResponseEntity(accessToken: token ?? 'firebase-auth-token');
     } on FirebaseAuthException catch (e) {
       throw _mapFirebaseAuthException(e);
     }

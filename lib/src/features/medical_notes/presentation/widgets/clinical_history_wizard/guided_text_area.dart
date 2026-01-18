@@ -152,7 +152,8 @@ class _GuidedTextAreaState extends State<GuidedTextArea> {
 
         Scrollable.ensureVisible(
           currentContext,
-          alignment: 0.1, // Upper portion of viewport for better caret visibility
+          alignment:
+              0.1, // Upper portion of viewport for better caret visibility
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );

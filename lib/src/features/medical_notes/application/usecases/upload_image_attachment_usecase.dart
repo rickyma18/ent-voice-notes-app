@@ -8,7 +8,7 @@ import '../../domain/repositories/attachments_repository.dart';
 /// Use case for uploading an image attachment.
 class UploadImageAttachmentUseCase {
   UploadImageAttachmentUseCase({required AttachmentsRepository repository})
-      : _repository = repository;
+    : _repository = repository;
 
   final AttachmentsRepository _repository;
 

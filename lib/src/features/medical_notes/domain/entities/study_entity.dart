@@ -18,12 +18,12 @@ class StudyEntity extends Equatable {
 
   @override
   List<Object?> get props => [
-        tipo,
-        descripcion,
-        urgencia,
-        resultadoAdjunto,
-        fechaRealizado,
-      ];
+    tipo,
+    descripcion,
+    urgencia,
+    resultadoAdjunto,
+    fechaRealizado,
+  ];
 }
 
 enum StudyUrgency {

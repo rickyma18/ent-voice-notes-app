@@ -83,10 +83,7 @@ class DocsoftBrandedHeaderShell extends StatelessWidget {
     // Content wrapped in SafeArea
     final safeContent = SafeArea(
       bottom: false,
-      child: Padding(
-        padding: contentPadding,
-        child: child,
-      ),
+      child: Padding(padding: contentPadding, child: child),
     );
 
     // If decoration is provided, use Stack
@@ -95,10 +92,9 @@ class DocsoftBrandedHeaderShell extends StatelessWidget {
       bodyContent = Stack(
         children: [
           // Decoration layer (behind)
-          Positioned.fill(child: ClipRRect(
-            borderRadius: bottomRadius,
-            child: decoration!,
-          )),
+          Positioned.fill(
+            child: ClipRRect(borderRadius: bottomRadius, child: decoration!),
+          ),
           // Content layer (front)
           safeContent,
         ],

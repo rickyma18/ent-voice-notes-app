@@ -38,16 +38,17 @@ class SignatureDataEntity extends Equatable {
 
   @override
   List<Object?> get props => [
-        signedAt,
-        signedByDoctorId,
-        signedByDoctorDisplayName,
-        signatureSnapshotUrl,
-        signedPdfUrl,
-        signatureMethod,
-      ];
+    signedAt,
+    signedByDoctorId,
+    signedByDoctorDisplayName,
+    signatureSnapshotUrl,
+    signedPdfUrl,
+    signatureMethod,
+  ];
 
   @override
-  String toString() => 'SignatureDataEntity('
+  String toString() =>
+      'SignatureDataEntity('
       'signedAt: $signedAt, '
       'signedByDoctorId: $signedByDoctorId, '
       'signedByDoctorDisplayName: $signedByDoctorDisplayName, '

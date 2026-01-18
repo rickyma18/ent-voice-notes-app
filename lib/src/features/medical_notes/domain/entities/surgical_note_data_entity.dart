@@ -62,11 +62,11 @@ class SurgicalNoteDataEntity extends Equatable {
 
   @override
   List<Object?> get props => [
-        tecnicaQuirurgica,
-        hallazgos,
-        observaciones,
-        complicaciones,
-      ];
+    tecnicaQuirurgica,
+    hallazgos,
+    observaciones,
+    complicaciones,
+  ];
 
   @override
   String toString() =>

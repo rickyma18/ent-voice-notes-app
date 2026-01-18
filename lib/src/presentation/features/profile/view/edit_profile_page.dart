@@ -223,10 +223,7 @@ class _EditProfileAvatarRow extends StatelessWidget {
               decoration: BoxDecoration(
                 color: DocsoftColors.surface,
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: DocsoftColors.primary,
-                  width: 2,
-                ),
+                border: Border.all(color: DocsoftColors.primary, width: 2),
               ),
               child: const Icon(
                 Icons.camera_alt_rounded,

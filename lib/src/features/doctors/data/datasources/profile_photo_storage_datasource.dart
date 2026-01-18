@@ -11,7 +11,7 @@ import 'package:path/path.dart' as p;
 /// profile_photos/{doctorId}/profile.{extension}
 class ProfilePhotoStorageDatasource {
   ProfilePhotoStorageDatasource({FirebaseStorage? storage})
-      : _storage = storage ?? FirebaseStorage.instance;
+    : _storage = storage ?? FirebaseStorage.instance;
 
   final FirebaseStorage _storage;
 
@@ -67,8 +67,10 @@ class ProfilePhotoStorageDatasource {
   /// Used when deleting account.
   Future<void> deleteAllProfilePhotos(String doctorId) async {
     try {
-      final listResult =
-          await _storage.ref().child('profile_photos/$doctorId').listAll();
+      final listResult = await _storage
+          .ref()
+          .child('profile_photos/$doctorId')
+          .listAll();
 
       for (final item in listResult.items) {
         await item.delete();

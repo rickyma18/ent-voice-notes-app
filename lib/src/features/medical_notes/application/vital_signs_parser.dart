@@ -223,9 +223,7 @@ class VitalSignsParser {
     }
 
     // "TA X/Y" or "ta X/Y"
-    final taMatch = RegExp(
-      r'\bta\s*(\d+)\s*[/]\s*(\d+)',
-    ).firstMatch(text);
+    final taMatch = RegExp(r'\bta\s*(\d+)\s*[/]\s*(\d+)').firstMatch(text);
     if (taMatch != null) {
       final sys = int.tryParse(taMatch.group(1) ?? '');
       final dia = int.tryParse(taMatch.group(2) ?? '');

@@ -10,10 +10,7 @@ import '../../../domain/entities/signature_data_entity.dart';
 ///
 /// Shows the locked status with the signing doctor and date.
 class NoteLockedBanner extends StatelessWidget {
-  const NoteLockedBanner({
-    super.key,
-    required this.signatureData,
-  });
+  const NoteLockedBanner({super.key, required this.signatureData});
 
   /// Signature data containing who signed and when
   final SignatureDataEntity signatureData;
@@ -29,9 +26,7 @@ class NoteLockedBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: DocsoftColors.successSoft,
         borderRadius: BorderRadius.circular(DocsoftRadii.md),
-        border: Border.all(
-          color: DocsoftColors.success.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: DocsoftColors.success.withValues(alpha: 0.3)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,

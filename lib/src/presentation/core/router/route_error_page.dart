@@ -5,10 +5,7 @@ import 'route_names.dart';
 
 /// Global error page shown when navigation fails or route is not found
 class RouteErrorPage extends StatelessWidget {
-  const RouteErrorPage({
-    super.key,
-    this.error,
-  });
+  const RouteErrorPage({super.key, this.error});
 
   final Exception? error;
 

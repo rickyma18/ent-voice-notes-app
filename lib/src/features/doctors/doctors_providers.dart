@@ -33,9 +33,7 @@ ProfilePhotoStorageDatasource profilePhotoStorageDatasource(
 
 /// Repository provider for doctors
 @riverpod
-DoctorsRepository doctorsRepository(
-  DoctorsRepositoryRef ref,
-) {
+DoctorsRepository doctorsRepository(DoctorsRepositoryRef ref) {
   return DoctorsRepositoryImpl(
     remoteDatasource: ref.watch(doctorsRemoteDatasourceProvider),
   );
@@ -47,9 +45,7 @@ DoctorsRepository doctorsRepository(
 GetCurrentDoctorProfileUseCase getCurrentDoctorProfileUseCase(
   GetCurrentDoctorProfileUseCaseRef ref,
 ) {
-  return GetCurrentDoctorProfileUseCase(
-    ref.watch(doctorsRepositoryProvider),
-  );
+  return GetCurrentDoctorProfileUseCase(ref.watch(doctorsRepositoryProvider));
 }
 
 @riverpod
@@ -65,9 +61,7 @@ CreateOrUpdateDoctorProfileUseCase createOrUpdateDoctorProfileUseCase(
 UpdateDoctorProfileUseCase updateDoctorProfileUseCase(
   UpdateDoctorProfileUseCaseRef ref,
 ) {
-  return UpdateDoctorProfileUseCase(
-    ref.watch(doctorsRepositoryProvider),
-  );
+  return UpdateDoctorProfileUseCase(ref.watch(doctorsRepositoryProvider));
 }
 
 @riverpod
@@ -91,9 +85,7 @@ DeleteDoctorPhotoUseCase deleteDoctorPhotoUseCase(
 }
 
 @riverpod
-DeleteAccountUseCase deleteAccountUseCase(
-  DeleteAccountUseCaseRef ref,
-) {
+DeleteAccountUseCase deleteAccountUseCase(DeleteAccountUseCaseRef ref) {
   return DeleteAccountUseCase(
     repository: ref.watch(doctorsRepositoryProvider),
     storageDatasource: ref.watch(profilePhotoStorageDatasourceProvider),

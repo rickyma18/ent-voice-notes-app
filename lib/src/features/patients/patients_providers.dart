@@ -34,9 +34,7 @@ PatientsRemoteDatasource patientsRemoteDatasource(
 
 /// Repository provider
 @riverpod
-PatientsRepository patientsRepository(
-  PatientsRepositoryRef ref,
-) {
+PatientsRepository patientsRepository(PatientsRepositoryRef ref) {
   return PatientsRepositoryImpl(
     remoteDatasource: ref.watch(patientsRemoteDatasourceProvider),
   );
@@ -45,46 +43,26 @@ PatientsRepository patientsRepository(
 /// Use cases providers
 
 @riverpod
-GetPatientsUseCase getPatientsUseCase(
-  GetPatientsUseCaseRef ref,
-) {
-  return GetPatientsUseCase(
-    ref.watch(patientsRepositoryProvider),
-  );
+GetPatientsUseCase getPatientsUseCase(GetPatientsUseCaseRef ref) {
+  return GetPatientsUseCase(ref.watch(patientsRepositoryProvider));
 }
 
 @riverpod
-GetPatientByIdUseCase getPatientByIdUseCase(
-  GetPatientByIdUseCaseRef ref,
-) {
-  return GetPatientByIdUseCase(
-    ref.watch(patientsRepositoryProvider),
-  );
+GetPatientByIdUseCase getPatientByIdUseCase(GetPatientByIdUseCaseRef ref) {
+  return GetPatientByIdUseCase(ref.watch(patientsRepositoryProvider));
 }
 
 @riverpod
-CreatePatientUseCase createPatientUseCase(
-  CreatePatientUseCaseRef ref,
-) {
-  return CreatePatientUseCase(
-    ref.watch(patientsRepositoryProvider),
-  );
+CreatePatientUseCase createPatientUseCase(CreatePatientUseCaseRef ref) {
+  return CreatePatientUseCase(ref.watch(patientsRepositoryProvider));
 }
 
 @riverpod
-UpdatePatientUseCase updatePatientUseCase(
-  UpdatePatientUseCaseRef ref,
-) {
-  return UpdatePatientUseCase(
-    ref.watch(patientsRepositoryProvider),
-  );
+UpdatePatientUseCase updatePatientUseCase(UpdatePatientUseCaseRef ref) {
+  return UpdatePatientUseCase(ref.watch(patientsRepositoryProvider));
 }
 
 @riverpod
-DeletePatientUseCase deletePatientUseCase(
-  DeletePatientUseCaseRef ref,
-) {
-  return DeletePatientUseCase(
-    ref.watch(patientsRepositoryProvider),
-  );
+DeletePatientUseCase deletePatientUseCase(DeletePatientUseCaseRef ref) {
+  return DeletePatientUseCase(ref.watch(patientsRepositoryProvider));
 }

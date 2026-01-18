@@ -32,9 +32,9 @@ class _RegistrationPageState extends ConsumerState<RegistrationPage> {
         case AsyncData(:final value) when value != null:
           context.pushReplacementNamed(RouteNames.home);
         case AsyncError(:final error):
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(error.toString())),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(error.toString())));
       }
     });
   }
@@ -50,7 +50,9 @@ class _RegistrationPageState extends ConsumerState<RegistrationPage> {
 
   void _onRegister() {
     if (_formKey.currentState!.validate()) {
-      ref.read(registerProvider.notifier).register(
+      ref
+          .read(registerProvider.notifier)
+          .register(
             firstName: _firstNameController.text.trim(),
             lastName: _lastNameController.text.trim(),
             email: _emailController.text.trim(),

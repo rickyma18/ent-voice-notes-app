@@ -7,18 +7,12 @@ abstract base class AuthenticationRemoteDatasource {
   /// Sign in with email and password
   /// Returns Firebase User on success
   /// Throws FirebaseAuthException on error
-  Future<User> signIn({
-    required String email,
-    required String password,
-  });
+  Future<User> signIn({required String email, required String password});
 
   /// Create new user account with email and password
   /// Returns Firebase User on success
   /// Throws FirebaseAuthException on error
-  Future<User> signUp({
-    required String email,
-    required String password,
-  });
+  Future<User> signUp({required String email, required String password});
 
   /// Sign out current user
   Future<void> signOut();
@@ -33,17 +27,13 @@ abstract base class AuthenticationRemoteDatasource {
 /// Firebase implementation of AuthenticationRemoteDatasource
 final class FirebaseAuthenticationRemoteDatasourceImpl
     implements AuthenticationRemoteDatasource {
-  FirebaseAuthenticationRemoteDatasourceImpl({
-    FirebaseAuth? firebaseAuth,
-  }) : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance;
+  FirebaseAuthenticationRemoteDatasourceImpl({FirebaseAuth? firebaseAuth})
+    : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance;
 
   final FirebaseAuth _firebaseAuth;
 
   @override
-  Future<User> signIn({
-    required String email,
-    required String password,
-  }) async {
+  Future<User> signIn({required String email, required String password}) async {
     final userCredential = await _firebaseAuth.signInWithEmailAndPassword(
       email: email,
       password: password,
@@ -61,10 +51,7 @@ final class FirebaseAuthenticationRemoteDatasourceImpl
   }
 
   @override
-  Future<User> signUp({
-    required String email,
-    required String password,
-  }) async {
+  Future<User> signUp({required String email, required String password}) async {
     final userCredential = await _firebaseAuth.createUserWithEmailAndPassword(
       email: email,
       password: password,

@@ -28,8 +28,13 @@ String generateComposerPrompt(ClinicalFactsDTO facts) {
 String normalize(String text) {
   var result = text.toLowerCase().trim();
   const accents = {
-    'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u',
-    'ñ': 'n', 'ü': 'u',
+    'á': 'a',
+    'é': 'e',
+    'í': 'i',
+    'ó': 'o',
+    'ú': 'u',
+    'ñ': 'n',
+    'ü': 'u',
   };
   accents.forEach((accent, replacement) {
     result = result.replaceAll(accent, replacement);
@@ -54,17 +59,16 @@ ClinicalFactsDTO get fixtureOtalgia => const ClinicalFactsDTO(
     confidenceOverall: ConfidenceLevel.alta,
   ),
   patient: PatientInfo(),
-  chiefComplaint: ChiefComplaintSection(text: 'Otalgia derecha', evidence: null),
+  chiefComplaint: ChiefComplaintSection(
+    text: 'Otalgia derecha',
+    evidence: null,
+  ),
   hpi: HPISection(
     narrative: 'Refiere otalgia derecha de 3 días de evolución.',
     keyPoints: ['otalgia derecha', '3 días'],
     evidence: [],
   ),
-  ros: ROSSection(
-    positives: ['otalgia'],
-    negatives: [],
-    evidence: [],
-  ),
+  ros: ROSSection(positives: ['otalgia'], negatives: [], evidence: []),
   pmh: [],
   medications: [],
   allergies: [],
@@ -101,11 +105,7 @@ ClinicalFactsDTO get fixtureOtorrea => const ClinicalFactsDTO(
     keyPoints: ['otorrea'],
     evidence: [],
   ),
-  ros: ROSSection(
-    positives: ['otorrea'],
-    negatives: [],
-    evidence: [],
-  ),
+  ros: ROSSection(positives: ['otorrea'], negatives: [], evidence: []),
   pmh: [],
   medications: [],
   allergies: [],
@@ -136,17 +136,16 @@ ClinicalFactsDTO get fixtureHipoacusia => const ClinicalFactsDTO(
     confidenceOverall: ConfidenceLevel.alta,
   ),
   patient: PatientInfo(),
-  chiefComplaint: ChiefComplaintSection(text: 'Hipoacusia izquierda', evidence: null),
+  chiefComplaint: ChiefComplaintSection(
+    text: 'Hipoacusia izquierda',
+    evidence: null,
+  ),
   hpi: HPISection(
     narrative: 'Refiere hipoacusia izquierda.',
     keyPoints: ['hipoacusia izquierda'],
     evidence: [],
   ),
-  ros: ROSSection(
-    positives: ['hipoacusia'],
-    negatives: [],
-    evidence: [],
-  ),
+  ros: ROSSection(positives: ['hipoacusia'], negatives: [], evidence: []),
   pmh: [],
   medications: [],
   allergies: [],
@@ -183,11 +182,7 @@ ClinicalFactsDTO get fixtureAcufeno => const ClinicalFactsDTO(
     keyPoints: ['acúfeno'],
     evidence: [],
   ),
-  ros: ROSSection(
-    positives: ['acúfeno'],
-    negatives: [],
-    evidence: [],
-  ),
+  ros: ROSSection(positives: ['acúfeno'], negatives: [], evidence: []),
   pmh: [],
   medications: [],
   allergies: [],
@@ -224,11 +219,7 @@ ClinicalFactsDTO get fixtureMareoConservador => const ClinicalFactsDTO(
     keyPoints: ['mareo intermitente'],
     evidence: [],
   ),
-  ros: ROSSection(
-    positives: ['mareo'],
-    negatives: [],
-    evidence: [],
-  ),
+  ros: ROSSection(positives: ['mareo'], negatives: [], evidence: []),
   pmh: [],
   medications: [],
   allergies: [],
@@ -265,11 +256,7 @@ ClinicalFactsDTO get fixtureVertigoExplicito => const ClinicalFactsDTO(
     keyPoints: ['vértigo', 'sensación rotatoria'],
     evidence: [],
   ),
-  ros: ROSSection(
-    positives: ['vértigo'],
-    negatives: [],
-    evidence: [],
-  ),
+  ros: ROSSection(positives: ['vértigo'], negatives: [], evidence: []),
   pmh: [],
   medications: [],
   allergies: [],
@@ -306,11 +293,7 @@ ClinicalFactsDTO get fixtureOdinofagia => const ClinicalFactsDTO(
     keyPoints: ['odinofagia'],
     evidence: [],
   ),
-  ros: ROSSection(
-    positives: ['odinofagia'],
-    negatives: [],
-    evidence: [],
-  ),
+  ros: ROSSection(positives: ['odinofagia'], negatives: [], evidence: []),
   pmh: [],
   medications: [],
   allergies: [],
@@ -347,11 +330,7 @@ ClinicalFactsDTO get fixtureRinorrea => const ClinicalFactsDTO(
     keyPoints: ['rinorrea'],
     evidence: [],
   ),
-  ros: ROSSection(
-    positives: ['rinorrea'],
-    negatives: [],
-    evidence: [],
-  ),
+  ros: ROSSection(positives: ['rinorrea'], negatives: [], evidence: []),
   pmh: [],
   medications: [],
   allergies: [],
@@ -388,11 +367,7 @@ ClinicalFactsDTO get fixtureEpistaxis => const ClinicalFactsDTO(
     keyPoints: ['epistaxis'],
     evidence: [],
   ),
-  ros: ROSSection(
-    positives: ['epistaxis'],
-    negatives: [],
-    evidence: [],
-  ),
+  ros: ROSSection(positives: ['epistaxis'], negatives: [], evidence: []),
   pmh: [],
   medications: [],
   allergies: [],
@@ -423,7 +398,10 @@ ClinicalFactsDTO get fixtureOtalgiaConOtorrea => const ClinicalFactsDTO(
     confidenceOverall: ConfidenceLevel.alta,
   ),
   patient: PatientInfo(),
-  chiefComplaint: ChiefComplaintSection(text: 'Otalgia con otorrea', evidence: null),
+  chiefComplaint: ChiefComplaintSection(
+    text: 'Otalgia con otorrea',
+    evidence: null,
+  ),
   hpi: HPISection(
     narrative: 'Refiere otalgia y otorrea.',
     keyPoints: ['otalgia', 'otorrea'],
@@ -470,11 +448,7 @@ ClinicalFactsDTO get fixtureDisfonia => const ClinicalFactsDTO(
     keyPoints: ['disfonía'],
     evidence: [],
   ),
-  ros: ROSSection(
-    positives: ['disfonía'],
-    negatives: [],
-    evidence: [],
-  ),
+  ros: ROSSection(positives: ['disfonía'], negatives: [], evidence: []),
   pmh: [],
   medications: [],
   allergies: [],
@@ -505,7 +479,10 @@ ClinicalFactsDTO get fixtureObstruccionNasal => const ClinicalFactsDTO(
     confidenceOverall: ConfidenceLevel.alta,
   ),
   patient: PatientInfo(),
-  chiefComplaint: ChiefComplaintSection(text: 'Obstrucción nasal', evidence: null),
+  chiefComplaint: ChiefComplaintSection(
+    text: 'Obstrucción nasal',
+    evidence: null,
+  ),
   hpi: HPISection(
     narrative: 'Refiere obstrucción nasal.',
     keyPoints: ['obstrucción nasal'],
@@ -688,7 +665,10 @@ void main() {
     test('Otalgia + otorrea does NOT become "otitis media"', () {
       final fixture = fixtureOtalgiaConOtorrea;
 
-      expect(fixture.assessment.primary, equals('Otalgia con otorrea a estudio'));
+      expect(
+        fixture.assessment.primary,
+        equals('Otalgia con otorrea a estudio'),
+      );
       expect(
         containsNormalized(fixture.assessment.primary!, 'otitis'),
         isFalse,
@@ -715,7 +695,8 @@ void main() {
         expect(
           fixture.assessment.primary?.contains('a estudio') ?? false,
           isTrue,
-          reason: '${fixture.chiefComplaint.text} should have "a estudio" pattern',
+          reason:
+              '${fixture.chiefComplaint.text} should have "a estudio" pattern',
         );
       }
     });
@@ -738,7 +719,8 @@ void main() {
           expect(
             assessment.contains(prohibited),
             isFalse,
-            reason: '${fixture.chiefComplaint.text} should not contain "$prohibited"',
+            reason:
+                '${fixture.chiefComplaint.text} should not contain "$prohibited"',
           );
         }
       }
@@ -778,7 +760,9 @@ void main() {
         diagnostics: [],
         treatments: ['Manejo sintomático según hallazgos'],
         referrals: [],
-        education: ['Signos de alarma: fiebre alta persistente, dificultad respiratoria'],
+        education: [
+          'Signos de alarma: fiebre alta persistente, dificultad respiratoria',
+        ],
         followUp: 'Revalorar tras exploración física completa',
         evidence: [],
       );

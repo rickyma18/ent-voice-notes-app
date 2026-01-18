@@ -9,9 +9,7 @@ import '../repositories/doctors_repository.dart';
 
 /// Parameters for deleting a doctor account.
 class DeleteAccountParams {
-  const DeleteAccountParams({
-    required this.doctorId,
-  });
+  const DeleteAccountParams({required this.doctorId});
 
   final String doctorId;
 }
@@ -58,8 +56,9 @@ final class DeleteAccountUseCase {
       }
 
       // 2. Delete doctor document from Firestore
-      final deleteResult =
-          await repository.deleteDoctorProfile(params.doctorId);
+      final deleteResult = await repository.deleteDoctorProfile(
+        params.doctorId,
+      );
 
       switch (deleteResult) {
         case Error(error: final failure):
@@ -77,7 +76,8 @@ final class DeleteAccountUseCase {
           return const Result.error(
             Failure(
               type: FailureType.unauthorized,
-              message: 'Por seguridad, debes volver a iniciar sesión '
+              message:
+                  'Por seguridad, debes volver a iniciar sesión '
                   'antes de eliminar tu cuenta.',
             ),
           );

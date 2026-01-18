@@ -122,7 +122,9 @@ class PatientHeader extends StatelessWidget {
           _DateChip(
             date: date,
             dateFormat: dateFormat,
-            onTap: onDateChanged != null ? () => _showDatePicker(context) : null,
+            onTap: onDateChanged != null
+                ? () => _showDatePicker(context)
+                : null,
           ),
         ],
       ),
@@ -154,11 +156,7 @@ class PatientHeader extends StatelessWidget {
 
 /// Compact date chip with calendar icon and edit icon.
 class _DateChip extends StatelessWidget {
-  const _DateChip({
-    required this.date,
-    required this.dateFormat,
-    this.onTap,
-  });
+  const _DateChip({required this.date, required this.dateFormat, this.onTap});
 
   final DateTime date;
   final DateFormat dateFormat;
@@ -197,11 +195,7 @@ class _DateChip extends StatelessWidget {
             ),
             if (onTap != null) ...[
               const SizedBox(width: 4),
-              Icon(
-                Icons.edit,
-                size: 12,
-                color: DocsoftColors.textTertiary,
-              ),
+              Icon(Icons.edit, size: 12, color: DocsoftColors.textTertiary),
             ],
           ],
         ),

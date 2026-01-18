@@ -41,7 +41,8 @@ class RouterRefreshNotifier extends ChangeNotifier {
       currentPhase = next;
 
       // Only notify when transitioning TO completed
-      if (next == StartupPhase.completed && previous != StartupPhase.completed) {
+      if (next == StartupPhase.completed &&
+          previous != StartupPhase.completed) {
         Log.info('[RouterRefreshNotifier] Startup completed, notifying router');
         notifyListeners();
       }
@@ -51,7 +52,9 @@ class RouterRefreshNotifier extends ChangeNotifier {
     ref.listen(routerStateProvider, (previous, next) {
       // Only notify if startup is complete
       if (currentPhase.isCompleted) {
-        Log.info('[RouterRefreshNotifier] Route state changed: $previous -> $next');
+        Log.info(
+          '[RouterRefreshNotifier] Route state changed: $previous -> $next',
+        );
         notifyListeners();
       } else {
         Log.info(
@@ -64,7 +67,9 @@ class RouterRefreshNotifier extends ChangeNotifier {
     ref.listen(authStateChangesProvider, (previous, next) {
       // Only notify if startup is complete
       if (currentPhase.isCompleted) {
-        Log.info('[RouterRefreshNotifier] Auth state changed, notifying router');
+        Log.info(
+          '[RouterRefreshNotifier] Auth state changed, notifying router',
+        );
         notifyListeners();
       } else {
         Log.info(

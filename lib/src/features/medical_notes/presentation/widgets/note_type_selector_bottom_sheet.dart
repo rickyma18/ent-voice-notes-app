@@ -26,9 +26,7 @@ Future<void> showNoteTypeSelectorBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: DocsoftColors.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius: DocsoftRadii.bottomSheet,
-    ),
+    shape: const RoundedRectangleBorder(borderRadius: DocsoftRadii.bottomSheet),
     builder: (context) => _NoteTypeSelectorContent(patient: patient),
   );
 }
@@ -96,10 +94,7 @@ class _NoteTypeSelectorContent extends StatelessWidget {
                 semanticLabel: 'Dictar nota, opción recomendada',
                 onTap: () {
                   Navigator.pop(context);
-                  context.pushNamed(
-                    RouteNames.dictationAssist,
-                    extra: patient,
-                  );
+                  context.pushNamed(RouteNames.dictationAssist, extra: patient);
                 },
               ),
               const SizedBox(height: DocsoftSpacing.itemSpacing),

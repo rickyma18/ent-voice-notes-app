@@ -38,10 +38,7 @@ class VitalsCard extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerLow,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: theme.colorScheme.outlineVariant,
-          width: 1,
-        ),
+        side: BorderSide(color: theme.colorScheme.outlineVariant, width: 1),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -212,9 +209,7 @@ class _VitalField extends StatelessWidget {
         const SizedBox(height: 4),
         TextFormField(
           controller: controller,
-          keyboardType: TextInputType.numberWithOptions(
-            decimal: allowDecimal,
-          ),
+          keyboardType: TextInputType.numberWithOptions(decimal: allowDecimal),
           inputFormatters: [
             if (allowDecimal)
               FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))
@@ -229,9 +224,7 @@ class _VitalField extends StatelessWidget {
               horizontal: 12,
               vertical: 10,
             ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           ),
           style: theme.textTheme.bodyMedium,
           validator: (value) {
@@ -287,9 +280,7 @@ class _BloodPressureField extends StatelessWidget {
               child: TextFormField(
                 controller: systolicController,
                 keyboardType: TextInputType.number,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                ],
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 decoration: InputDecoration(
                   hintText: '120',
                   isDense: true,
@@ -326,9 +317,7 @@ class _BloodPressureField extends StatelessWidget {
               child: TextFormField(
                 controller: diastolicController,
                 keyboardType: TextInputType.number,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                ],
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 decoration: InputDecoration(
                   hintText: '80',
                   isDense: true,

@@ -84,7 +84,8 @@ class OrlAccordion extends StatefulWidget {
 class _OrlAccordionState extends State<OrlAccordion> {
   final Set<int> _expandedSections = {0}; // First section expanded by default
 
-  List<OrlSection> get sections => widget.sections ?? OrlSection.defaultSections;
+  List<OrlSection> get sections =>
+      widget.sections ?? OrlSection.defaultSections;
 
   void _handleExpansion(int index, bool isExpanded) {
     setState(() {
@@ -194,7 +195,8 @@ class _OrlAccordionState extends State<OrlAccordion> {
                 final controller = widget.controllers[section.id];
                 final isExpanded = _expandedSections.contains(index);
                 final isDictating = widget.dictatingSection == section.id;
-                final hasContent = controller != null && controller.text.isNotEmpty;
+                final hasContent =
+                    controller != null && controller.text.isNotEmpty;
 
                 return ExpansionPanel(
                   canTapOnHeader: true,
@@ -210,10 +212,10 @@ class _OrlAccordionState extends State<OrlAccordion> {
                       title: Text(
                         section.title,
                         style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: hasContent ? FontWeight.bold : FontWeight.normal,
-                          color: hasContent
-                              ? theme.colorScheme.primary
-                              : null,
+                          fontWeight: hasContent
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                          color: hasContent ? theme.colorScheme.primary : null,
                         ),
                       ),
                       trailing: hasContent
@@ -343,7 +345,9 @@ class _LaringoscopiaQuickFill extends StatelessWidget {
           ),
         ),
         onPressed: () => _handleTap(context),
-        backgroundColor: theme.colorScheme.secondaryContainer.withValues(alpha: 0.5),
+        backgroundColor: theme.colorScheme.secondaryContainer.withValues(
+          alpha: 0.5,
+        ),
         side: BorderSide(
           color: theme.colorScheme.secondary.withValues(alpha: 0.3),
         ),

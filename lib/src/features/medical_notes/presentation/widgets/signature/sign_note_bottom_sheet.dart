@@ -196,8 +196,9 @@ class _SignNoteBottomSheetState extends State<SignNoteBottomSheet> {
 
                           // Save as default checkbox
                           GestureDetector(
-                            onTap: () =>
-                                setState(() => _saveAsDefault = !_saveAsDefault),
+                            onTap: () => setState(
+                              () => _saveAsDefault = !_saveAsDefault,
+                            ),
                             child: Row(
                               children: [
                                 SizedBox(
@@ -207,7 +208,8 @@ class _SignNoteBottomSheetState extends State<SignNoteBottomSheet> {
                                     value: _saveAsDefault,
                                     onChanged: (value) {
                                       setState(
-                                          () => _saveAsDefault = value ?? false);
+                                        () => _saveAsDefault = value ?? false,
+                                      );
                                     },
                                     activeColor: DocsoftColors.primary,
                                     shape: RoundedRectangleBorder(
@@ -269,7 +271,9 @@ class _SignNoteBottomSheetState extends State<SignNoteBottomSheet> {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.all(DocsoftSpacing.md),
         decoration: BoxDecoration(
-          color: isSelected ? DocsoftColors.primaryMuted : DocsoftColors.surface,
+          color: isSelected
+              ? DocsoftColors.primaryMuted
+              : DocsoftColors.surface,
           borderRadius: BorderRadius.circular(DocsoftRadii.md),
           border: Border.all(
             color: isSelected ? DocsoftColors.primary : DocsoftColors.border,

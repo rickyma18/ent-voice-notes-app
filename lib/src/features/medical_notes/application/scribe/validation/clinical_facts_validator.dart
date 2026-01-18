@@ -129,9 +129,7 @@ class ClinicalFactsValidator {
 
     // Language code validation (if present, should be reasonable)
     if (metadata.language != null && metadata.language!.length > 10) {
-      errors.add(
-        'metadata.language seems invalid: "${metadata.language}"',
-      );
+      errors.add('metadata.language seems invalid: "${metadata.language}"');
     }
 
     return errors;

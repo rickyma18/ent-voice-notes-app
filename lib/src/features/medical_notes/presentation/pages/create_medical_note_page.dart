@@ -41,8 +41,7 @@ class CreateMedicalNotePage extends ConsumerStatefulWidget {
       _CreateMedicalNotePageState();
 }
 
-class _CreateMedicalNotePageState
-    extends ConsumerState<CreateMedicalNotePage> {
+class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
   final _formKey = GlobalKey<FormState>();
 
   final _motivoController = TextEditingController();
@@ -89,7 +88,8 @@ class _CreateMedicalNotePageState
 
       // Pre-fill surgical data if present
       if (note.surgicalData != null) {
-        _tecnicaQuirurgicaController.text = note.surgicalData!.tecnicaQuirurgica;
+        _tecnicaQuirurgicaController.text =
+            note.surgicalData!.tecnicaQuirurgica;
         _hallazgosController.text = note.surgicalData!.hallazgos;
         _observacionesController.text = note.surgicalData!.observaciones;
         _complicacionesController.text = note.surgicalData!.complicaciones;
@@ -248,14 +248,14 @@ class _CreateMedicalNotePageState
 
   /// Maps AI field keys to their corresponding controllers
   Map<String, TextEditingController> get _fieldControllers => {
-        'motivoConsulta': _motivoController,
-        'antecedentes': _antecedentesController,
-        'exploracionFisicaOrl': _exploracionController,
-        'diagnostico': _diagnosticoController,
-        'planTratamiento': _planController,
-        'resumen': _resumenController,
-        'notaAdicional': _notaAdicionalController,
-      };
+    'motivoConsulta': _motivoController,
+    'antecedentes': _antecedentesController,
+    'exploracionFisicaOrl': _exploracionController,
+    'diagnostico': _diagnosticoController,
+    'planTratamiento': _planController,
+    'resumen': _resumenController,
+    'notaAdicional': _notaAdicionalController,
+  };
 
   /// Computes which fields would be overwritten by AI suggestions.
   /// Returns list of field keys where controller is non-empty AND suggestion is non-empty.
@@ -278,7 +278,10 @@ class _CreateMedicalNotePageState
   ///
   /// [onlyEmpty]: If true, only fills controllers that are currently empty.
   /// If false, overwrites all controllers where suggestion is non-empty.
-  void _applySuggestions(Map<String, String> suggestions, {bool onlyEmpty = false}) {
+  void _applySuggestions(
+    Map<String, String> suggestions, {
+    bool onlyEmpty = false,
+  }) {
     final controllers = _fieldControllers;
 
     for (final entry in suggestions.entries) {
@@ -331,8 +334,10 @@ class _CreateMedicalNotePageState
               children: [
                 Row(
                   children: [
-                    Icon(Icons.warning_amber_rounded,
-                        color: theme.colorScheme.error),
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: theme.colorScheme.error,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       'Campos con contenido',
@@ -420,9 +425,7 @@ class _CreateMedicalNotePageState
         _applySuggestions(suggestions);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Campos sugeridos por IA aplicados.'),
-            ),
+            const SnackBar(content: Text('Campos sugeridos por IA aplicados.')),
           );
         }
       } else {
@@ -438,9 +441,7 @@ class _CreateMedicalNotePageState
             _applySuggestions(suggestions, onlyEmpty: true);
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('IA aplicada a campos vacíos.'),
-                ),
+                const SnackBar(content: Text('IA aplicada a campos vacíos.')),
               );
             }
           } else if (choice == 'all') {
@@ -459,11 +460,9 @@ class _CreateMedicalNotePageState
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al generar con IA: $e'),
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al generar con IA: $e')));
       }
     } finally {
       if (mounted) {
@@ -562,7 +561,9 @@ class _CreateMedicalNotePageState
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Transcripción guardada. Campos no modificados.'),
+                    content: Text(
+                      'Transcripción guardada. Campos no modificados.',
+                    ),
                     duration: Duration(seconds: 2),
                   ),
                 );
@@ -573,9 +574,7 @@ class _CreateMedicalNotePageState
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error al procesar audio: $e'),
-            ),
+            SnackBar(content: Text('Error al procesar audio: $e')),
           );
         }
       } finally {
@@ -611,9 +610,7 @@ class _CreateMedicalNotePageState
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error al iniciar grabación: $e'),
-            ),
+            SnackBar(content: Text('Error al iniciar grabación: $e')),
           );
           setState(() {
             _isRecording = false;
@@ -742,7 +739,9 @@ class _CreateMedicalNotePageState
   /// - First tap: Start recording
   /// - Second tap: Stop recording, transcribe, and append/set text
   /// - Appends to existing text with a space, or sets if field is empty
-  Future<void> _onDictateForField(TextEditingController targetController) async {
+  Future<void> _onDictateForField(
+    TextEditingController targetController,
+  ) async {
     final audioService = ref.read(audioRecordingServiceProvider);
     final aiService = ref.read(noteAIServiceProvider);
 
@@ -788,9 +787,7 @@ class _CreateMedicalNotePageState
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error al procesar audio: $e'),
-            ),
+            SnackBar(content: Text('Error al procesar audio: $e')),
           );
         }
       } finally {
@@ -835,9 +832,7 @@ class _CreateMedicalNotePageState
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al iniciar grabación: $e'),
-          ),
+          SnackBar(content: Text('Error al iniciar grabación: $e')),
         );
         setState(() {
           _isRecording = false;
@@ -853,7 +848,9 @@ class _CreateMedicalNotePageState
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isEditMode ? 'Editar nota médica' : 'Nueva nota médica'),
+        title: Text(
+          widget.isEditMode ? 'Editar nota médica' : 'Nueva nota médica',
+        ),
       ),
       body: SafeArea(
         child: Form(
@@ -872,8 +869,11 @@ class _CreateMedicalNotePageState
                     children: [
                       Row(
                         children: [
-                          Icon(Icons.description,
-                              color: theme.colorScheme.primary, size: 20),
+                          Icon(
+                            Icons.description,
+                            color: theme.colorScheme.primary,
+                            size: 20,
+                          ),
                           const SizedBox(width: 8),
                           Text(
                             'Tipo de nota',
@@ -927,7 +927,9 @@ class _CreateMedicalNotePageState
                     border: const OutlineInputBorder(),
                     suffixIcon: IconButton(
                       icon: _RecordingMicIcon(
-                        isRecording: _isRecording && _dictatingController == _motivoController,
+                        isRecording:
+                            _isRecording &&
+                            _dictatingController == _motivoController,
                       ),
                       tooltip: 'Dictar con voz',
                       onPressed: () => _onDictateForField(_motivoController),
@@ -955,7 +957,8 @@ class _CreateMedicalNotePageState
                   controller: _antecedentesController,
                   decoration: const InputDecoration(
                     labelText: 'Antecedentes médicos relevantes',
-                    hintText: 'Ej: Paciente con historial de otitis media crónica',
+                    hintText:
+                        'Ej: Paciente con historial de otitis media crónica',
                     border: OutlineInputBorder(),
                   ),
                   textInputAction: TextInputAction.next,
@@ -978,10 +981,13 @@ class _CreateMedicalNotePageState
                     border: const OutlineInputBorder(),
                     suffixIcon: IconButton(
                       icon: _RecordingMicIcon(
-                        isRecording: _isRecording && _dictatingController == _exploracionController,
+                        isRecording:
+                            _isRecording &&
+                            _dictatingController == _exploracionController,
                       ),
                       tooltip: 'Dictar con voz',
-                      onPressed: () => _onDictateForField(_exploracionController),
+                      onPressed: () =>
+                          _onDictateForField(_exploracionController),
                     ),
                   ),
                   textInputAction: TextInputAction.next,
@@ -1031,7 +1037,9 @@ class _CreateMedicalNotePageState
                     border: const OutlineInputBorder(),
                     suffixIcon: IconButton(
                       icon: _RecordingMicIcon(
-                        isRecording: _isRecording && _dictatingController == _planController,
+                        isRecording:
+                            _isRecording &&
+                            _dictatingController == _planController,
                       ),
                       tooltip: 'Dictar con voz',
                       onPressed: () => _onDictateForField(_planController),
@@ -1063,8 +1071,11 @@ class _CreateMedicalNotePageState
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.local_hospital,
-                                color: theme.colorScheme.secondary, size: 20),
+                            Icon(
+                              Icons.local_hospital,
+                              color: theme.colorScheme.secondary,
+                              size: 20,
+                            ),
                             const SizedBox(width: 8),
                             Text(
                               'Datos Quirúrgicos',
@@ -1151,7 +1162,11 @@ class _CreateMedicalNotePageState
                     children: [
                       Row(
                         children: [
-                          Icon(Icons.auto_awesome, color: theme.colorScheme.primary, size: 20),
+                          Icon(
+                            Icons.auto_awesome,
+                            color: theme.colorScheme.primary,
+                            size: 20,
+                          ),
                           const SizedBox(width: 8),
                           Text(
                             'IA y transcripción',
@@ -1169,8 +1184,8 @@ class _CreateMedicalNotePageState
                         child: FilledButton.tonalIcon(
                           onPressed:
                               (_isSaving || _isGeneratingIA || _isTranscribing)
-                                  ? null
-                                  : _onVoiceDictation,
+                              ? null
+                              : _onVoiceDictation,
                           style: (_isRecording && _dictatingController == null)
                               ? FilledButton.styleFrom(
                                   backgroundColor: Colors.red.shade100,
@@ -1186,15 +1201,15 @@ class _CreateMedicalNotePageState
                                   ),
                                 )
                               : (_isRecording && _dictatingController == null)
-                                  ? const Icon(Icons.stop_circle)
-                                  : const Icon(Icons.mic),
+                              ? const Icon(Icons.stop_circle)
+                              : const Icon(Icons.mic),
                           label: Text(
                             _isTranscribing
                                 ? 'Transcribiendo audio...'
                                 : ((_isRecording &&
-                                        _dictatingController == null)
-                                    ? 'Detener dictado'
-                                    : 'Dictar nota por voz'),
+                                          _dictatingController == null)
+                                      ? 'Detener dictado'
+                                      : 'Dictar nota por voz'),
                           ),
                         ),
                       ),
@@ -1204,10 +1219,14 @@ class _CreateMedicalNotePageState
                         children: [
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: (_isSaving || _isGeneratingIA || _isTranscribing)
+                              onPressed:
+                                  (_isSaving ||
+                                      _isGeneratingIA ||
+                                      _isTranscribing)
                                   ? null
                                   : _onRecordAudioAndProcess,
-                              style: (_isRecording && _dictatingController == null)
+                              style:
+                                  (_isRecording && _dictatingController == null)
                                   ? OutlinedButton.styleFrom(
                                       foregroundColor: Colors.red,
                                       side: const BorderSide(color: Colors.red),
@@ -1217,35 +1236,47 @@ class _CreateMedicalNotePageState
                                   ? const SizedBox(
                                       width: 18,
                                       height: 18,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
                                     )
-                                  : (_isRecording && _dictatingController == null)
-                                      ? const Icon(Icons.stop)
-                                      : _RecordingMicIcon(
-                                          isRecording: _isRecording && _dictatingController == null,
-                                        ),
+                                  : (_isRecording &&
+                                        _dictatingController == null)
+                                  ? const Icon(Icons.stop)
+                                  : _RecordingMicIcon(
+                                      isRecording:
+                                          _isRecording &&
+                                          _dictatingController == null,
+                                    ),
                               label: Text(
                                 _isTranscribing
                                     ? 'Procesando…'
-                                    : ((_isRecording && _dictatingController == null)
-                                        ? 'Detener grabación'
-                                        : 'IA y transcripción'),
+                                    : ((_isRecording &&
+                                              _dictatingController == null)
+                                          ? 'Detener grabación'
+                                          : 'IA y transcripción'),
                               ),
                             ),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: _isGeneratingIA ? null : _onGenerateWithIA,
+                              onPressed: _isGeneratingIA
+                                  ? null
+                                  : _onGenerateWithIA,
                               icon: _isGeneratingIA
                                   ? const SizedBox(
                                       width: 18,
                                       height: 18,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
                                     )
                                   : const Icon(Icons.auto_awesome),
                               label: Text(
-                                _isGeneratingIA ? 'Generando…' : 'Generar con IA',
+                                _isGeneratingIA
+                                    ? 'Generando…'
+                                    : 'Generar con IA',
                               ),
                             ),
                           ),
@@ -1278,7 +1309,11 @@ class _CreateMedicalNotePageState
                     children: [
                       Row(
                         children: [
-                          Icon(Icons.note_add, color: theme.colorScheme.secondary, size: 20),
+                          Icon(
+                            Icons.note_add,
+                            color: theme.colorScheme.secondary,
+                            size: 20,
+                          ),
                           const SizedBox(width: 8),
                           Text(
                             'Información adicional (opcional)',
@@ -1303,7 +1338,8 @@ class _CreateMedicalNotePageState
                         controller: _notaAdicionalController,
                         decoration: const InputDecoration(
                           labelText: 'Nota adicional',
-                          hintText: 'Comentarios o notas adicionales del doctor',
+                          hintText:
+                              'Comentarios o notas adicionales del doctor',
                           border: OutlineInputBorder(),
                         ),
                         maxLines: 2,
@@ -1328,7 +1364,9 @@ class _CreateMedicalNotePageState
                   label: Text(
                     _isSaving
                         ? 'Guardando…'
-                        : (widget.isEditMode ? 'Actualizar nota' : 'Guardar nota'),
+                        : (widget.isEditMode
+                              ? 'Actualizar nota'
+                              : 'Guardar nota'),
                   ),
                 ),
               ),
@@ -1401,9 +1439,7 @@ class _SectionCard extends StatelessWidget {
 /// Shows a red pulsing mic icon when recording, normal mic icon otherwise.
 /// Used for visual feedback in US 3.2.
 class _RecordingMicIcon extends StatefulWidget {
-  const _RecordingMicIcon({
-    required this.isRecording,
-  });
+  const _RecordingMicIcon({required this.isRecording});
 
   final bool isRecording;
 
@@ -1424,9 +1460,10 @@ class _RecordingMicIconState extends State<_RecordingMicIcon>
       vsync: this,
     );
 
-    _opacityAnimation = Tween<double>(begin: 0.3, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _opacityAnimation = Tween<double>(
+      begin: 0.3,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
 
     if (widget.isRecording) {
       _controller.repeat(reverse: true);

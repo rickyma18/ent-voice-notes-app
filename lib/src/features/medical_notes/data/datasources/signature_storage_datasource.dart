@@ -12,7 +12,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 /// - Signed PDF: medical_notes/{noteId}/final.pdf
 class SignatureStorageDatasource {
   SignatureStorageDatasource({FirebaseStorage? storage})
-      : _storage = storage ?? FirebaseStorage.instance;
+    : _storage = storage ?? FirebaseStorage.instance;
 
   final FirebaseStorage _storage;
 
@@ -139,9 +139,7 @@ class SignatureStorageDatasource {
   /// Downloads the signed PDF bytes for a note.
   ///
   /// Returns null if no signed PDF exists.
-  Future<Uint8List?> downloadSignedPdf({
-    required String noteId,
-  }) async {
+  Future<Uint8List?> downloadSignedPdf({required String noteId}) async {
     try {
       final storagePath = 'medical_notes/$noteId/final.pdf';
       final ref = _storage.ref().child(storagePath);
