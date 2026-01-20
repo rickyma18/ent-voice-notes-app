@@ -56,3 +56,10 @@ export 'src/validation/clinical_facts_validator.dart';
 
 // Heuristics
 export 'src/heuristics/heuristics.dart';
+
+// Metrics (ÉPICA 11)
+export 'src/metrics/metrics_sink.dart';
+export 'src/metrics/in_memory_metrics_sink.dart';
+export 'src/metrics/alerting.dart';
+export 'src/metrics/sla_evaluator.dart';
+export 'src/metrics/shadow_metrics_collector.dart';

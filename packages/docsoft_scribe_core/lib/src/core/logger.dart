@@ -11,6 +11,7 @@
 abstract class LogSink {
   void info(String message);
   void debug(String message);
+  void warning(String message);
   void error(String message, [Object? error, StackTrace? stackTrace]);
 }
 
@@ -23,6 +24,9 @@ class NoOpLogSink implements LogSink {
 
   @override
   void debug(String message) {}
+
+  @override
+  void warning(String message) {}
 
   @override
   void error(String message, [Object? error, StackTrace? stackTrace]) {}
@@ -48,6 +52,11 @@ class PrintLogSink implements LogSink {
   }
 
   @override
+  void warning(String message) {
+    print('$prefix[WARN] $message');
+  }
+
+  @override
   void error(String message, [Object? error, StackTrace? stackTrace]) {
     print('$prefix[ERROR] $message');
     if (error != null) {
@@ -63,6 +72,7 @@ class PrintLogSink implements LogSink {
 class CollectingLogSink implements LogSink {
   final List<String> infoMessages = [];
   final List<String> debugMessages = [];
+  final List<String> warningMessages = [];
   final List<String> errorMessages = [];
 
   @override
@@ -72,6 +82,9 @@ class CollectingLogSink implements LogSink {
   void debug(String message) => debugMessages.add(message);
 
   @override
+  void warning(String message) => warningMessages.add(message);
+
+  @override
   void error(String message, [Object? error, StackTrace? stackTrace]) {
     errorMessages.add('$message${error != null ? ' - $error' : ''}');
   }
@@ -79,6 +92,7 @@ class CollectingLogSink implements LogSink {
   void clear() {
     infoMessages.clear();
     debugMessages.clear();
+    warningMessages.clear();
     errorMessages.clear();
   }
 }

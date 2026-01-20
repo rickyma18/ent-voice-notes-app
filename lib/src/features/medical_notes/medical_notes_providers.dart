@@ -64,6 +64,12 @@ import 'data/stt/google_chirp_stt_service_impl.dart';
 // Scribe V2 Storage Imports
 import 'data/datasources/scribe_v2_storage_datasource.dart';
 
+// ÉPICA 10 - MedGemma Advanced Extractor Imports
+import 'package:docsoft_scribe_runtime/docsoft_scribe_runtime.dart' as runtime;
+import 'package:flutter/foundation.dart' show kDebugMode;
+import 'data/medgemma/providers/medgemma_providers.dart';
+import 'data/medgemma/repositories/medgemma_extractor_adapter.dart';
+
 part 'medical_notes_providers.g.dart';
 
 /// Family provider for loading medical notes for a specific patient.
@@ -597,19 +603,157 @@ TranscriptionRepository transcriptionRepository(
   );
 }
 
+// =============================================================================
+// ÉPICA 10 – MedGemma Advanced Extractor Providers (Feature Flags + Wiring)
+// =============================================================================
+//
+// FAIL-CLOSED DESIGN:
+// - MedGemma is DISABLED by default
+// - Requires: (1) baseUrl configured, (2) isPro == true, (3) useMedGemmaExtractor flag ON
+// - If any condition fails → baseline extractor used
+// - ExtractorPipelineSelector handles SLA timeouts and automatic fallback
+//
+// PHI-SAFE: No transcripts, prompts, or clinical outputs logged.
+// =============================================================================
+
+/// Feature flags for Scribe pipeline.
+///
+/// Detects environment and returns appropriate flags:
+/// - kDebugMode (dev/staging): shadowMode enabled, useMedGemmaExtractor = false by default
+/// - Production: all flags at safest defaults
+///
+/// To enable MedGemma extraction in dev, override this provider:
+/// ```dart
+/// scribeFeatureFlagsProvider.overrideWithValue(
+///   FeatureFlags.dev.copyWith(useMedGemmaExtractor: true),
+/// )
+/// ```
+final scribeFeatureFlagsProvider = Provider<runtime.FeatureFlags>((ref) {
+  // Environment detection: kDebugMode = dev/staging, else prod
+  if (kDebugMode) {
+    return runtime.FeatureFlags.staging;
+  }
+  return runtime.FeatureFlags.prod;
+});
+
+/// Shadow Metrics Collector for staging/dev.
+///
+/// **FAIL-CLOSED**: Returns null if enableShadowMode is false.
+/// Only instantiated in staging/dev when shadow mode is enabled.
+final shadowMetricsCollectorProvider =
+    Provider<runtime.ShadowMetricsCollector?>((ref) {
+      final flags = ref.watch(scribeFeatureFlagsProvider);
+
+      // Fail-closed: shadow mode must be explicitly enabled
+      if (!flags.enableShadowMode) {
+        return null;
+      }
+
+      // Only enable logging in debug mode
+      return runtime.ShadowMetricsCollector(
+        config: runtime.ShadowMetricsConfig(
+          enableLogging: kDebugMode,
+          maxSamples: 100,
+        ),
+      );
+    });
+
+/// SLA Evaluator for MedGemma pipeline monitoring.
+///
+/// **PRODUCTION SILENT**: enableDebugLogging is false in prod.
+/// Only logs in debug/staging mode (kDebugMode).
+final slaEvaluatorProvider = Provider<runtime.SlaEvaluator>((ref) {
+  return runtime.SlaEvaluator(
+    thresholds: runtime.SlaThresholds.defaults,
+    // CRITICAL: Only log in debug mode, production is silent
+    enableDebugLogging: kDebugMode,
+  );
+});
+
+/// Whether current user is a Pro subscriber.
+///
+/// **FAIL-CLOSED**: Returns false by default.
+/// TODO: Connect to actual subscription plan when implemented.
+///
+/// This provider will be updated when DoctorEntity gets subscriptionPlan field.
+final isProUserProvider = Provider<bool>((ref) {
+  // FAIL-CLOSED: Default to false until subscription system is implemented
+  // When DoctorEntity has subscriptionPlan:
+  // final doctor = ref.watch(currentDoctorProfileProvider).valueOrNull;
+  // return doctor?.subscriptionPlan.isPro ?? false;
+  return false;
+});
+
+/// Advanced Encounter Extractor Repository (MedGemma).
+///
+/// **FAIL-CLOSED DESIGN:**
+/// - Returns null if MedGemma is not fully configured (baseUrl, auth)
+/// - Returns null if user is not Pro
+/// - When null, ProcessEncounterUseCase uses baseline extractor only
+///
+/// The ExtractorPipelineSelector (inside ProcessEncounterUseCase) handles:
+/// - SLA timeout enforcement (5s advanced, 8s baseline)
+/// - Automatic fallback on timeout/error
+/// - Metrics and logging
+final advancedEncounterExtractorRepositoryProvider =
+    Provider<EncounterExtractorRepository?>((ref) {
+      // Gate 1: Pro user check
+      final isPro = ref.watch(isProUserProvider);
+      if (!isPro) {
+        // Free user → no advanced extractor
+        return null;
+      }
+
+      // Gate 2: MedGemma configuration check
+      final medGemmaRepo = ref.watch(medGemmaExtractorRepositoryProvider);
+      if (medGemmaRepo == null) {
+        // MedGemma not configured → no advanced extractor
+        return null;
+      }
+
+      // Gate 3: Feature flag check
+      final flags = ref.watch(scribeFeatureFlagsProvider);
+      if (!flags.useMedGemmaExtractor) {
+        // Feature flag OFF → no advanced extractor
+        return null;
+      }
+
+      // All gates passed → return adapter that wraps MedGemma repo
+      return MedGemmaExtractorAdapter(coreRepository: medGemmaRepo);
+    });
+
 /// ProcessEncounterUseCase Provider.
 ///
 /// Orchestrates the full Scribe V2 pipeline:
 /// Stage 1: Transcription → Stage 1.5: Medicalization → Stage 2: Extraction → Stage 3: Composition
 ///
+/// ÉPICA 10 - MedGemma Integration:
+/// - Injects advancedExtractorRepository when available (Pro + configured + flag ON)
+/// - Injects featureFlags for pipeline behavior control
+/// - ExtractorPipelineSelector handles automatic fallback on timeout/error
+///
+/// IMPORTANT: advancedExtractorRepository is NOT read for free users (fail-closed).
+/// The conditional in advancedEncounterExtractorRepositoryProvider ensures this.
+///
 /// keepAlive: true to prevent disposal during long-running pipeline execution.
 @Riverpod(keepAlive: true)
 ProcessEncounterUseCase processEncounterUseCase(Ref ref) {
+  // Get advanced extractor (null for free users or if not configured)
+  // IMPORTANT: This is the ONLY place that reads advancedEncounterExtractorRepositoryProvider
+  final advancedExtractor = ref.watch(
+    advancedEncounterExtractorRepositoryProvider,
+  );
+
+  // Get feature flags for pipeline behavior
+  final featureFlags = ref.watch(scribeFeatureFlagsProvider);
+
   return ProcessEncounterUseCase(
     transcriptionRepository: ref.watch(transcriptionRepositoryProvider),
     extractorRepository: ref.watch(encounterExtractorRepositoryProvider),
     composerRepository: ref.watch(noteComposerRepositoryProvider),
     medicalizationService: ref.watch(medicalizationServiceProvider),
+    advancedExtractorRepository: advancedExtractor,
+    featureFlags: featureFlags,
   );
 }
 

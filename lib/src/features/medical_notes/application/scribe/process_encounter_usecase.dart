@@ -505,6 +505,11 @@ class _AppLogSink implements runtime.LogSink {
   }
 
   @override
+  void warning(String message) {
+    Log.warning(message);
+  }
+
+  @override
   void error(String message, [Object? error, StackTrace? stackTrace]) {
     final fullMessage = error != null
         ? '$message\nError: $error\nStack: $stackTrace'

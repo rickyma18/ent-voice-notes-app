@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -9,6 +10,9 @@ import 'firebase_options.dart';
 import 'src/core/di/dependency_injection.dart';
 import 'src/core/logger/riverpod_log.dart';
 import 'src/features/medical_notes/medical_notes_providers.dart';
+import 'src/features/medical_notes/data/medgemma/providers/medgemma_providers.dart'
+    as medgemma;
+import 'src/features/medical_notes/data/medgemma/auth/firebase_auth_token_provider.dart';
 import 'src/presentation/core/application_state/localization_provider/localization_provider.dart';
 import 'src/presentation/core/router/router.dart';
 import 'src/ui/theme/docsoft_theme.dart';
@@ -30,6 +34,15 @@ Future<void> main() async {
     throw Exception('OPENAI_API_KEY is required...');
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ÉPICA 10 - MedGemma Configuration
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Read MedGemma base URL from env (dart-define or .env)
+  // FAIL-CLOSED: Empty string means disabled
+  final medGemmaBaseUrl = const String.fromEnvironment('MEDGEMMA_BASE_URL').isNotEmpty
+      ? const String.fromEnvironment('MEDGEMMA_BASE_URL')
+      : (dotenv.env['MEDGEMMA_BASE_URL'] ?? '');
+
   runApp(
     ProviderScope(
       overrides: [
@@ -40,6 +53,17 @@ Future<void> main() async {
         if (kDebugMode) ...[
           enableEvidenceDebugHookProvider.overrideWithValue(true),
           useScribeV2ForNoteCreationProvider.overrideWithValue(true),
+        ],
+
+        // ─────────────────────────────────────────────────────────────────────
+        // ÉPICA 10 - MedGemma Overrides (only if baseUrl configured)
+        // ─────────────────────────────────────────────────────────────────────
+        // FAIL-CLOSED: If baseUrl empty, NO MedGemma providers instantiated
+        if (medGemmaBaseUrl.isNotEmpty) ...[
+          medgemma.medGemmaBaseUrlProvider.overrideWithValue(medGemmaBaseUrl),
+          medgemma.authTokenProviderProvider.overrideWithValue(
+            FirebaseAuthTokenProvider(FirebaseAuth.instance),
+          ),
         ],
       ],
       observers: [RiverpodObserver()],

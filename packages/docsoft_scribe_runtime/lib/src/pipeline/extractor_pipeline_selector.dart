@@ -19,6 +19,7 @@ import 'package:docsoft_scribe_core/src/repositories/encounter_extractor_reposit
 import '../cache/extraction_cache.dart';
 import '../heuristics/heuristics.dart';
 import '../metrics/metrics_sink.dart';
+import '../metrics/sla_evaluator.dart';
 
 /// Pipeline type used for extraction.
 enum PipelineType { baseline, advanced }
@@ -149,6 +150,7 @@ class ExtractorPipelineSelector {
     this.metrics,
     this.slaConfig = SLAConfig.defaults,
     this.modelVersion = 'v1',
+    this.slaEvaluator,
   });
 
   final EncounterExtractorRepository baselineExtractor;
@@ -168,6 +170,11 @@ class ExtractorPipelineSelector {
 
   /// Model version for cache key differentiation.
   final String modelVersion;
+
+  /// Optional SLA evaluator for alerting after advanced pipeline.
+  /// FAIL-CLOSED: If null, no SLA evaluation occurs.
+  /// Only evaluates when advanced pipeline was attempted.
+  final SlaEvaluator? slaEvaluator;
 
   /// Extract clinical facts using the appropriate pipeline.
   ///
@@ -269,11 +276,18 @@ class ExtractorPipelineSelector {
       final updatedMetadata = selection.metadata.copyWith(
         extractMs: stopwatch.elapsedMilliseconds,
       );
+
+      // Evaluate SLA ONLY if advanced was attempted (fire-and-forget)
+      _evaluateSlaIfAdvanced(pipelineAttempted);
+
       return Result.success(ExtractorSelectionResult(
         facts: selection.facts,
         metadata: updatedMetadata,
       ));
     }
+
+    // Also evaluate on failure if advanced was attempted
+    _evaluateSlaIfAdvanced(pipelineAttempted);
 
     return result;
   }
@@ -567,6 +581,31 @@ class ExtractorPipelineSelector {
       return MetricsErrorType.backend;
     }
     return MetricsErrorType.unknown;
+  }
+
+  /// Evaluates SLA ONLY if advanced pipeline was attempted.
+  ///
+  /// FAIL-CLOSED: Does nothing if slaEvaluator or metrics is null.
+  /// Logs result only in debug mode (prod is silent).
+  void _evaluateSlaIfAdvanced(PipelineType pipelineAttempted) {
+    // Fail-closed: no evaluator = no evaluation
+    if (slaEvaluator == null) return;
+    // Fail-closed: no metrics = no evaluation
+    if (metrics == null) return;
+    // Only evaluate after advanced was attempted
+    if (pipelineAttempted != PipelineType.advanced) return;
+
+    final snapshot = metrics!.snapshot();
+    final result = slaEvaluator!.evaluate(snapshot);
+
+    // Already logged internally by SlaEvaluator if enableDebugLogging is true
+    // This is just for additional context if needed
+    if (result.status != SlaStatus.ok) {
+      logger.warning(
+        '[SLA] ${result.status.name.toUpperCase()}: '
+        '${result.violations.length} violations',
+      );
+    }
   }
 }
 
