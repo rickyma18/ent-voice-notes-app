@@ -1,6 +1,7 @@
 // test/features/medical_notes/domain/scribe/diarization_service_test.dart
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medical_notes_app/src/core/logger/app_logger.dart';
 import 'package:medical_notes_app/src/features/medical_notes/data/scribe/services_impl/diarization_service_stub.dart';
 import 'package:medical_notes_app/src/features/medical_notes/domain/scribe/entities/transcript_segment.dart';
 import 'package:medical_notes_app/src/features/medical_notes/domain/scribe/entities/transcript_with_speakers.dart';
@@ -63,7 +64,8 @@ void main() {
     late DiarizationServiceStub service;
 
     setUp(() {
-      service = const DiarizationServiceStub();
+      // Inject NoOpAppLogger for silent tests (no log output)
+      service = const DiarizationServiceStub(logger: NoOpAppLogger());
     });
 
     test('should return unchanged transcript for single segment', () async {

@@ -1,6 +1,6 @@
 // lib/src/features/medical_notes/data/scribe/services_impl/diarization_service_stub.dart
 
-import '../../../../../core/logger/log.dart';
+import '../../../../../core/logger/app_logger.dart';
 import '../../../domain/scribe/entities/transcript_segment.dart';
 import '../../../domain/scribe/entities/transcript_with_speakers.dart';
 import '../../../domain/scribe/services/diarization_service.dart';
@@ -22,7 +22,9 @@ import '../../../domain/scribe/services/diarization_service.dart';
 /// 4. Receive speaker labels per timestamp range
 /// 5. Map labels to configured names (Doctor, Paciente)
 class DiarizationServiceStub implements DiarizationService {
-  const DiarizationServiceStub();
+  const DiarizationServiceStub({this.logger = const DefaultAppLogger()});
+
+  final AppLogger logger;
 
   @override
   Future<TranscriptWithSpeakers> diarize(
@@ -30,13 +32,13 @@ class DiarizationServiceStub implements DiarizationService {
     TranscriptWithSpeakers transcript, {
     DiarizationOptions options = const DiarizationOptions(),
   }) async {
-    Log.info('[Diarization] Stub: assigning generic speaker labels');
+    logger.info('[Diarization] Stub: assigning generic speaker labels');
 
     final segments = transcript.segments;
 
     // If only one segment, keep 'unknown' or use first speaker label
     if (segments.length <= 1) {
-      Log.info('[Diarization] Single segment, using "unknown"');
+      logger.info('[Diarization] Single segment, using "unknown"');
       return transcript;
     }
 
@@ -62,7 +64,7 @@ class DiarizationServiceStub implements DiarizationService {
       );
     }
 
-    Log.info(
+    logger.info(
       '[Diarization] Stub assigned ${labels.length} speaker labels to '
       '${segments.length} segments',
     );

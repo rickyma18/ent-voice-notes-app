@@ -6,7 +6,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
-import '../../../../../core/logger/log.dart';
+import '../../../../../core/logger/app_logger.dart';
 import '../../../domain/scribe/entities/transcript_segment.dart';
 import '../../../domain/scribe/entities/transcript_with_speakers.dart';
 import '../../../domain/scribe/services/diarization_service.dart';
@@ -65,8 +65,10 @@ class DiarizationServiceImpl implements DiarizationService {
     DiarizationBackendConfig config = const DiarizationBackendConfig(),
     DiarizationService? fallbackService,
     Dio? dio,
+    AppLogger logger = const DefaultAppLogger(),
   }) : _config = config,
        _fallbackService = fallbackService,
+       _logger = logger,
        _dio =
            dio ??
            Dio(
@@ -80,6 +82,7 @@ class DiarizationServiceImpl implements DiarizationService {
   final DiarizationBackendConfig _config;
   final DiarizationService? _fallbackService;
   final Dio _dio;
+  final AppLogger _logger;
 
   @override
   Future<TranscriptWithSpeakers> diarize(
@@ -87,11 +90,11 @@ class DiarizationServiceImpl implements DiarizationService {
     TranscriptWithSpeakers transcript, {
     DiarizationOptions options = const DiarizationOptions(),
   }) async {
-    Log.info('[Diarization] Starting real diarization via backend');
+    _logger.info('[Diarization] Starting real diarization via backend');
 
     // Skip if single segment (no benefit from diarization)
     if (transcript.segments.length <= 1) {
-      Log.info('[Diarization] Single segment, skipping');
+      _logger.info('[Diarization] Single segment, skipping');
       return transcript;
     }
 
@@ -103,7 +106,7 @@ class DiarizationServiceImpl implements DiarizationService {
       );
 
       if (backendSegments.isEmpty) {
-        Log.warning('[Diarization] Backend returned no segments');
+        _logger.warning('[Diarization] Backend returned no segments');
         return _fallbackOrReturn(audioFilePath, transcript, options);
       }
 
@@ -114,10 +117,10 @@ class DiarizationServiceImpl implements DiarizationService {
         options.speakerLabels,
       );
     } on DiarizationException catch (e) {
-      Log.error('[Diarization] Backend error: ${e.message}');
+      _logger.error('[Diarization] Backend error: ${e.message}');
       return _fallbackOrReturn(audioFilePath, transcript, options);
     } catch (e) {
-      Log.error('[Diarization] Unexpected error: $e');
+      _logger.error('[Diarization] Unexpected error: $e');
       return _fallbackOrReturn(audioFilePath, transcript, options);
     }
   }
@@ -132,14 +135,14 @@ class DiarizationServiceImpl implements DiarizationService {
     for (int attempt = 0; attempt <= _config.maxRetries; attempt++) {
       try {
         if (attempt > 0) {
-          Log.info('[Diarization] Retry attempt $attempt');
+          _logger.info('[Diarization] Retry attempt $attempt');
           await Future.delayed(Duration(seconds: attempt * 2));
         }
 
         return await _callBackend(audioFilePath, options);
       } catch (e) {
         lastError = e is Exception ? e : Exception(e.toString());
-        Log.warning('[Diarization] Attempt $attempt failed: $e');
+        _logger.warning('[Diarization] Attempt $attempt failed: $e');
       }
     }
 
@@ -248,7 +251,7 @@ class DiarizationServiceImpl implements DiarizationService {
     }
 
     if (kDebugMode) {
-      Log.info(
+      _logger.info(
         '[Diarization] Mapped ${speakerMap.length} speakers: '
         '${speakerMap.values.toSet().join(", ")}',
       );
@@ -268,7 +271,7 @@ class DiarizationServiceImpl implements DiarizationService {
     DiarizationOptions options,
   ) async {
     if (_fallbackService != null) {
-      Log.info('[Diarization] Using fallback service');
+      _logger.info('[Diarization] Using fallback service');
       return _fallbackService.diarize(
         audioFilePath,
         transcript,
@@ -276,7 +279,7 @@ class DiarizationServiceImpl implements DiarizationService {
       );
     }
 
-    Log.warning('[Diarization] No fallback, returning original transcript');
+    _logger.warning('[Diarization] No fallback, returning original transcript');
     return transcript;
   }
 

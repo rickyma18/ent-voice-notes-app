@@ -3,6 +3,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medical_notes_app/src/core/logger/app_logger.dart';
 import 'package:medical_notes_app/src/features/medical_notes/data/scribe/services_impl/diarization_service_impl.dart';
 import 'package:medical_notes_app/src/features/medical_notes/data/scribe/services_impl/diarization_service_stub.dart';
 import 'package:medical_notes_app/src/features/medical_notes/domain/scribe/entities/transcript_segment.dart';
@@ -66,7 +67,8 @@ void main() {
   group('DiarizationServiceImpl', () {
     test('should skip diarization for single segment', () async {
       final service = DiarizationServiceImpl(
-        fallbackService: const DiarizationServiceStub(),
+        fallbackService: const DiarizationServiceStub(logger: NoOpAppLogger()),
+        logger: const NoOpAppLogger(),
       );
 
       const transcript = TranscriptWithSpeakers(
@@ -96,7 +98,8 @@ void main() {
           timeoutSeconds: 2,
           maxRetries: 0,
         ),
-        fallbackService: const DiarizationServiceStub(),
+        fallbackService: const DiarizationServiceStub(logger: NoOpAppLogger()),
+        logger: const NoOpAppLogger(),
       );
 
       const transcript = TranscriptWithSpeakers(
@@ -146,6 +149,7 @@ void main() {
             maxRetries: 0,
           ),
           fallbackService: null, // No fallback
+          logger: const NoOpAppLogger(),
         );
 
         const transcript = TranscriptWithSpeakers(
