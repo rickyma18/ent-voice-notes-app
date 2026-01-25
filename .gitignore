@@ -153,3 +153,6 @@ NUL
 
 .claude/settings.local.json
 
+*.exe
+*.json
+*_debug.txt
