@@ -11,6 +11,7 @@
 // PHI-safe: No clinical data logged.
 
 import 'package:docsoft_scribe_core/docsoft_scribe_core.dart' as core;
+import 'package:medical_notes_app/src/core/logger/log.dart';
 
 import '../../../../../core/base/failure.dart' as app;
 import '../../../../../core/base/result.dart' as app;
@@ -41,6 +42,12 @@ final class MedGemmaExtractorAdapter extends app.EncounterExtractorRepository {
     app.TranscriptWithSpeakers transcript, {
     app.ExtractionContext context = const app.ExtractionContext(),
   }) async {
+    Log.info(
+      '[MEDGEMMA] Adapter: extract called '
+      'duration=${transcript.durationMs}ms '
+      'specialty="${context.specialty}"',
+    );
+
     // ─────────────────────────────────────────────────────────────────────────
     // STEP 1: Map App types → Core types
     // ─────────────────────────────────────────────────────────────────────────
@@ -60,10 +67,12 @@ final class MedGemmaExtractorAdapter extends app.EncounterExtractorRepository {
     // ─────────────────────────────────────────────────────────────────────────
     return coreResult.when(
       success: (coreFacts) {
+        Log.info('[MEDGEMMA] Adapter: Success.');
         final appFacts = _coreToAppFacts(coreFacts);
         return app.Result.success(appFacts);
       },
       error: (coreFailure) {
+        Log.error('[MEDGEMMA] Adapter: Failure - ${coreFailure.message}');
         final appFailure = _coreToAppFailure(coreFailure);
         return app.Result.error(appFailure);
       },

@@ -77,6 +77,10 @@ class ClinicalFactsMapper {
           'modelVersion': metadata!.modelVersion,
         'extractionTimestamp': DateTime.now().toIso8601String(),
         // specialty, language, confidenceOverall: NOT provided by backend
+        if (metadata?.contractStatus != null)
+          'contractStatus': metadata!.contractStatus,
+        if (metadata?.contractWarnings != null)
+          'contractWarnings': metadata!.contractWarnings,
       },
 
       // ─────────────────────────────────────────────────────────────────────

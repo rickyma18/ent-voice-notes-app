@@ -3,7 +3,9 @@
 // Barrel export for MedGemma integration.
 
 export 'auth/auth_token_provider.dart';
+export 'auth/dev_auth_token_provider.dart';
 export 'clients/medgemma_client.dart';
+export 'config/medgemma_config.dart';
 export 'fixtures/medgemma_fixtures.dart';
 export 'mappers/clinical_facts_mapper.dart';
 export 'mappers/transcript_mapper.dart';

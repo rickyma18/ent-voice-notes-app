@@ -3,8 +3,11 @@
 // Implementation of EncounterExtractorRepository using MedGemma Service backend.
 // PHI-safe: NO transcripts, prompts, outputs, or headers logged.
 
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:docsoft_scribe_core/docsoft_scribe_core.dart';
+import 'package:medical_notes_app/src/core/logger/log.dart';
 
 import '../clients/medgemma_client.dart';
 import '../mappers/clinical_facts_mapper.dart';
@@ -21,16 +24,16 @@ import '../mappers/transcript_mapper.dart';
 /// PHI-safe: Does NOT log transcripts, prompts, clinical outputs, or headers.
 class MedGemmaExtractorRepositoryImpl implements EncounterExtractorRepository {
   MedGemmaExtractorRepositoryImpl({
-    required MedGemmaClient client,
+    required MedGemmaServiceClient client,
     TranscriptMapper? transcriptMapper,
     ClinicalFactsMapper? factsMapper,
     String? modelVersionOverride,
-  })  : _client = client,
-        _transcriptMapper = transcriptMapper ?? const TranscriptMapper(),
-        _factsMapper = factsMapper ?? const ClinicalFactsMapper(),
-        _modelVersionOverride = modelVersionOverride;
+  }) : _client = client,
+       _transcriptMapper = transcriptMapper ?? const TranscriptMapper(),
+       _factsMapper = factsMapper ?? const ClinicalFactsMapper(),
+       _modelVersionOverride = modelVersionOverride;
 
-  final MedGemmaClient _client;
+  final MedGemmaServiceClient _client;
   final TranscriptMapper _transcriptMapper;
   final ClinicalFactsMapper _factsMapper;
   final String? _modelVersionOverride;
@@ -87,8 +90,9 @@ class MedGemmaExtractorRepositoryImpl implements EncounterExtractorRepository {
           message: 'Extraction failed with no error details',
         ),
       );
-    } on MedGemmaUnauthorizedException {
+    } on MedGemmaUnauthorizedException catch (e) {
       // Token is null/empty
+      Log.error('[MEDGEMMA] REPO: Unauthorized - ${e.message}');
       return Result.error(
         const Failure(
           type: FailureType.unauthorized,
@@ -98,9 +102,11 @@ class MedGemmaExtractorRepositoryImpl implements EncounterExtractorRepository {
       );
     } on DioException catch (e) {
       // Network/timeout errors
+      Log.error('[MEDGEMMA] REPO: Network error - ${e.message}');
       return Result.error(_mapDioExceptionToFailure(e));
     } on FormatException catch (e, st) {
       // JSON parsing error
+      Log.error('[MEDGEMMA] REPO: Parsing error - $e');
       return Result.error(
         Failure(
           type: FailureType.parsing,
@@ -108,8 +114,20 @@ class MedGemmaExtractorRepositoryImpl implements EncounterExtractorRepository {
           stackTrace: st,
         ),
       );
+    } on TypeError catch (e, st) {
+      // Cast error (e.g., nested field is String instead of Map)
+      Log.error('[MEDGEMMA] REPO: Type cast error - $e');
+      return Result.error(
+        Failure(
+          type: FailureType.parsing,
+          message: 'Invalid response structure from LLM service',
+          code: MedGemmaErrorCodes.invalidResponseFormat,
+          stackTrace: st,
+        ),
+      );
     } catch (e, st) {
       // Unknown error
+      Log.error('[MEDGEMMA] REPO: Unknown error - $e');
       return Result.error(
         Failure(
           type: FailureType.unknown,
@@ -214,12 +232,19 @@ class MedGemmaExtractorRepositoryImpl implements EncounterExtractorRepository {
     final statusCode = e.response?.statusCode;
     final data = e.response?.data;
 
-    // Try to extract error info from response
-    if (data is Map<String, dynamic> && data['error'] != null) {
-      final errorInfo = MedGemmaErrorInfo.fromJson(
-        data['error'] as Map<String, dynamic>,
-      );
-      return _mapErrorToFailure(errorInfo);
+    // Try to extract error info from response (handles both Map and String JSON)
+    final parsedData = _parseErrorData(data);
+    if (parsedData != null && parsedData['error'] != null) {
+      final errorData = parsedData['error'];
+      // Only parse if error is actually a Map
+      if (errorData is Map<String, dynamic>) {
+        try {
+          final errorInfo = MedGemmaErrorInfo.fromJson(errorData);
+          return _mapErrorToFailure(errorInfo);
+        } on TypeError {
+          // Fall through to status code handling
+        }
+      }
     }
 
     switch (statusCode) {
@@ -264,5 +289,37 @@ class MedGemmaExtractorRepositoryImpl implements EncounterExtractorRepository {
           message: 'HTTP $statusCode: ${e.message}',
         );
     }
+  }
+
+  /// Parses error response data robustly.
+  ///
+  /// Handles:
+  /// - Map<String, dynamic>: returns as-is
+  /// - String (JSON): attempts jsonDecode
+  /// - null or unparseable: returns null
+  ///
+  /// PHI-safe: No response content logged.
+  Map<String, dynamic>? _parseErrorData(dynamic data) {
+    if (data == null) {
+      return null;
+    }
+
+    if (data is Map<String, dynamic>) {
+      return data;
+    }
+
+    if (data is String) {
+      try {
+        final decoded = jsonDecode(data);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+        return null;
+      } on FormatException {
+        return null;
+      }
+    }
+
+    return null;
   }
 }

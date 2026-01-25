@@ -16,6 +16,8 @@ import '../../domain/entities/quality_gate_result.dart';
 import '../../domain/scribe/repositories/note_composer_repository.dart';
 import '../../domain/scribe/repositories/transcription_repository.dart'
     show TranscriptionOptions;
+import '../../data/medgemma/clients/medgemma_client.dart';
+import '../../data/medgemma/providers/medgemma_providers.dart';
 import '../../medical_notes_providers.dart';
 
 part 'medical_notes_controller.g.dart';
@@ -369,10 +371,11 @@ class MedicalNotesController extends _$MedicalNotesController {
         'timings': {
           'transcriptionMs': result.timings.transcriptionMs,
           'medicalizationMs': result.timings.medicalizationMs,
-          'extractionMs': result.timings.extractionMs,
-          'compositionMs': result.timings.compositionMs,
           'totalMs': result.timings.totalMs,
         },
+        // Scribe V2 currently doesn't have contract status/warnings in its basic metadata structure yet
+        // but we can add them if the underlying result had them.
+        // For now, leaving as is unless we need to pipe that through ScribeResult too.
       },
     };
   }
@@ -422,28 +425,56 @@ class MedicalNotesController extends _$MedicalNotesController {
   // ───────────────────────────────────────────────────────────────────────────
 
   /// Result of AI note generation with metadata about which pipeline was used.
+  static const String kSourceMedGemmaV1 = 'medgemma_v1';
   static const String kSourceScribeV2 = 'scribe_v2';
   static const String kSourceLegacy = 'legacy';
   static const String kSourceFallback = 'fallback_from_scribe_v2';
 
   /// Generates AI suggestions from transcript using the appropriate pipeline.
   ///
-  /// If [useScribeV2ForNoteCreation] flag is ON:
-  /// - Uses Scribe V2 pipeline via [generateNoteFromTranscript]
-  /// - Falls back to legacy if Scribe V2 fails
-  /// - Returns metadata indicating which pipeline was used
-  ///
-  /// If flag is OFF:
-  /// - Uses legacy NoteAIService directly
+  /// Pipeline priority:
+  /// 1. MedGemma V1 (/v1/extract-structured) - if enabled and available
+  /// 2. Scribe V2 pipeline - if flag is ON
+  /// 3. Legacy NoteAIService - fallback
   ///
   /// Returns a tuple-like map with:
   /// - 'suggestions': Map<String, dynamic> with the structured fields
-  /// - 'source': String indicating pipeline used (scribe_v2, legacy, fallback_from_scribe_v2)
+  /// - 'source': String indicating pipeline used
   /// - 'fallbackReason': String? reason for fallback (only if source is fallback)
   Future<Map<String, dynamic>> generateAISuggestionsWithFallback(
     String transcript, {
     String? language,
   }) async {
+    // ─────────────────────────────────────────────────────────────────────────
+    // Priority 1: MedGemma V1 Structured Extraction
+    // ─────────────────────────────────────────────────────────────────────────
+    final useMedGemmaV1 = ref.read(useMedGemmaStructuredV1Provider);
+    final medGemmaClient = ref.read(medGemmaClientProvider);
+
+    if (useMedGemmaV1 && medGemmaClient != null) {
+      Log.info('[AI] Attempting MedGemma V1 structured extraction');
+
+      try {
+        final suggestions = await _extractWithMedGemmaV1(
+          medGemmaClient,
+          transcript,
+          language: language,
+        );
+
+        if (suggestions != null) {
+          return {'suggestions': suggestions, 'source': kSourceMedGemmaV1};
+        }
+        // null means extraction failed, fall through to next pipeline
+        Log.info('[AI] MedGemma V1 returned null, trying fallback...');
+      } catch (e) {
+        Log.error('[AI] MedGemma V1 failed: $e');
+        // Fall through to next pipeline
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Priority 2: Scribe V2 Pipeline
+    // ─────────────────────────────────────────────────────────────────────────
     final useScribeV2 = ref.read(useScribeV2ForNoteCreationProvider);
 
     if (useScribeV2) {
@@ -469,7 +500,7 @@ class MedicalNotesController extends _$MedicalNotesController {
             'fallbackReason': 'Scribe V2 internal fallback',
           };
         }
-      } catch (e, st) {
+      } catch (e) {
         Log.error('[AI] Scribe V2 failed completely: $e');
         Log.info('[AI] Using legacy fallback...');
 
@@ -489,16 +520,213 @@ class MedicalNotesController extends _$MedicalNotesController {
           rethrow;
         }
       }
-    } else {
-      Log.info('[AI] Using legacy pipeline for note creation (flag=OFF)');
-
-      final suggestions = await ref
-          .read(noteAIServiceProvider)
-          .suggestStructuredFieldsV3(transcript);
-
-      return {'suggestions': suggestions, 'source': kSourceLegacy};
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Priority 3: Legacy Pipeline
+    // ─────────────────────────────────────────────────────────────────────────
+    Log.info('[AI] Using legacy pipeline for note creation');
+
+    final suggestions = await ref
+        .read(noteAIServiceProvider)
+        .suggestStructuredFieldsV3(transcript);
+
+    return {'suggestions': suggestions, 'source': kSourceLegacy};
   }
+
+  /// Extracts structured fields using MedGemma V1 endpoint.
+  ///
+  /// PHI-safe: Only logs metadata, never transcript or clinical content.
+  ///
+  /// Returns Flutter-format Map (snake_case keys) or null on failure.
+  Future<Map<String, dynamic>?> _extractWithMedGemmaV1(
+    MedGemmaServiceClient client,
+    String transcript, {
+    String? language,
+  }) async {
+    // Build request body using helper
+    final body = _buildStructuredV1BodyFromSpeech(
+      transcript,
+      language: language ?? 'es',
+    );
+
+    // PHI-safe log: only body shape, never content
+    final transcriptMap = body['transcript'] as Map<String, dynamic>;
+    final segments = transcriptMap['segments'] as List;
+    final speakers = segments
+        .map((s) => (s as Map)['speaker'] as String)
+        .toList();
+
+    Log.info(
+      '[MEDGEMMA-V1] body shape: '
+      'rootKeys=${body.keys.toList()}, '
+      'transcriptKeys=${transcriptMap.keys.toList()}, '
+      'segmentsLen=${segments.length}, '
+      'speakers=$speakers, '
+      'language=${transcriptMap['language']}, '
+      'durationMs=${transcriptMap['durationMs']}',
+    );
+
+    final response = await client.extractStructuredV1(body: body);
+
+    if (!response.success) {
+      Log.error('[AI] MedGemma V1 extraction failed: ${response.error?.code}');
+      return null;
+    }
+
+    // Convert backend camelCase to Flutter snake_case format
+    final flutterFormat = response.toFlutterFormat();
+    if (flutterFormat == null) {
+      Log.error('[AI] MedGemma V1 returned null data');
+      return null;
+    }
+
+    // PHI-safe debug: log which fields have content (booleans only)
+    _logMedGemmaV1FieldsPresence(flutterFormat);
+
+    // INJECT METADATA (Contract Status, Model Version, etc)
+    // The UI expects 'metadata' key in the map result
+    final metadataMap = <String, dynamic>{
+      'modelVersion': response.metadata?.modelVersion,
+      'requestId': response.metadata?.requestId,
+      'contractStatus': response.metadata?.contractStatus,
+      'contractWarnings': response.metadata?.contractWarnings ?? <String>[],
+    };
+
+    // Add to result
+    flutterFormat['metadata'] = metadataMap;
+
+    return flutterFormat;
+  }
+
+  /// PHI-safe logging of which fields were extracted.
+  void _logMedGemmaV1FieldsPresence(Map<String, dynamic> data) {
+    final hasMotivo = data['motivo_consulta'] != null;
+    final hasPadecimiento = data['padecimiento_actual'] != null;
+    final hasPlan = data['plan_tratamiento'] != null;
+
+    final antecedentes = data['antecedentes'] as Map<String, dynamic>? ?? {};
+    final hasHeredofam = antecedentes['heredofamiliares'] != null;
+    final hasPatologicos = antecedentes['patologicos'] != null;
+    final hasNoPatologicos = antecedentes['no_patologicos'] != null;
+    final alergiasCount = (antecedentes['alergias'] as List?)?.length ?? 0;
+    final medsCount =
+        (antecedentes['medicamentos_habituales'] as List?)?.length ?? 0;
+
+    final orl = data['exploracion_orl'] as Map<String, dynamic>? ?? {};
+    final hasOtoscopia = orl['otoscopia'] != null;
+    final hasRinoscopia = orl['rinoscopia'] != null;
+    final hasOrofaringe = orl['orofaringe'] != null;
+    final hasCuello = orl['cuello'] != null;
+    final hasLaringoscopia = orl['laringoscopia'] != null;
+
+    final dx = data['diagnostico'] as Map<String, dynamic>? ?? {};
+    final hasDiagnostico = dx['texto'] != null;
+    final dxTipo = dx['tipo'] as String?;
+
+    Log.info(
+      '[AI-V1] fields extracted: '
+      'motivo=$hasMotivo, padecimiento=$hasPadecimiento, plan=$hasPlan, '
+      'heredofam=$hasHeredofam, patologicos=$hasPatologicos, '
+      'noPatologicos=$hasNoPatologicos, '
+      'alergias=$alergiasCount, meds=$medsCount, '
+      'otoscopia=$hasOtoscopia, rinoscopia=$hasRinoscopia, '
+      'orofaringe=$hasOrofaringe, cuello=$hasCuello, '
+      'laringoscopia=$hasLaringoscopia, '
+      'diagnostico=$hasDiagnostico (tipo=$dxTipo)',
+    );
+  }
+
+  /// Builds the request body for /v1/extract-structured from plain speech text.
+  ///
+  /// Converts a plain text transcript into the structured format required by
+  /// the MedGemma backend:
+  /// ```json
+  /// {
+  ///   "transcript": {
+  ///     "segments": [{"speaker":"doctor","text":"...","startMs":0,"endMs":N}],
+  ///     "language": "es",
+  ///     "durationMs": N
+  ///   },
+  ///   "context": {"specialty":"otorrinolaringología","encounterType":"consulta"}
+  /// }
+  /// ```
+  ///
+  /// Speaker normalization:
+  /// - "doctor", "médico", "dr" → "doctor"
+  /// - "patient", "paciente" → "patient"
+  /// - Any other (including "unknown", "SPEAKER_00") → "doctor" (default)
+  ///
+  /// PHI-safe: Does not log the speech content.
+  Map<String, dynamic> _buildStructuredV1BodyFromSpeech(
+    String speech, {
+    String language = 'es',
+    String speaker = 'doctor',
+  }) {
+    // Normalize speaker to backend-accepted enum values
+    final normalizedSpeaker = _normalizeSpeaker(speaker);
+
+    // Estimate duration: ~150 chars/second for speech, min 1s, max 10min
+    final textLength = speech.length;
+    final estimatedDurationMs = (textLength / 150 * 1000).round().clamp(
+      1000,
+      600000,
+    );
+
+    return {
+      'transcript': {
+        'segments': [
+          {
+            'speaker': normalizedSpeaker,
+            'text': speech,
+            'startMs': 0,
+            'endMs': estimatedDurationMs,
+          },
+        ],
+        'language': language,
+        'durationMs': estimatedDurationMs,
+      },
+      'context': {
+        'specialty': 'otorrinolaringología',
+        'encounterType': 'consulta',
+      },
+    };
+  }
+
+  /// Normalizes speaker string to backend-accepted enum: "doctor" or "patient".
+  ///
+  /// The backend Pydantic model only accepts these two values.
+  /// Any unrecognized speaker defaults to "doctor" (safer assumption for ORL).
+  String _normalizeSpeaker(String speaker) {
+    final normalized = speaker.toLowerCase().trim();
+
+    // Doctor variants
+    if (_doctorTerms.contains(normalized)) {
+      return 'doctor';
+    }
+
+    // Patient variants
+    if (_patientTerms.contains(normalized)) {
+      return 'patient';
+    }
+
+    // Default: assume doctor (safer for medical dictation)
+    return 'doctor';
+  }
+
+  static const _doctorTerms = {
+    'doctor',
+    'médico',
+    'medico',
+    'dr',
+    'dr.',
+    'physician',
+    'clinician',
+    'provider',
+    'speaker_00',
+  };
+
+  static const _patientTerms = {'patient', 'paciente', 'client', 'speaker_01'};
 
   // ───────────────────────────────────────────────────────────────────────────
   // Scribe V2 Result Persistence

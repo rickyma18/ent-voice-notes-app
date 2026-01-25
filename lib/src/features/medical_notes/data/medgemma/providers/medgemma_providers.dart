@@ -2,13 +2,20 @@
 //
 // Riverpod providers for MedGemma integration.
 // Snippet de uso desde la capa de inyección (ÉPICA 9 - sin tocar ÉPICA 10).
+//
+// Updated to support DEV auth mode via MedGemmaConfig and DevAuthTokenProvider.
+
+import 'dart:io' show Platform;
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../auth/auth_token_provider.dart';
-import '../clients/medgemma_client.dart';
-import '../repositories/medgemma_extractor_repository_impl.dart';
+import 'package:medical_notes_app/src/core/logger/log.dart';
+import 'package:medical_notes_app/src/features/medical_notes/data/medgemma/auth/auth_token_provider.dart';
+import 'package:medical_notes_app/src/features/medical_notes/data/medgemma/auth/dev_auth_token_provider.dart';
+import 'package:medical_notes_app/src/features/medical_notes/data/medgemma/clients/medgemma_client.dart';
+import 'package:medical_notes_app/src/features/medical_notes/data/medgemma/config/medgemma_config.dart';
+import 'package:medical_notes_app/src/features/medical_notes/data/medgemma/repositories/medgemma_extractor_repository_impl.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONFIG
@@ -18,18 +25,24 @@ import '../repositories/medgemma_extractor_repository_impl.dart';
 ///
 /// **FAIL-CLOSED**: Returns null if not configured → MedGemma disabled.
 ///
+/// In DEV mode (AUTH_MODE=dev), automatically uses platform-specific URL:
+/// - Android emulator: http://10.0.2.2:8000
+/// - iOS simulator: http://localhost:8000
+///
 /// Override this provider to enable MedGemma for different environments:
-/// - dev/staging: override with actual URL
-/// - prod: leave null (disabled by default)
+/// - dev/staging: uses MedGemmaConfig automatically
+/// - prod: requires MEDGEMMA_BASE_URL dart-define
 ///
 /// Example override in main.dart:
 /// ```dart
 /// medGemmaBaseUrlProvider.overrideWithValue('https://medgemma.docsoft.app')
 /// ```
 final medGemmaBaseUrlProvider = Provider<String?>((ref) {
-  // FAIL-CLOSED: Only enable if explicitly configured via dart-define or override
-  const envUrl = String.fromEnvironment('MEDGEMMA_BASE_URL');
-  return envUrl.isNotEmpty ? envUrl : null;
+  // Use centralized config which handles:
+  // 1. MEDGEMMA_BASE_URL env var (priority)
+  // 2. Platform-specific dev URL (when AUTH_MODE=dev)
+  // 3. null (MedGemma disabled)
+  return MedGemmaConfig.getBaseUrl(isAndroid: Platform.isAndroid);
 });
 
 /// Whether to use a custom model version.
@@ -40,27 +53,39 @@ final medGemmaModelVersionOverrideProvider = Provider<String?>((ref) {
 });
 
 /// Request timeout for MedGemma Service.
+///
+/// Uses extended timeout in DEV mode (30s) to allow for slower local responses.
 final medGemmaTimeoutProvider = Provider<Duration>((ref) {
-  return const Duration(seconds: 5);
+  return MedGemmaConfig.timeout;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTH TOKEN PROVIDER
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Firebase-backed AuthTokenProvider implementation.
+/// AuthTokenProvider implementation.
 ///
-/// **FAIL-CLOSED**: Returns null by default → MedGemma won't work without auth.
+/// **DEV MODE BEHAVIOR (AUTH_MODE=dev):**
+/// Automatically returns [DevAuthTokenProvider] which provides the dev-token
+/// configured in [MedGemmaConfig.devBearerToken].
+///
+/// **PRODUCTION BEHAVIOR:**
+/// Returns null by default → MedGemma won't work without auth.
 /// Must be overridden in main.dart with FirebaseAuthTokenProvider to enable.
 ///
-/// Example override:
+/// Example override for production:
 /// ```dart
 /// authTokenProviderProvider.overrideWithValue(
 ///   FirebaseAuthTokenProvider(FirebaseAuth.instance),
 /// )
 /// ```
 final authTokenProviderProvider = Provider<AuthTokenProvider?>((ref) {
-  // FAIL-CLOSED: null by default
+  // DEV MODE: Return DevAuthTokenProvider with configured token
+  if (MedGemmaConfig.isDevAuthMode) {
+    return DevAuthTokenProvider();
+  }
+
+  // FAIL-CLOSED: null by default in production
   // Override with FirebaseAuthTokenProvider in main.dart to enable MedGemma
   return null;
 });
@@ -96,13 +121,13 @@ final medGemmaDioProvider = Provider<Dio?>((ref) {
 // MEDGEMMA CLIENT
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// MedGemmaClient instance.
+/// MedGemmaServiceClient instance.
 ///
 /// **FAIL-CLOSED**: Returns null if any required config is missing:
 /// - baseUrl (must be non-null)
 /// - authTokenProvider (must be non-null)
 /// - dio (derived from baseUrl)
-final medGemmaClientProvider = Provider<MedGemmaClient?>((ref) {
+final medGemmaClientProvider = Provider<MedGemmaServiceClient?>((ref) {
   final baseUrl = ref.watch(medGemmaBaseUrlProvider);
   final dio = ref.watch(medGemmaDioProvider);
   final tokenProvider = ref.watch(authTokenProviderProvider);
@@ -110,10 +135,14 @@ final medGemmaClientProvider = Provider<MedGemmaClient?>((ref) {
 
   // FAIL-CLOSED: All required configs must be present
   if (baseUrl == null || dio == null || tokenProvider == null) {
+    Log.warning(
+      '[MEDGEMMA] Provider: Client disabled (missing config). BaseUrl=${baseUrl != null}, Dio=${dio != null}, TokenProvider=${tokenProvider != null}',
+    );
     return null;
   }
 
-  return MedGemmaClient(
+  Log.info('[MEDGEMMA] Provider: Client enabled. BaseUrl=$baseUrl');
+  return MedGemmaServiceClient(
     dio: dio,
     baseUrl: baseUrl,
     tokenProvider: tokenProvider,

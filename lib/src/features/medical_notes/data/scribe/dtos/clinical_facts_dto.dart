@@ -24,6 +24,8 @@ class ExtractionMetadata extends Equatable {
     this.confidenceOverall = ConfidenceLevel.media,
     this.extractionTimestamp,
     this.modelVersion,
+    this.contractStatus,
+    this.contractWarnings,
   });
 
   factory ExtractionMetadata.fromJson(Map<String, dynamic>? json) {
@@ -37,6 +39,8 @@ class ExtractionMetadata extends Equatable {
       ),
       extractionTimestamp: _parseDateTime(json['extractionTimestamp']),
       modelVersion: json['modelVersion'] as String?,
+      contractStatus: json['contractStatus'] as String?,
+      contractWarnings: (json['contractWarnings'] as List?)?.cast<String>(),
     );
   }
 
@@ -45,6 +49,8 @@ class ExtractionMetadata extends Equatable {
   final ConfidenceLevel confidenceOverall;
   final DateTime? extractionTimestamp;
   final String? modelVersion;
+  final String? contractStatus;
+  final List<String>? contractWarnings;
 
   Map<String, dynamic> toJson() => {
     if (specialty != null) 'specialty': specialty,
@@ -53,6 +59,8 @@ class ExtractionMetadata extends Equatable {
     if (extractionTimestamp != null)
       'extractionTimestamp': extractionTimestamp!.toIso8601String(),
     if (modelVersion != null) 'modelVersion': modelVersion,
+    if (contractStatus != null) 'contractStatus': contractStatus,
+    if (contractWarnings != null) 'contractWarnings': contractWarnings,
   };
 
   static DateTime? _parseDateTime(dynamic value) {
@@ -69,6 +77,8 @@ class ExtractionMetadata extends Equatable {
     confidenceOverall,
     extractionTimestamp,
     modelVersion,
+    contractStatus,
+    contractWarnings,
   ];
 }
 
