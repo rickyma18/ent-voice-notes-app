@@ -233,10 +233,12 @@ class _ClinicalHistoryWizardPageState
     _diagnosticoController = TextEditingController();
     _planController = TextEditingController();
 
-    // ORL accordion controllers
+    // ORL accordion controllers (exploracion fisica)
     _orlControllers = {
       'otoscopia': TextEditingController(),
+      'otomicroscopia': TextEditingController(),
       'rinoscopia': TextEditingController(),
+      'endoscopiaNasal': TextEditingController(),
       'orofaringe': TextEditingController(),
       'cuello': TextEditingController(),
       'laringoscopia': TextEditingController(),
@@ -714,7 +716,7 @@ class _ClinicalHistoryWizardPageState
         suggestion: structured.padecimientoActual ?? '',
         currentValue: _padecimientoActualController.text,
       ),
-      // ORL sections - direct mapping
+      // Exploracion fisica sections - direct mapping
       AISuggestionSection(
         id: 'otoscopia',
         label: 'Otoscopia',
@@ -722,10 +724,22 @@ class _ClinicalHistoryWizardPageState
         currentValue: _orlControllers['otoscopia']?.text ?? '',
       ),
       AISuggestionSection(
+        id: 'otomicroscopia',
+        label: 'Otomicroscopia',
+        suggestion: structured.otomicroscopia ?? '',
+        currentValue: _orlControllers['otomicroscopia']?.text ?? '',
+      ),
+      AISuggestionSection(
         id: 'rinoscopia',
         label: 'Rinoscopia',
         suggestion: structured.rinoscopia ?? '',
         currentValue: _orlControllers['rinoscopia']?.text ?? '',
+      ),
+      AISuggestionSection(
+        id: 'endoscopiaNasal',
+        label: 'Endoscopia nasal',
+        suggestion: structured.endoscopiaNasal ?? '',
+        currentValue: _orlControllers['endoscopiaNasal']?.text ?? '',
       ),
       AISuggestionSection(
         id: 'orofaringe',
@@ -757,41 +771,43 @@ class _ClinicalHistoryWizardPageState
         suggestion: structured.planTratamiento ?? '',
         currentValue: _planController.text,
       ),
+      AISuggestionSection(
+        id: 'pronostico',
+        label: 'Pronostico',
+        suggestion: structured.pronostico ?? '',
+        currentValue: _prognosisController.text,
+      ),
     ];
   }
 
-  /// Builds patologicos string including alergias and medicamentos.
+  /// Returns patologicos string from structured data.
+  ///
+  /// In V2 schema, alergias and medicamentos are included in personalesPatologicos
+  /// as text, so we simply return the field value.
   String _buildPatologicosWithExtras(StructuredFieldsV1 structured) {
-    final parts = <String>[];
-
-    if (structured.antecedentesPatologicos != null) {
-      parts.add(structured.antecedentesPatologicos!);
-    }
-
-    if (structured.alergias.isNotEmpty) {
-      parts.add('Alergias: ${structured.alergias.join(", ")}');
-    }
-
-    if (structured.medicamentosHabituales.isNotEmpty) {
-      parts.add(
-        'Medicamentos habituales: ${structured.medicamentosHabituales.join(", ")}',
-      );
-    }
-
-    return parts.join('\n');
+    return structured.antecedentesPatologicos ?? '';
   }
 
-  /// Builds diagnostico string with tipo if present.
+  /// Builds diagnostico string with tipo and CIE-10 if present.
   String _buildDiagnosticoString(StructuredFieldsV1 structured) {
     final texto = structured.diagnosticoTexto;
     if (texto == null) return '';
 
-    final tipo = structured.diagnosticoTipo;
-    if (tipo != null && tipo != 'definitivo') {
-      return '$texto ($tipo)';
+    final parts = <String>[texto];
+
+    // Add CIE-10 code if present
+    final cie10 = structured.diagnosticoCie10;
+    if (cie10 != null && cie10.isNotEmpty) {
+      parts.add('CIE-10: $cie10');
     }
 
-    return texto;
+    // Add tipo if not definitivo (assumed default)
+    final tipo = structured.diagnosticoTipo;
+    if (tipo != null && tipo != 'definitivo') {
+      parts.add('($tipo)');
+    }
+
+    return parts.join(' ');
   }
 
   /// Builds suggestion sections for the sheet using current controller values.
@@ -1088,8 +1104,14 @@ class _ClinicalHistoryWizardPageState
       case 'otoscopia':
         _orlControllers['otoscopia']?.text = value;
         break;
+      case 'otomicroscopia':
+        _orlControllers['otomicroscopia']?.text = value;
+        break;
       case 'rinoscopia':
         _orlControllers['rinoscopia']?.text = value;
+        break;
+      case 'endoscopiaNasal':
+        _orlControllers['endoscopiaNasal']?.text = value;
         break;
       case 'orofaringe':
         _orlControllers['orofaringe']?.text = value;
@@ -1099,6 +1121,14 @@ class _ClinicalHistoryWizardPageState
         break;
       case 'laringoscopia':
         _orlControllers['laringoscopia']?.text = value;
+        break;
+      case 'signosVitales':
+        // Signos vitales come as string; parse if needed or show as note
+        // For now, we could store in a dedicated field or parse
+        debugPrint('signosVitales received: $value');
+        break;
+      case 'pronostico':
+        _prognosisController.text = value;
         break;
       case 'diagnostico':
         _diagnosticoController.text = value;
@@ -1178,13 +1208,38 @@ class _ClinicalHistoryWizardPageState
     }
   }
 
-  /// Filters sections to only include those relevant to a specific step.
+  /// Filters sections: step-relevant first, then others with content.
+  ///
+  /// This ensures the user sees all AI-extracted findings, prioritizing
+  /// the current step but not losing data from other fields.
   List<AISuggestionSection> _filterSectionsForStep(
     List<AISuggestionSection> allSections,
     int stepIndex,
   ) {
     final relevantIds = _getSectionIdsForStep(stepIndex);
-    return allSections.where((s) => relevantIds.contains(s.id)).toList();
+
+    // Primary: sections for this step WITH content
+    final primary = allSections
+        .where((s) => relevantIds.contains(s.id) && s.hasContent)
+        .toList();
+
+    // Secondary: other sections WITH content (don't lose findings)
+    final secondary = allSections
+        .where((s) => !relevantIds.contains(s.id) && s.hasContent)
+        .toList();
+
+    // Diagnostic logs for debugging filter behavior
+    debugPrint('[AISuggestions] stepIndex=$stepIndex');
+    debugPrint('[AISuggestions] relevantIds=$relevantIds');
+    debugPrint(
+      '[AISuggestions] allWithContent=${allSections.where((s) => s.hasContent).map((s) => s.id).toList()}',
+    );
+    debugPrint('[AISuggestions] primary=${primary.map((s) => s.id).toList()}');
+    debugPrint(
+      '[AISuggestions] secondary=${secondary.map((s) => s.id).toList()}',
+    );
+
+    return [...primary, ...secondary];
   }
 
   /// Generates AI suggestions filtered for a specific step.
@@ -1221,7 +1276,20 @@ class _ClinicalHistoryWizardPageState
               'Se usó el procesador alternativo. ${reason != null ? "(Razón: ${reason.split('\n').first})" : ""}';
         }
       }
-
+      debugPrint('--- Structured V1 (top) ---');
+      debugPrint('v1 motivo_consulta: ${structuredV1['motivo_consulta']}');
+      debugPrint(
+        'v1 padecimiento_actual: ${structuredV1['padecimiento_actual']}',
+      );
+      debugPrint('v1 antecedentes: ${structuredV1['antecedentes']}');
+      debugPrint('v1 exploracion_orl: ${structuredV1['exploracion_orl']}');
+      debugPrint('v1 diagnostico: ${structuredV1['diagnostico']}');
+      debugPrint('v1 plan_tratamiento: ${structuredV1['plan_tratamiento']}');
+      debugPrint(
+        'v1 estudios_indicados: ${structuredV1['estudios_indicados']}',
+      );
+      debugPrint('v1 notas_adicionales: ${structuredV1['notas_adicionales']}');
+      debugPrint('---------------------------');
       if (!mounted) return;
 
       setState(() {
@@ -1252,6 +1320,7 @@ class _ClinicalHistoryWizardPageState
             backgroundColor: Colors.orange,
           ),
         );
+
         return;
       }
 
@@ -1470,12 +1539,26 @@ class _ClinicalHistoryWizardPageState
 
   /// Builds the CTA widget for step-specific AI suggestions.
   Widget? _buildStepAICta(int stepIndex, TextEditingController controller) {
-    // Don't show CTA for step 7 (attachments)
-    if (stepIndex == 7) return null;
+    // Don't show CTA for step 6 (attachments/laboratorio)
+    if (stepIndex == 6) return null;
 
     // Don't show if no transcript or field is not empty
     if (!_hasDictation) return null;
     if (controller.text.trim().isNotEmpty) return null;
+
+    return TextButton.icon(
+      onPressed: _isGeneratingSuggestions
+          ? null
+          : () => _generateAISuggestionsForStep(stepIndex),
+      icon: _isGeneratingSuggestions
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.auto_awesome, size: 18),
+      label: const Text('Sugerir con IA'),
+    );
   }
 
   @override
@@ -2307,6 +2390,36 @@ class _ClinicalHistoryWizardPageState
                               stepTitle: _stepTitles[_currentStep],
                             ),
 
+                          // CONTRACT STATUS BANNER
+                          // Shows backend contract warnings (drift/warnings)
+                          if (!keyboardOpen && _structuredFieldsV1 != null)
+                            Builder(
+                              builder: (context) {
+                                final metadata =
+                                    _structuredFieldsV1!['metadata']
+                                        as Map<String, dynamic>?;
+                                // If metadata is null, nothing to show
+                                if (metadata == null)
+                                  return const SizedBox.shrink();
+
+                                return Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    DocsoftSpacing.md,
+                                    DocsoftSpacing.sm, // reduced top padding
+                                    DocsoftSpacing.md,
+                                    0,
+                                  ),
+                                  child: ContractStatusBanner(
+                                    status:
+                                        metadata['contractStatus'] as String?,
+                                    warnings:
+                                        (metadata['contractWarnings'] as List?)
+                                            ?.cast<String>(),
+                                  ),
+                                );
+                              },
+                            ),
+
                           // AI dictation banner - Stitch style with states
                           if (!keyboardOpen &&
                               _dictationStatus == DictationStatus.available &&
@@ -2353,8 +2466,8 @@ class _ClinicalHistoryWizardPageState
                                   _buildStep3AntecedentesPatologicos(),
                                   _buildStep4PadecimientoActual(),
                                   _buildStep5ExploracionOrl(),
-                                  _buildStep7Attachments(),
-                                  _buildStep6DiagnosticoPlan(),
+                                  _buildStep6Attachments(),
+                                  _buildStep7DiagnosticoPlan(),
                                 ],
                               ),
                             ),
@@ -2492,14 +2605,20 @@ class _ClinicalHistoryWizardPageState
         return _padecimientoActualController.text;
       case 'otoscopia':
         return _orlControllers['otoscopia']?.text ?? '';
+      case 'otomicroscopia':
+        return _orlControllers['otomicroscopia']?.text ?? '';
       case 'rinoscopia':
         return _orlControllers['rinoscopia']?.text ?? '';
+      case 'endoscopiaNasal':
+        return _orlControllers['endoscopiaNasal']?.text ?? '';
       case 'orofaringe':
         return _orlControllers['orofaringe']?.text ?? '';
       case 'cuello':
         return _orlControllers['cuello']?.text ?? '';
       case 'laringoscopia':
         return _orlControllers['laringoscopia']?.text ?? '';
+      case 'pronostico':
+        return _prognosisController.text;
       case 'diagnostico':
         return _diagnosticoController.text;
       case 'planTratamiento':
@@ -2724,7 +2843,7 @@ class _ClinicalHistoryWizardPageState
   }
 
   // Step 6: Diagnostico y plan
-  Widget _buildStep6DiagnosticoPlan() {
+  Widget _buildStep7DiagnosticoPlan() {
     final cta = _buildStepAICta(6, _diagnosticoController);
     return _buildScrollableStep(
       child: Column(
@@ -2835,7 +2954,7 @@ class _ClinicalHistoryWizardPageState
   }
 
   // Step 7: Laboratorio y estudios (attachments)
-  Widget _buildStep7Attachments() {
+  Widget _buildStep6Attachments() {
     return _buildScrollableStep(
       child: Stack(
         children: [
