@@ -726,7 +726,10 @@ class _ClinicalHistoryWizardPageState
       AISuggestionSection(
         id: 'otomicroscopia',
         label: 'Otomicroscopia',
-        suggestion: structured.otomicroscopia ?? '',
+        suggestion:
+            (structured.rawData['exploracion_orl'] as Map?)?['otomicroscopia']
+                as String? ??
+            '',
         currentValue: _orlControllers['otomicroscopia']?.text ?? '',
       ),
       AISuggestionSection(
@@ -738,7 +741,10 @@ class _ClinicalHistoryWizardPageState
       AISuggestionSection(
         id: 'endoscopiaNasal',
         label: 'Endoscopia nasal',
-        suggestion: structured.endoscopiaNasal ?? '',
+        suggestion:
+            (structured.rawData['exploracion_orl'] as Map?)?['endoscopia_nasal']
+                as String? ??
+            '',
         currentValue: _orlControllers['endoscopiaNasal']?.text ?? '',
       ),
       AISuggestionSection(
@@ -774,7 +780,7 @@ class _ClinicalHistoryWizardPageState
       AISuggestionSection(
         id: 'pronostico',
         label: 'Pronostico',
-        suggestion: structured.pronostico ?? '',
+        suggestion: structured.rawData['pronostico'] as String? ?? '',
         currentValue: _prognosisController.text,
       ),
     ];
@@ -796,7 +802,9 @@ class _ClinicalHistoryWizardPageState
     final parts = <String>[texto];
 
     // Add CIE-10 code if present
-    final cie10 = structured.diagnosticoCie10;
+    // Add CIE-10 code if present (accessed via rawData as not in V1 schema getter)
+    final cie10 =
+        (structured.rawData['diagnostico'] as Map?)?['cie10'] as String?;
     if (cie10 != null && cie10.isNotEmpty) {
       parts.add('CIE-10: $cie10');
     }

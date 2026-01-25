@@ -23,7 +23,7 @@ void main() {
   late MockDio mockDio;
   late MockAuthTokenProvider mockTokenProvider;
   late MockRequestIdGenerator mockRequestIdGenerator;
-  late MedGemmaClient client;
+  late MedGemmaServiceClient client;
 
   const baseUrl = 'https://api.example.com';
   const testToken = 'test-bearer-token-12345';
@@ -41,7 +41,7 @@ void main() {
 
     when(() => mockRequestIdGenerator.generate()).thenReturn(testRequestId);
 
-    client = MedGemmaClient(
+    client = MedGemmaServiceClient(
       dio: mockDio,
       baseUrl: baseUrl,
       tokenProvider: mockTokenProvider,
@@ -60,7 +60,7 @@ void main() {
 
         Options? capturedOptions;
         when(
-          () => mockDio.post<Map<String, dynamic>>(
+          () => mockDio.post<dynamic>(
             any(),
             data: any(named: 'data'),
             options: any(named: 'options'),
@@ -111,7 +111,7 @@ void main() {
 
         String? capturedPath;
         when(
-          () => mockDio.post<Map<String, dynamic>>(
+          () => mockDio.post<dynamic>(
             any(),
             data: any(named: 'data'),
             options: any(named: 'options'),
@@ -171,7 +171,7 @@ void main() {
         ).thenAnswer((_) async => testToken);
 
         when(
-          () => mockDio.post<Map<String, dynamic>>(
+          () => mockDio.post<dynamic>(
             any(),
             data: any(named: 'data'),
             options: any(named: 'options'),
@@ -216,7 +216,7 @@ void main() {
         ).thenAnswer((_) async => testToken);
 
         when(
-          () => mockDio.post<Map<String, dynamic>>(
+          () => mockDio.post<dynamic>(
             any(),
             data: any(named: 'data'),
             options: any(named: 'options'),
@@ -255,7 +255,7 @@ void main() {
         ).thenAnswer((_) async => testToken);
 
         when(
-          () => mockDio.post<Map<String, dynamic>>(
+          () => mockDio.post<dynamic>(
             any(),
             data: any(named: 'data'),
             options: any(named: 'options'),
@@ -273,13 +273,13 @@ void main() {
 
         // Assert
         expect(response.success, isFalse);
-        expect(response.error?.code, equals('EMPTY_RESPONSE'));
+        expect(response.error?.code, equals('INVALID_RESPONSE_FORMAT'));
       });
 
       test('sets timeout on request options', () async {
         // Arrange
         const customTimeout = Duration(seconds: 10);
-        final clientWithCustomTimeout = MedGemmaClient(
+        final clientWithCustomTimeout = MedGemmaServiceClient(
           dio: mockDio,
           baseUrl: baseUrl,
           tokenProvider: mockTokenProvider,
@@ -293,7 +293,7 @@ void main() {
 
         Options? capturedOptions;
         when(
-          () => mockDio.post<Map<String, dynamic>>(
+          () => mockDio.post<dynamic>(
             any(),
             data: any(named: 'data'),
             options: any(named: 'options'),
@@ -327,7 +327,7 @@ void main() {
 
         Options? capturedOptions;
         when(
-          () => mockDio.post<Map<String, dynamic>>(
+          () => mockDio.post<dynamic>(
             any(),
             data: any(named: 'data'),
             options: any(named: 'options'),
@@ -371,7 +371,7 @@ void main() {
         };
 
         when(
-          () => mockDio.post<Map<String, dynamic>>(
+          () => mockDio.post<dynamic>(
             any(),
             data: any(named: 'data'),
             options: any(named: 'options'),

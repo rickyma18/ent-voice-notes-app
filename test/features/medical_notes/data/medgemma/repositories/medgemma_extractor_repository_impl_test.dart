@@ -11,14 +11,14 @@ import 'package:medical_notes_app/src/features/medical_notes/data/medgemma/clien
 import 'package:medical_notes_app/src/features/medical_notes/data/medgemma/repositories/medgemma_extractor_repository_impl.dart';
 
 // Mocks
-class MockMedGemmaClient extends Mock implements MedGemmaClient {}
+class MockMedGemmaServiceClient extends Mock implements MedGemmaServiceClient {}
 
 void main() {
-  late MockMedGemmaClient mockClient;
+  late MockMedGemmaServiceClient mockClient;
   late MedGemmaExtractorRepositoryImpl repository;
 
   setUp(() {
-    mockClient = MockMedGemmaClient();
+    mockClient = MockMedGemmaServiceClient();
     repository = MedGemmaExtractorRepositoryImpl(client: mockClient);
   });
 

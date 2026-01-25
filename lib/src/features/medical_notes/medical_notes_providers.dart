@@ -169,7 +169,7 @@ String openAIApiKey(Ref ref) {
 /// OpenAI Client provider.
 ///
 /// Creates a configured OpenAI client with the API key.
-@riverpod
+@Riverpod(keepAlive: true)
 OpenAIClient openAIClient(Ref ref) {
   final apiKey = ref.watch(openAIApiKeyProvider);
   return OpenAIClient(
@@ -245,6 +245,20 @@ bool useScribeV2ForNoteCreation(Ref ref) {
   // Default: disabled for backward compatibility
   // Can be overridden in main() for testing or gradual rollout:
   // container.updateOverrides([useScribeV2ForNoteCreationProvider.overrideWithValue(true)]);
+  return false;
+}
+
+/// Feature flag for MedGemma V1 Structured Extraction (JSON output).
+///
+/// When true:
+/// - MedicalNotesController attempts to use /v1/extract-structured first.
+/// - If successful, returns the structured data directly.
+/// - If fails or disabled, falls back to Scribe V2 or Legacy pipeline.
+///
+/// Default: false (disabled).
+/// Override in main() for local testing.
+@Riverpod(keepAlive: true)
+bool useMedGemmaStructuredV1(Ref ref) {
   return false;
 }
 
