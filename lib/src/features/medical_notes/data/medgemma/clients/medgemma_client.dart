@@ -734,6 +734,234 @@ class MedGemmaServiceClient {
     }
   }
 
+  // ===========================================================================
+  // JOB QUEUE ENDPOINTS (ÉPICA 18)
+  // ===========================================================================
+
+  /// Default polling interval for job status.
+  static const Duration _defaultPollingInterval = Duration(seconds: 2);
+
+  /// Maximum polling duration before timeout.
+  static const Duration _maxPollingDuration = Duration(minutes: 5);
+
+  /// Enqueues a new extraction job.
+  ///
+  /// Returns immediately with job info (queued/running status).
+  /// If user already has a job in progress, throws [MedGemmaBusyException].
+  ///
+  /// PHI-safe: Does NOT log request body content.
+  ///
+  /// Throws:
+  /// - [MedGemmaUnauthorizedException] if token is null/empty
+  /// - [MedGemmaBusyException] if user has existing job (HTTP 409)
+  /// - [DioException] for network/timeout errors
+  Future<JobEnqueueResponse> enqueueJob({
+    required Map<String, dynamic> body,
+  }) async {
+    final token = await _tokenProvider.getBearerToken();
+    if (token == null || token.isEmpty) {
+      Log.error('[MEDGEMMA-QUEUE] enqueue fail type=auth error=no_token');
+      throw const MedGemmaUnauthorizedException(
+        message: 'No bearer token available',
+      );
+    }
+
+    final requestId = _requestIdGenerator.generate();
+
+    Log.info(
+      '[MEDGEMMA-QUEUE] enqueue start requestId=$requestId',
+    );
+
+    try {
+      final response = await _dio.post<dynamic>(
+        '$_baseUrl/v1/jobs',
+        data: body,
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+            'X-Request-ID': requestId,
+          },
+          responseType: ResponseType.json,
+          sendTimeout: _timeout,
+          receiveTimeout: _timeout,
+          // Accept 202 as success
+          validateStatus: (status) =>
+              status != null && (status >= 200 && status < 300 || status == 409),
+        ),
+      );
+
+      // Handle 409 Conflict - user already has job
+      if (response.statusCode == 409) {
+        final data = _parseResponseData(response.data);
+        final existingJobId = data?['existingJobId'] as String? ?? 'unknown';
+        Log.warning(
+          '[MEDGEMMA-QUEUE] enqueue blocked: user busy, existingJobId=$existingJobId',
+        );
+        throw MedGemmaBusyException(
+          existingJobId: existingJobId,
+          message: 'User already has a job in progress',
+        );
+      }
+
+      final parsedData = _parseResponseData(response.data);
+      if (parsedData == null) {
+        Log.error('[MEDGEMMA-QUEUE] enqueue fail: invalid response format');
+        return JobEnqueueResponse(
+          success: false,
+          error: const MedGemmaErrorInfo(
+            code: MedGemmaErrorCodes.invalidResponseFormat,
+            message: 'Invalid enqueue response',
+          ),
+        );
+      }
+
+      final result = JobEnqueueResponse.fromJson(parsedData);
+
+      Log.info(
+        '[MEDGEMMA-QUEUE] enqueue ok jobId=${result.jobId} '
+        'status=${result.status} position=${result.position}',
+      );
+
+      return result;
+    } on DioException catch (e) {
+      Log.error(
+        '[MEDGEMMA-QUEUE] enqueue fail type=${e.type} '
+        'status=${e.response?.statusCode} message=${e.message}',
+      );
+      rethrow;
+    }
+  }
+
+  /// Gets the current status of a job.
+  ///
+  /// PHI-safe: Does NOT log result content.
+  ///
+  /// Returns [JobStatusResponse] with current job state.
+  Future<JobStatusResponse> getJobStatus({
+    required String jobId,
+  }) async {
+    final token = await _tokenProvider.getBearerToken();
+    if (token == null || token.isEmpty) {
+      Log.error('[MEDGEMMA-QUEUE] status fail type=auth error=no_token');
+      throw const MedGemmaUnauthorizedException(
+        message: 'No bearer token available',
+      );
+    }
+
+    Log.info('[MEDGEMMA-QUEUE] status check jobId=$jobId');
+
+    try {
+      final response = await _dio.get<dynamic>(
+        '$_baseUrl/v1/jobs/$jobId',
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          responseType: ResponseType.json,
+          sendTimeout: _timeout,
+          receiveTimeout: _timeout,
+        ),
+      );
+
+      final parsedData = _parseResponseData(response.data);
+      if (parsedData == null) {
+        Log.error('[MEDGEMMA-QUEUE] status fail: invalid response format');
+        return JobStatusResponse(
+          success: false,
+          error: const MedGemmaErrorInfo(
+            code: MedGemmaErrorCodes.invalidResponseFormat,
+            message: 'Invalid status response',
+          ),
+        );
+      }
+
+      final result = JobStatusResponse.fromJson(parsedData);
+
+      // PHI-safe: log only status metadata
+      Log.info(
+        '[MEDGEMMA-QUEUE] status ok jobId=$jobId '
+        'status=${result.status} position=${result.position} '
+        'eta=${result.etaSeconds}s fallback=${result.fallbackUsed}',
+      );
+
+      return result;
+    } on DioException catch (e) {
+      Log.error(
+        '[MEDGEMMA-QUEUE] status fail jobId=$jobId type=${e.type} '
+        'status=${e.response?.statusCode}',
+      );
+      rethrow;
+    }
+  }
+
+  /// Polls job status until terminal state (done/failed) or timeout.
+  ///
+  /// Yields [JobStatusResponse] on each poll.
+  /// Completes when job reaches terminal state or polling times out.
+  ///
+  /// PHI-safe: Does NOT log result content.
+  Stream<JobStatusResponse> pollJobStatus({
+    required String jobId,
+    Duration? pollingInterval,
+    Duration? maxDuration,
+  }) async* {
+    final interval = pollingInterval ?? _defaultPollingInterval;
+    final maxTime = maxDuration ?? _maxPollingDuration;
+    final stopwatch = Stopwatch()..start();
+
+    Log.info(
+      '[MEDGEMMA-QUEUE] polling start jobId=$jobId '
+      'interval=${interval.inSeconds}s maxDuration=${maxTime.inSeconds}s',
+    );
+
+    while (stopwatch.elapsed < maxTime) {
+      try {
+        final status = await getJobStatus(jobId: jobId);
+        yield status;
+
+        // Check for terminal state
+        if (status.status == 'done' || status.status == 'failed') {
+          Log.info(
+            '[MEDGEMMA-QUEUE] polling complete jobId=$jobId '
+            'status=${status.status} elapsed=${stopwatch.elapsedMilliseconds}ms',
+          );
+          return;
+        }
+
+        // Wait before next poll
+        await Future<void>.delayed(interval);
+      } on DioException catch (e) {
+        // Yield error status but continue polling for transient errors
+        if (e.type == DioExceptionType.connectionError ||
+            e.type == DioExceptionType.receiveTimeout) {
+          Log.warning(
+            '[MEDGEMMA-QUEUE] polling transient error jobId=$jobId: ${e.type}',
+          );
+          await Future<void>.delayed(interval);
+          continue;
+        }
+        rethrow;
+      }
+    }
+
+    // Timeout
+    Log.warning(
+      '[MEDGEMMA-QUEUE] polling timeout jobId=$jobId '
+      'elapsed=${stopwatch.elapsedMilliseconds}ms',
+    );
+    yield JobStatusResponse(
+      success: false,
+      status: 'timeout',
+      jobId: jobId,
+      error: const MedGemmaErrorInfo(
+        code: MedGemmaErrorCodes.timeout,
+        message: 'Polling timed out',
+      ),
+    );
+  }
+
   /// Parses response data robustly.
   ///
   /// Handles:
@@ -1054,6 +1282,106 @@ class MedGemmaFinalizeMetadata {
 
   final String? requestId;
   final int? inferenceMs;
+}
+
+// =============================================================================
+// JOB QUEUE RESPONSE TYPES (ÉPICA 18)
+// =============================================================================
+
+/// Response from POST /v1/jobs (enqueue).
+class JobEnqueueResponse {
+  const JobEnqueueResponse({
+    required this.success,
+    this.jobId,
+    this.status,
+    this.position,
+    this.etaSeconds,
+    this.error,
+  });
+
+  factory JobEnqueueResponse.fromJson(Map<String, dynamic> json) {
+    return JobEnqueueResponse(
+      success: json['success'] as bool? ?? false,
+      jobId: json['jobId'] as String? ?? json['requestId'] as String?,
+      status: json['status'] as String?,
+      position: json['position'] as int?,
+      etaSeconds: json['etaSeconds'] as int?,
+      error: json['error'] != null
+          ? MedGemmaErrorInfo.fromJson(json['error'] as Map<String, dynamic>)
+          : null,
+    );
+  }
+
+  final bool success;
+  final String? jobId;
+  final String? status;
+  final int? position;
+  final int? etaSeconds;
+  final MedGemmaErrorInfo? error;
+}
+
+/// Response from GET /v1/jobs/{jobId} (status).
+class JobStatusResponse {
+  const JobStatusResponse({
+    required this.success,
+    this.jobId,
+    this.status,
+    this.position,
+    this.etaSeconds,
+    this.result,
+    this.fallbackUsed = false,
+    this.contractWarnings,
+    this.error,
+  });
+
+  factory JobStatusResponse.fromJson(Map<String, dynamic> json) {
+    return JobStatusResponse(
+      success: json['success'] as bool? ?? false,
+      jobId: json['jobId'] as String? ?? json['requestId'] as String?,
+      status: json['status'] as String?,
+      position: json['position'] as int?,
+      etaSeconds: json['etaSeconds'] as int?,
+      result: json['result'] as Map<String, dynamic>?,
+      fallbackUsed: json['fallbackUsed'] as bool? ?? false,
+      contractWarnings: (json['contractWarnings'] as List?)?.cast<String>(),
+      error: json['error'] != null
+          ? MedGemmaErrorInfo.fromJson(json['error'] as Map<String, dynamic>)
+          : null,
+    );
+  }
+
+  final bool success;
+  final String? jobId;
+  final String? status;
+  final int? position;
+  final int? etaSeconds;
+
+  /// Result data (PHI - never log).
+  final Map<String, dynamic>? result;
+  final bool fallbackUsed;
+  final List<String>? contractWarnings;
+  final MedGemmaErrorInfo? error;
+
+  /// Whether the job has completed (successfully or not).
+  bool get isTerminal => status == 'done' || status == 'failed';
+
+  /// Whether the job is still pending.
+  bool get isPending => status == 'queued' || status == 'running';
+}
+
+/// Exception thrown when user already has a job in progress.
+class MedGemmaBusyException implements Exception {
+  const MedGemmaBusyException({
+    required this.existingJobId,
+    required this.message,
+  });
+
+  /// The ID of the existing job that's blocking.
+  final String existingJobId;
+  final String message;
+
+  @override
+  String toString() => 'MedGemmaBusyException: $message (job: $existingJobId)';
 }
 
 /// Exception thrown when no bearer token is available.

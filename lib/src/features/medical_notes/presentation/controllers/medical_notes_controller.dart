@@ -20,6 +20,7 @@ import '../../application/scribe/finalize_service.dart';
 import '../../data/medgemma/clients/medgemma_client.dart';
 import '../../data/medgemma/providers/medgemma_providers.dart';
 import '../../medical_notes_providers.dart';
+import 'job_queue_controller.dart';
 
 part 'medical_notes_controller.g.dart';
 
@@ -545,6 +546,10 @@ class MedicalNotesController extends _$MedicalNotesController {
   /// PHI-safe: Only logs metadata, never transcript or clinical content.
   ///
   /// Returns Flutter-format Map (snake_case keys) or null on failure.
+  /// The new Job Queue based extraction flow (ÉPICA 18).
+  ///
+  /// Replaces direct client call with JobQueueController.submit()
+  /// to handle queue polling and UX state updates.
   Future<Map<String, dynamic>?> _extractWithMedGemmaV1(
     MedGemmaServiceClient client,
     String transcript, {
@@ -573,33 +578,60 @@ class MedicalNotesController extends _$MedicalNotesController {
       'durationMs=${transcriptMap['durationMs']}',
     );
 
-    final response = await client.extractStructuredV1(body: body);
+    // ─────────────────────────────────────────────────────────────────────────
+    // NEW QUEUE FLOW (ÉPICA 18)
+    // ─────────────────────────────────────────────────────────────────────────
+    // Delegate to JobQueueController which handles enqueue -> poll -> UI updates
+    // The controller returns a Future with the final result map.
 
-    if (!response.success) {
-      Log.error('[AI] MedGemma V1 extraction failed: ${response.error?.code}');
+    try {
+      final queueController = ref.read(jobQueueControllerProvider.notifier);
+
+      // Submit and await result
+      Log.info('[AI] Submitting job to queue...');
+      final resultData = await queueController.submit(body);
+
+      if (resultData == null) {
+        // Null means cancelled or failed without result
+        Log.warning(
+          '[AI] Job queue submitted but returned null (cancelled/failed)',
+        );
+        return null;
+      }
+
+      // Parse result into structured response wrapper to reuse existing logic
+      // We reconstruct response object to leverage existing helpers
+      // Note: JobStatusResponse.result is the data map (camelCase from backend)
+      final response = MedGemmaStructuredV1Response(
+        success: true,
+        data: resultData,
+      );
+
+      // Convert backend camelCase to Flutter snake_case format
+      final flutterFormat = response.toFlutterFormat();
+      if (flutterFormat == null) {
+        Log.error('[AI] MedGemma V1 returned null data from queue result');
+        return null;
+      }
+
+      // PHI-safe debug: log which fields have content (booleans only)
+      _logMedGemmaV1FieldsPresence(flutterFormat);
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // ÉPICA 17: Finalize Step (single LLM call)
+      // ─────────────────────────────────────────────────────────────────────────
+      // TODO: Pass metadata from job status if available
+      final finalizeResult = await _applyFinalizeStep(
+        transcript: transcript,
+        reduceDraft: flutterFormat,
+        extractMetadata: response.metadata,
+      );
+
+      return finalizeResult;
+    } catch (e) {
+      Log.error('[AI] Job Queue flow failed: $e');
       return null;
     }
-
-    // Convert backend camelCase to Flutter snake_case format
-    final flutterFormat = response.toFlutterFormat();
-    if (flutterFormat == null) {
-      Log.error('[AI] MedGemma V1 returned null data');
-      return null;
-    }
-
-    // PHI-safe debug: log which fields have content (booleans only)
-    _logMedGemmaV1FieldsPresence(flutterFormat);
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // ÉPICA 17: Finalize Step (single LLM call)
-    // ─────────────────────────────────────────────────────────────────────────
-    final finalizeResult = await _applyFinalizeStep(
-      transcript: transcript,
-      reduceDraft: flutterFormat,
-      extractMetadata: response.metadata,
-    );
-
-    return finalizeResult;
   }
 
   /// Applies the finalize step to reduce_draft.
@@ -690,10 +722,7 @@ class MedicalNotesController extends _$MedicalNotesController {
       'requestId': extractMetadata?.requestId,
       'confidenceOverall': 'baja',
       'contractStatus': 'warning',
-      'contractWarnings': [
-        ...?extractMetadata?.contractWarnings,
-        ...warnings,
-      ],
+      'contractWarnings': [...?extractMetadata?.contractWarnings, ...warnings],
       'finalizeUsedEvidence': false,
     };
 

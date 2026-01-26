@@ -21,6 +21,9 @@ import '../../domain/entities/medical_note_type.dart';
 import '../../domain/entities/note_status.dart';
 import '../../medical_notes_providers.dart';
 import '../controllers/medical_notes_controller.dart';
+import '../../data/medgemma/clients/medgemma_client.dart';
+import '../controllers/job_queue_controller.dart';
+import '../widgets/job_queue_status_modal.dart';
 import '../widgets/clinical_history_wizard/ai_suggestions_sheet.dart';
 import '../widgets/clinical_history_wizard/clinical_history_wizard.dart';
 import '../widgets/clinical_history_wizard/dictation_quick_sheet.dart';
@@ -98,6 +101,9 @@ class _ClinicalHistoryWizardPageState
 
   // Cached structured fields from AI (v1 schema)
   Map<String, dynamic>? _structuredFieldsV1;
+
+  // Job Queue Modal State
+  bool _isQueueModalShown = false;
 
   // ScaffoldMessenger key for SnackBars inside the AI suggestions BottomSheet
   // This ensures SnackBars appear ABOVE the BottomSheet, not behind it
@@ -1026,6 +1032,45 @@ class _ClinicalHistoryWizardPageState
       _sheetMessengerKey = null;
       _parentMessenger = null;
     });
+  }
+
+  void _showQueueModal() {
+    _isQueueModalShown = true;
+    showModalBottomSheet(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      builder: (ctx) => const JobQueueStatusModal(),
+    ).then((_) {
+      _isQueueModalShown = false;
+    });
+  }
+
+  void _showFallbackSnackBar() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.orange.shade100,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Nota generada con respaldo. Revisa el contenido.',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.orange.shade900,
+        duration: const Duration(seconds: 6), // Persistent for a bit
+        behavior: SnackBarBehavior.floating,
+        showCloseIcon: true,
+      ),
+    );
   }
 
   /// Applies suggestions to controllers based on mode.
@@ -2231,6 +2276,46 @@ class _ClinicalHistoryWizardPageState
 
   @override
   Widget build(BuildContext context) {
+    // Listen to Job Queue Status (ÉPICA 18)
+    ref.listen<AsyncValue<JobStatusResponse?>>(jobQueueControllerProvider, (
+      prev,
+      next,
+    ) {
+      final status = next.value;
+
+      // Check if we should show the modal
+      // Status is valid AND (pending OR 'resuming' OR 'processing') AND not already shown
+      if (status != null &&
+          (status.isPending ||
+              status.status == 'resuming' ||
+              status.status == 'processing') &&
+          !_isQueueModalShown) {
+        if (mounted) _showQueueModal();
+      }
+      // Check for Terminal State
+      else if (status != null && status.isTerminal) {
+        if (_isQueueModalShown) {
+          if (mounted && Navigator.canPop(context)) {
+            Navigator.pop(context);
+          }
+        }
+
+        // Show Fallback Notice (Persistent SnackBar) if used
+        if (status.fallbackUsed) {
+          // Delay slightly to ensure modal is gone
+          Future.delayed(const Duration(milliseconds: 300), () {
+            if (mounted) _showFallbackSnackBar();
+          });
+        }
+      }
+      // Handle explicit null (reset)
+      else if (status == null && _isQueueModalShown) {
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+      }
+    });
+
     final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
     return PopScope(
