@@ -556,6 +556,184 @@ class MedGemmaServiceClient {
     }
   }
 
+  // ===========================================================================
+  // FINALIZE ENDPOINT (ÉPICA 17) - Single LLM call to finalize reduce_draft
+  // ===========================================================================
+
+  /// Default timeout for finalize calls (longer than extract due to complexity).
+  static const Duration _defaultFinalizeTimeout = Duration(seconds: 15);
+
+  /// Finalizes a reduce_draft using transcript evidence.
+  ///
+  /// Calls `/v1/finalize` endpoint with:
+  /// - systemPrompt: Finalize instructions
+  /// - userPrompt: Template with transcript + reduce_draft
+  ///
+  /// Single LLM call - no retries. On timeout/error, caller handles fallback.
+  ///
+  /// PHI-safe: Does NOT log transcripts, prompts, outputs, or auth headers.
+  ///
+  /// Returns [MedGemmaFinalizeResponse] with:
+  /// - structured: Same shape as reduce_draft (finalized values)
+  /// - metadata: confidenceOverall, contractStatus, contractWarnings, finalizeUsedEvidence
+  ///
+  /// Throws:
+  /// - [MedGemmaUnauthorizedException] if token is null/empty
+  /// - [DioException] for network/timeout errors (caller should handle fallback)
+  Future<MedGemmaFinalizeResponse> finalize({
+    required String systemPrompt,
+    required String userPrompt,
+    Duration? timeoutOverride,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    final effectiveTimeout = timeoutOverride ?? _defaultFinalizeTimeout;
+
+    // Get bearer token
+    final token = await _tokenProvider.getBearerToken();
+    if (token == null || token.isEmpty) {
+      Log.error(
+        '[MEDGEMMA-FINALIZE] request fail type=auth status=null error=no_token',
+      );
+      throw const MedGemmaUnauthorizedException(
+        message: 'No bearer token available',
+      );
+    }
+
+    // Generate request ID for correlation
+    final requestId = _requestIdGenerator.generate();
+    final isDev = MedGemmaConfig.isDevAuthMode;
+    final timeoutSeconds = effectiveTimeout.inSeconds;
+
+    // PHI-safe logging: Log endpoint and timeout only
+    Log.info(
+      '[MEDGEMMA-FINALIZE] request start url=$_baseUrl/v1/finalize '
+      'requestId=$requestId '
+      'authMode=${isDev ? "DEV" : "FIREBASE"} '
+      'timeout=${timeoutSeconds}s',
+    );
+
+    try {
+      final response = await _dio.post<dynamic>(
+        '$_baseUrl/v1/finalize',
+        data: {
+          'systemPrompt': systemPrompt,
+          'userPrompt': userPrompt,
+        },
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+            'X-Request-ID': requestId,
+          },
+          responseType: ResponseType.json,
+          sendTimeout: effectiveTimeout,
+          receiveTimeout: effectiveTimeout,
+        ),
+      );
+
+      stopwatch.stop();
+      final elapsedMs = stopwatch.elapsedMilliseconds;
+
+      // PHI-safe diagnostic log: Only types and keys
+      final contentType = response.headers.value(Headers.contentTypeHeader);
+      final dataType = response.data.runtimeType;
+      Log.info(
+        '[MEDGEMMA-FINALIZE] resp meta '
+        'status=${response.statusCode} '
+        'ct=$contentType '
+        'dataType=$dataType',
+      );
+
+      // Parse response
+      final parsedData = _parseResponseData(response.data);
+      if (parsedData == null) {
+        Log.error(
+          '[MEDGEMMA-FINALIZE] request fail type=response '
+          'status=${response.statusCode} '
+          'elapsedMs=$elapsedMs error=invalid_response_format',
+        );
+        return const MedGemmaFinalizeResponse(
+          success: false,
+          error: MedGemmaErrorInfo(
+            code: MedGemmaErrorCodes.invalidResponseFormat,
+            message: 'Invalid or empty response from server',
+          ),
+        );
+      }
+
+      final MedGemmaFinalizeResponse result;
+      try {
+        result = MedGemmaFinalizeResponse.fromJson(parsedData);
+      } on TypeError catch (e) {
+        Log.error(
+          '[MEDGEMMA-FINALIZE] request fail type=response_structure_invalid '
+          'status=${response.statusCode} elapsedMs=$elapsedMs typeError=$e',
+        );
+        return const MedGemmaFinalizeResponse(
+          success: false,
+          error: MedGemmaErrorInfo(
+            code: MedGemmaErrorCodes.invalidResponseFormat,
+            message: 'Invalid response structure from server',
+          ),
+        );
+      }
+
+      if (result.success) {
+        // PHI-safe: Log only metadata status, not content
+        Log.info(
+          '[MEDGEMMA-FINALIZE] request ok status=${response.statusCode} '
+          'elapsedMs=$elapsedMs '
+          'requestId=${result.metadata?.requestId ?? requestId} '
+          'contractStatus=${result.metadata?.contractStatus ?? "N/A"} '
+          'confidence=${result.metadata?.confidenceOverall ?? "N/A"} '
+          'usedEvidence=${result.metadata?.finalizeUsedEvidence ?? "N/A"}',
+        );
+      } else {
+        Log.error(
+          '[MEDGEMMA-FINALIZE] request fail type=backend '
+          'status=${response.statusCode} '
+          'elapsedMs=$elapsedMs code=${result.error?.code} '
+          'message=${result.error?.message}',
+        );
+      }
+
+      return result;
+    } on DioException catch (e) {
+      stopwatch.stop();
+      final elapsedMs = stopwatch.elapsedMilliseconds;
+      final status = e.response?.statusCode;
+
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout) {
+        Log.error(
+          '[MEDGEMMA-FINALIZE] request fail type=timeout elapsedMs=$elapsedMs '
+          'timeoutSetting=${effectiveTimeout.inSeconds}s message=${e.message}',
+        );
+      } else if (e.type == DioExceptionType.connectionError) {
+        Log.error(
+          '[MEDGEMMA-FINALIZE] request fail type=connection_refused '
+          'elapsedMs=$elapsedMs '
+          'url=$_baseUrl message=${e.message}',
+        );
+      } else if (status == 401 || status == 403) {
+        Log.error(
+          '[MEDGEMMA-FINALIZE] request fail type=auth status=$status '
+          'elapsedMs=$elapsedMs '
+          'message=${e.message}',
+        );
+      } else {
+        Log.error(
+          '[MEDGEMMA-FINALIZE] request fail type=http status=$status '
+          'elapsedMs=$elapsedMs '
+          'dioType=${e.type} message=${e.message}',
+        );
+      }
+
+      rethrow; // Caller handles fallback
+    }
+  }
+
   /// Parses response data robustly.
   ///
   /// Handles:
@@ -797,6 +975,85 @@ class MedGemmaV1ResponseMetadata {
   final String? schemaVersion;
   final String? contractStatus;
   final List<String>? contractWarnings;
+}
+
+// =============================================================================
+// FINALIZE ENDPOINT (ÉPICA 17)
+// =============================================================================
+
+/// Response from MedGemma /v1/finalize endpoint.
+///
+/// Returns the finalized structured data with metadata about the finalization.
+/// PHI note: [structured] contains clinical data - NEVER log.
+class MedGemmaFinalizeResponse {
+  const MedGemmaFinalizeResponse({
+    required this.success,
+    this.structured,
+    this.metadata,
+    this.error,
+  });
+
+  factory MedGemmaFinalizeResponse.fromJson(Map<String, dynamic> json) {
+    return MedGemmaFinalizeResponse(
+      success: json['success'] as bool? ?? false,
+      structured: json['structured'] as Map<String, dynamic>?,
+      metadata: json['metadata'] != null
+          ? MedGemmaFinalizeMetadata.fromJson(
+              json['metadata'] as Map<String, dynamic>,
+            )
+          : null,
+      error: json['error'] != null
+          ? MedGemmaErrorInfo.fromJson(json['error'] as Map<String, dynamic>)
+          : null,
+    );
+  }
+
+  final bool success;
+
+  /// Finalized structured data (same shape as reduce_draft).
+  /// PHI: NEVER log this field.
+  final Map<String, dynamic>? structured;
+
+  final MedGemmaFinalizeMetadata? metadata;
+  final MedGemmaErrorInfo? error;
+}
+
+/// Metadata from finalize response.
+class MedGemmaFinalizeMetadata {
+  const MedGemmaFinalizeMetadata({
+    this.confidenceOverall,
+    this.contractStatus,
+    this.contractWarnings,
+    this.finalizeUsedEvidence,
+    this.requestId,
+    this.inferenceMs,
+  });
+
+  factory MedGemmaFinalizeMetadata.fromJson(Map<String, dynamic> json) {
+    return MedGemmaFinalizeMetadata(
+      confidenceOverall: json['confidenceOverall'] as String?,
+      contractStatus: json['contractStatus'] as String?,
+      contractWarnings: (json['contractWarnings'] as List?)?.cast<String>(),
+      finalizeUsedEvidence: json['finalizeUsedEvidence'] as bool?,
+      requestId: json['requestId'] as String?,
+      inferenceMs: json['inferenceMs'] as int?,
+    );
+  }
+
+  /// "alta" | "media" | "baja"
+  final String? confidenceOverall;
+
+  /// "ok" | "warning" | "drift"
+  final String? contractStatus;
+
+  /// Canonical warnings: empty_transcript, unresolved_conflict:<topic>, etc.
+  final List<String>? contractWarnings;
+
+  /// Whether transcript evidence was used in finalization.
+  final bool? finalizeUsedEvidence;
+
+  final String? requestId;
+  final int? inferenceMs;
 }
 
 /// Exception thrown when no bearer token is available.

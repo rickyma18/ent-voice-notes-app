@@ -11,6 +11,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:medical_notes_app/src/core/logger/log.dart';
+import 'package:medical_notes_app/src/features/medical_notes/application/scribe/finalize_service.dart';
 import 'package:medical_notes_app/src/features/medical_notes/data/medgemma/auth/auth_token_provider.dart';
 import 'package:medical_notes_app/src/features/medical_notes/data/medgemma/auth/dev_auth_token_provider.dart';
 import 'package:medical_notes_app/src/features/medical_notes/data/medgemma/clients/medgemma_client.dart';
@@ -172,6 +173,41 @@ final medGemmaExtractorRepositoryProvider =
         client: client,
         modelVersionOverride: modelOverride,
       );
+    });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FINALIZE SERVICE (ÉPICA 17)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// FinalizeService instance for single-call finalization of reduce_draft.
+///
+/// **FAIL-CLOSED**: Returns null if MedGemma client is not configured.
+///
+/// Usage:
+/// ```dart
+/// final finalizeService = ref.read(finalizeServiceProvider);
+/// if (finalizeService != null) {
+///   final result = await finalizeService.finalize(
+///     transcript: transcriptText,
+///     reduceDraft: reduceDraftMap,
+///   );
+///   // Use result.structured and result.metadata
+/// }
+/// ```
+final finalizeServiceProvider =
+    Provider<FinalizeService?>((ref) {
+      final client = ref.watch(medGemmaClientProvider);
+
+      // FAIL-CLOSED: If client is null, finalize is disabled
+      if (client == null) {
+        Log.warning(
+          '[MEDGEMMA] Provider: FinalizeService disabled (no client)',
+        );
+        return null;
+      }
+
+      Log.info('[MEDGEMMA] Provider: FinalizeService enabled');
+      return FinalizeService(client: client);
     });
 
 // ─────────────────────────────────────────────────────────────────────────────

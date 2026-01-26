@@ -16,6 +16,7 @@ import '../../domain/entities/quality_gate_result.dart';
 import '../../domain/scribe/repositories/note_composer_repository.dart';
 import '../../domain/scribe/repositories/transcription_repository.dart'
     show TranscriptionOptions;
+import '../../application/scribe/finalize_service.dart';
 import '../../data/medgemma/clients/medgemma_client.dart';
 import '../../data/medgemma/providers/medgemma_providers.dart';
 import '../../medical_notes_providers.dart';
@@ -536,6 +537,11 @@ class MedicalNotesController extends _$MedicalNotesController {
 
   /// Extracts structured fields using MedGemma V1 endpoint.
   ///
+  /// Pipeline (ÉPICA 17):
+  /// 1. Call extractStructuredV1 → reduce_draft (Schema V1)
+  /// 2. Call finalize (single LLM call) → finalized V1 with metadata
+  /// 3. If finalize disabled/fails → return reduce_draft with warning metadata
+  ///
   /// PHI-safe: Only logs metadata, never transcript or clinical content.
   ///
   /// Returns Flutter-format Map (snake_case keys) or null on failure.
@@ -584,19 +590,117 @@ class MedicalNotesController extends _$MedicalNotesController {
     // PHI-safe debug: log which fields have content (booleans only)
     _logMedGemmaV1FieldsPresence(flutterFormat);
 
-    // INJECT METADATA (Contract Status, Model Version, etc)
-    // The UI expects 'metadata' key in the map result
+    // ─────────────────────────────────────────────────────────────────────────
+    // ÉPICA 17: Finalize Step (single LLM call)
+    // ─────────────────────────────────────────────────────────────────────────
+    final finalizeResult = await _applyFinalizeStep(
+      transcript: transcript,
+      reduceDraft: flutterFormat,
+      extractMetadata: response.metadata,
+    );
+
+    return finalizeResult;
+  }
+
+  /// Applies the finalize step to reduce_draft.
+  ///
+  /// If FinalizeService is available and transcript is non-empty:
+  /// - Calls finalize ONCE (no retries)
+  /// - Returns finalized structured with metadata
+  ///
+  /// If finalize is disabled or fails:
+  /// - Returns reduce_draft with warning metadata (deterministic fallback)
+  ///
+  /// PHI-safe: Does not log clinical content.
+  Future<Map<String, dynamic>> _applyFinalizeStep({
+    required String transcript,
+    required Map<String, dynamic> reduceDraft,
+    MedGemmaV1ResponseMetadata? extractMetadata,
+  }) async {
+    final finalizeService = ref.read(finalizeServiceProvider);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Case 1: FinalizeService not available (null client)
+    // ─────────────────────────────────────────────────────────────────────────
+    if (finalizeService == null) {
+      Log.info('[FINALIZE] Service disabled - returning reduce_draft as-is');
+      return _buildFinalizeSkippedResult(
+        reduceDraft: reduceDraft,
+        extractMetadata: extractMetadata,
+        warnings: [FinalizeWarnings.finalize_disabled_no_client],
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Case 2: Empty transcript
+    // ─────────────────────────────────────────────────────────────────────────
+    if (transcript.trim().isEmpty) {
+      Log.info('[FINALIZE] Empty transcript - returning reduce_draft as-is');
+      return _buildFinalizeSkippedResult(
+        reduceDraft: reduceDraft,
+        extractMetadata: extractMetadata,
+        warnings: [FinalizeWarnings.emptyTranscript],
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Case 3: Call finalize (single LLM call)
+    // ─────────────────────────────────────────────────────────────────────────
+    Log.info('[FINALIZE] Calling finalize service...');
+
+    final result = await finalizeService.finalize(
+      transcript: transcript,
+      reduceDraft: reduceDraft,
+    );
+
+    // Build final result with merged metadata
     final metadataMap = <String, dynamic>{
-      'modelVersion': response.metadata?.modelVersion,
-      'requestId': response.metadata?.requestId,
-      'contractStatus': response.metadata?.contractStatus,
-      'contractWarnings': response.metadata?.contractWarnings ?? <String>[],
+      'modelVersion': extractMetadata?.modelVersion,
+      'requestId': extractMetadata?.requestId,
+      // Finalize metadata takes precedence
+      'confidenceOverall': result.metadata.confidenceOverall,
+      'contractStatus': result.metadata.contractStatus,
+      'contractWarnings': result.metadata.contractWarnings,
+      'finalizeUsedEvidence': result.metadata.finalizeUsedEvidence,
     };
 
-    // Add to result
-    flutterFormat['metadata'] = metadataMap;
+    Log.info(
+      '[FINALIZE] Complete. '
+      'contractStatus=${result.metadata.contractStatus}, '
+      'confidence=${result.metadata.confidenceOverall}, '
+      'usedEvidence=${result.metadata.finalizeUsedEvidence}, '
+      'warnings=${result.metadata.contractWarnings}',
+    );
 
-    return flutterFormat;
+    // Merge finalized structured with metadata
+    final finalResult = Map<String, dynamic>.from(result.structured);
+    finalResult['metadata'] = metadataMap;
+
+    return finalResult;
+  }
+
+  /// Builds result when finalize is skipped (disabled or empty transcript).
+  Map<String, dynamic> _buildFinalizeSkippedResult({
+    required Map<String, dynamic> reduceDraft,
+    MedGemmaV1ResponseMetadata? extractMetadata,
+    required List<String> warnings,
+  }) {
+    final metadataMap = <String, dynamic>{
+      'modelVersion': extractMetadata?.modelVersion,
+      'requestId': extractMetadata?.requestId,
+      'confidenceOverall': 'baja',
+      'contractStatus': 'warning',
+      'contractWarnings': [
+        ...?extractMetadata?.contractWarnings,
+        ...warnings,
+      ],
+      'finalizeUsedEvidence': false,
+    };
+
+    final result = Map<String, dynamic>.from(reduceDraft);
+    result['metadata'] = metadataMap;
+
+    return result;
   }
 
   /// PHI-safe logging of which fields were extracted.
