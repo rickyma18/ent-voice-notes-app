@@ -6,7 +6,7 @@ import '../entities/ai_engine.dart';
 abstract class EngineSettingSource {
   /// Retrieves the currently selected AI engine.
   ///
-  /// Returns [AiEngine.medgema] if no engine has been persisted yet.
+  /// Returns [AiEngine.medgemma] if no engine has been persisted yet.
   Future<AiEngine> getEngine();
 
   /// Persists the selected AI engine.
