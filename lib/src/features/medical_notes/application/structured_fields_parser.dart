@@ -3,6 +3,7 @@
 import 'dart:convert';
 
 import '../../../core/logger/log.dart';
+import 'package:medical_notes_app/src/features/medical_notes/data/utils/key_normalizer.dart';
 import 'structured_fields_schema_v1.dart';
 
 /// Parser robusto para respuestas JSON del LLM.
@@ -29,10 +30,16 @@ class StructuredFieldsParser {
     // Step 2: Decode JSON
     final decoded = _decodeJson(cleaned);
 
-    // Step 3: Sanitize against schema
-    final sanitized = _sanitizeAgainstSchema(decoded);
+    // Step 2.5: Normalize keys to snake_case (Canonical Format)
+    // This fixes mismatch between backend (camelCase) and UI (snake_case)
+    final normalized = KeyNormalizer.toSnakeCaseDeep(decoded);
 
-    Log.info('📋 Parsed structured fields: ${sanitized.keys.length} root keys');
+    // Step 3: Sanitize against schema
+    final sanitized = _sanitizeAgainstSchema(normalized);
+
+    Log.info(
+      '📋 Parsed & Normalized: ${normalized.keys.length} keys -> ${sanitized.keys.length} sanitized',
+    );
 
     return sanitized;
   }
@@ -158,19 +165,13 @@ class StructuredFieldsParser {
       if (parsed.containsKey(key)) {
         result[key] = _sanitizeValue(parsed[key], schema[key]);
       } else {
-        // Check for legacy key mapping
-        final legacyKey = _getLegacyKey(key);
-        if (legacyKey != null && parsed.containsKey(legacyKey)) {
-          result[key] = _sanitizeValue(parsed[legacyKey], schema[key]);
-        } else {
-          result[key] = schema[key];
-        }
+        result[key] = schema[key];
       }
     }
 
     // Preserve any extra keys from LLM (don't discard unknown fields)
     for (final entry in parsed.entries) {
-      if (!result.containsKey(entry.key) && !_isLegacyKey(entry.key)) {
+      if (!result.containsKey(entry.key)) {
         result[entry.key] = entry.value;
       }
     }
@@ -247,31 +248,6 @@ class StructuredFieldsParser {
     }
 
     return result;
-  }
-
-  /// Map legacy key names to v1 key names.
-  static String? _getLegacyKey(String v1Key) {
-    const mapping = {
-      'motivo_consulta': 'motivoConsulta',
-      'padecimiento_actual': 'padecimientoActual',
-      'plan_tratamiento': 'planTratamiento',
-      'notas_adicionales': 'notaAdicional',
-      'exploracion_orl': 'exploracionFisicaOrl',
-    };
-    return mapping[v1Key];
-  }
-
-  /// Check if a key is a legacy key name.
-  static bool _isLegacyKey(String key) {
-    const legacyKeys = {
-      'motivoConsulta',
-      'padecimientoActual',
-      'planTratamiento',
-      'notaAdicional',
-      'exploracionFisicaOrl',
-      'resumen',
-    };
-    return legacyKeys.contains(key);
   }
 }
 

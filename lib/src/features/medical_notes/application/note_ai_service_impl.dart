@@ -1179,6 +1179,14 @@ class OpenAIClient {
           'No se pudo conectar con OpenAI. Verifica tu conexión a internet.',
         );
       }
+
+      // DIAGNOSTIC LOG for 500/400 errors
+      if (e.response != null) {
+        Log.error(
+          '🛑 STT ERROR (${e.response?.statusCode}): ${e.response?.data}',
+        );
+      }
+
       rethrow;
     }
   }

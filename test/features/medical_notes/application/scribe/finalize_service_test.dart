@@ -36,13 +36,8 @@ void main() {
     return {
       'motivoConsulta': 'Dolor de garganta',
       'padecimientoActual': 'Paciente refiere dolor',
-      'exploracionFisica': {
-        'orofaringe': 'Eritema leve',
-      },
-      'diagnostico': {
-        'texto': 'Faringitis',
-        'tipo': 'presuntivo',
-      },
+      'exploracionFisica': {'orofaringe': 'Eritema leve'},
+      'diagnostico': {'texto': 'Faringitis', 'tipo': 'presuntivo'},
       'rawData': {
         'negations': <Map<String, dynamic>>[],
         'conflicts': <Map<String, dynamic>>[],
@@ -55,10 +50,7 @@ void main() {
     return {
       'motivoConsulta': 'Otalgia',
       'padecimientoActual': 'Dolor de oído izquierdo',
-      'diagnostico': {
-        'texto': 'Otitis media',
-        'tipo': 'presuntivo',
-      },
+      'diagnostico': {'texto': 'Otitis media', 'tipo': 'presuntivo'},
     };
   }
 
@@ -70,12 +62,13 @@ void main() {
     test('returns finalized result when client succeeds', () async {
       // Arrange
       final reduceDraft = createReduceDraftWithRawData();
-      const transcript = 'Paciente refiere dolor de garganta desde hace 2 días.';
+      const transcript =
+          'Paciente refiere dolor de garganta desde hace 2 días.';
 
       when(
         () => mockClient.finalize(
-          systemPrompt: any(named: 'systemPrompt'),
-          userPrompt: any(named: 'userPrompt'),
+          structuredFields: any(named: 'structuredFields'),
+          refine: any(named: 'refine'),
           timeoutOverride: any(named: 'timeoutOverride'),
         ),
       ).thenAnswer(
@@ -111,23 +104,25 @@ void main() {
       expect(result.metadata.confidenceOverall, equals('alta'));
       expect(result.metadata.finalizeUsedEvidence, isTrue);
       expect(result.metadata.contractWarnings, isEmpty);
-      expect(result.structured['padecimientoActual'], contains('2 días'));
+      expect(result.structured['padecimiento_actual'], contains('2 días'));
     });
 
-    test('builds correct user prompt with placeholders replaced', () async {
+    test('passes structuredFields correctly to client', () async {
       // Arrange
-      String? capturedUserPrompt;
-      final reduceDraft = {'key': 'value'};
+      Map<String, dynamic>? capturedFields;
+      final reduceDraft = {'motivoConsulta': 'Test value'};
       const transcript = 'Test transcript';
 
       when(
         () => mockClient.finalize(
-          systemPrompt: any(named: 'systemPrompt'),
-          userPrompt: any(named: 'userPrompt'),
+          structuredFields: any(named: 'structuredFields'),
+          refine: any(named: 'refine'),
           timeoutOverride: any(named: 'timeoutOverride'),
         ),
       ).thenAnswer((invocation) async {
-        capturedUserPrompt = invocation.namedArguments[#userPrompt] as String;
+        capturedFields =
+            invocation.namedArguments[#structuredFields]
+                as Map<String, dynamic>;
         return MedGemmaFinalizeResponse(
           success: true,
           structured: reduceDraft,
@@ -144,11 +139,8 @@ void main() {
       await service.finalize(transcript: transcript, reduceDraft: reduceDraft);
 
       // Assert
-      expect(capturedUserPrompt, isNotNull);
-      expect(capturedUserPrompt, contains('Test transcript'));
-      expect(capturedUserPrompt, contains('"key": "value"'));
-      expect(capturedUserPrompt, isNot(contains('{{TRANSCRIPT}}')));
-      expect(capturedUserPrompt, isNot(contains('{{REDUCE_DRAFT_JSON}}')));
+      expect(capturedFields, isNotNull);
+      expect(capturedFields, equals(reduceDraft));
     });
   });
 
@@ -171,8 +163,8 @@ void main() {
         // Mock: Model resolves the contradiction
         when(
           () => mockClient.finalize(
-            systemPrompt: any(named: 'systemPrompt'),
-            userPrompt: any(named: 'userPrompt'),
+            structuredFields: any(named: 'structuredFields'),
+            refine: any(named: 'refine'),
             timeoutOverride: any(named: 'timeoutOverride'),
           ),
         ).thenAnswer(
@@ -219,7 +211,7 @@ void main() {
         );
 
         // rawData.conflicts should exist and have the resolution
-        final rawData = result.structured['rawData'] as Map<String, dynamic>;
+        final rawData = result.structured['raw_data'] as Map<String, dynamic>;
         final conflicts = rawData['conflicts'] as List;
         expect(conflicts, isNotEmpty);
         expect(conflicts.first['topic'], equals('fiebre'));
@@ -239,8 +231,8 @@ void main() {
         // Mock: Model cannot resolve
         when(
           () => mockClient.finalize(
-            systemPrompt: any(named: 'systemPrompt'),
-            userPrompt: any(named: 'userPrompt'),
+            structuredFields: any(named: 'structuredFields'),
+            refine: any(named: 'refine'),
             timeoutOverride: any(named: 'timeoutOverride'),
           ),
         ).thenAnswer(
@@ -281,7 +273,7 @@ void main() {
           contains('unresolved_conflict:fiebre'),
         );
 
-        final rawData = result.structured['rawData'] as Map<String, dynamic>;
+        final rawData = result.structured['raw_data'] as Map<String, dynamic>;
         final conflicts = rawData['conflicts'] as List;
         expect(conflicts.first['resolution'], equals('unresolved'));
       },
@@ -306,8 +298,8 @@ void main() {
         // Mock: Model extracts negations
         when(
           () => mockClient.finalize(
-            systemPrompt: any(named: 'systemPrompt'),
-            userPrompt: any(named: 'userPrompt'),
+            structuredFields: any(named: 'structuredFields'),
+            refine: any(named: 'refine'),
             timeoutOverride: any(named: 'timeoutOverride'),
           ),
         ).thenAnswer(
@@ -357,27 +349,27 @@ void main() {
         // Assert
         expect(result.metadata.contractStatus, equals('ok'));
 
-        final rawData = result.structured['rawData'] as Map<String, dynamic>;
+        final rawData = result.structured['raw_data'] as Map<String, dynamic>;
         final negations = rawData['negations'] as List;
 
         // Check odinofagia negation
-        final odinofagiaList = negations.where(
-          (n) => n['concept'] == 'odinofagia',
-        ).toList();
+        final odinofagiaList = negations
+            .where((n) => n['concept'] == 'odinofagia')
+            .toList();
         expect(odinofagiaList, isNotEmpty);
         expect(odinofagiaList.first['status'], equals('NEGADO'));
 
         // Check disnea negation
-        final disneaList = negations.where(
-          (n) => n['concept'] == 'disnea',
-        ).toList();
+        final disneaList = negations
+            .where((n) => n['concept'] == 'disnea')
+            .toList();
         expect(disneaList, isNotEmpty);
         expect(disneaList.first['status'], equals('NEGADO'));
 
         // Check fiebre negation
-        final fiebreList = negations.where(
-          (n) => n['concept'] == 'fiebre',
-        ).toList();
+        final fiebreList = negations
+            .where((n) => n['concept'] == 'fiebre')
+            .toList();
         expect(fiebreList, isNotEmpty);
         expect(fiebreList.first['status'], equals('NEGADO'));
       },
@@ -394,8 +386,8 @@ void main() {
         // Mock: Model returns warning about missing rawData
         when(
           () => mockClient.finalize(
-            systemPrompt: any(named: 'systemPrompt'),
-            userPrompt: any(named: 'userPrompt'),
+            structuredFields: any(named: 'structuredFields'),
+            refine: any(named: 'refine'),
             timeoutOverride: any(named: 'timeoutOverride'),
           ),
         ).thenAnswer(
@@ -430,7 +422,7 @@ void main() {
         );
 
         // rawData should NOT exist in structured (shape-preserving)
-        expect(result.structured.containsKey('rawData'), isFalse);
+        expect(result.structured.containsKey('raw_data'), isFalse);
       },
     );
   });
@@ -440,43 +432,49 @@ void main() {
   // ===========================================================================
 
   group('FinalizeService - fallback on errors', () {
-    test('returns fallback with timeout warning on DioException timeout', () async {
-      // Arrange
-      final reduceDraft = createReduceDraftWithRawData();
-      const transcript = 'Test transcript';
+    test(
+      'returns fallback with timeout warning on DioException timeout',
+      () async {
+        // Arrange
+        final reduceDraft = createReduceDraftWithRawData();
+        const transcript = 'Test transcript';
 
-      when(
-        () => mockClient.finalize(
-          systemPrompt: any(named: 'systemPrompt'),
-          userPrompt: any(named: 'userPrompt'),
-          timeoutOverride: any(named: 'timeoutOverride'),
-        ),
-      ).thenThrow(
-        DioException(
-          type: DioExceptionType.receiveTimeout,
-          requestOptions: RequestOptions(path: '/v1/finalize'),
-          message: 'The request took too long',
-        ),
-      );
+        when(
+          () => mockClient.finalize(
+            structuredFields: any(named: 'structuredFields'),
+            refine: any(named: 'refine'),
+            timeoutOverride: any(named: 'timeoutOverride'),
+          ),
+        ).thenThrow(
+          DioException(
+            type: DioExceptionType.receiveTimeout,
+            requestOptions: RequestOptions(path: '/v1/finalize'),
+            message: 'The request took too long',
+          ),
+        );
 
-      // Act
-      final result = await service.finalize(
-        transcript: transcript,
-        reduceDraft: reduceDraft,
-      );
+        // Act
+        final result = await service.finalize(
+          transcript: transcript,
+          reduceDraft: reduceDraft,
+        );
 
-      // Assert
-      expect(result.metadata.contractStatus, equals('warning'));
-      expect(result.metadata.confidenceOverall, equals('baja'));
-      expect(result.metadata.finalizeUsedEvidence, isFalse);
-      expect(
-        result.metadata.contractWarnings,
-        contains(FinalizeWarnings.timeout),
-      );
+        // Assert
+        expect(result.metadata.contractStatus, equals('warning'));
+        expect(result.metadata.confidenceOverall, equals('baja'));
+        expect(result.metadata.finalizeUsedEvidence, isFalse);
+        expect(
+          result.metadata.contractWarnings,
+          contains(FinalizeWarnings.timeout),
+        );
 
-      // Structured should be sanitized reduce_draft
-      expect(result.structured['motivoConsulta'], equals('Dolor de garganta'));
-    });
+        // Structured should be sanitized reduce_draft
+        expect(
+          result.structured['motivo_consulta'],
+          equals('Dolor de garganta'),
+        );
+      },
+    );
 
     test('returns fallback with error warning on network error', () async {
       // Arrange
@@ -485,8 +483,8 @@ void main() {
 
       when(
         () => mockClient.finalize(
-          systemPrompt: any(named: 'systemPrompt'),
-          userPrompt: any(named: 'userPrompt'),
+          structuredFields: any(named: 'structuredFields'),
+          refine: any(named: 'refine'),
           timeoutOverride: any(named: 'timeoutOverride'),
         ),
       ).thenThrow(
@@ -505,109 +503,132 @@ void main() {
 
       // Assert
       expect(result.metadata.contractStatus, equals('warning'));
-      expect(result.metadata.contractWarnings, contains(FinalizeWarnings.error));
-      expect(result.metadata.finalizeUsedEvidence, isFalse);
-    });
-
-    test('returns fallback with error warning on MedGemmaUnauthorizedException', () async {
-      // Arrange
-      final reduceDraft = createReduceDraftWithRawData();
-      const transcript = 'Test transcript';
-
-      when(
-        () => mockClient.finalize(
-          systemPrompt: any(named: 'systemPrompt'),
-          userPrompt: any(named: 'userPrompt'),
-          timeoutOverride: any(named: 'timeoutOverride'),
-        ),
-      ).thenThrow(
-        const MedGemmaUnauthorizedException(message: 'No bearer token'),
-      );
-
-      // Act
-      final result = await service.finalize(
-        transcript: transcript,
-        reduceDraft: reduceDraft,
-      );
-
-      // Assert
-      expect(result.metadata.contractStatus, equals('warning'));
-      expect(result.metadata.contractWarnings, contains(FinalizeWarnings.error));
-    });
-
-    test('returns fallback with invalid_json warning on client error response', () async {
-      // Arrange
-      final reduceDraft = createReduceDraftWithRawData();
-      const transcript = 'Test transcript';
-
-      when(
-        () => mockClient.finalize(
-          systemPrompt: any(named: 'systemPrompt'),
-          userPrompt: any(named: 'userPrompt'),
-          timeoutOverride: any(named: 'timeoutOverride'),
-        ),
-      ).thenAnswer(
-        (_) async => const MedGemmaFinalizeResponse(
-          success: false,
-          error: MedGemmaErrorInfo(
-            code: 'MODEL_ERROR',
-            message: 'Model inference failed',
-          ),
-        ),
-      );
-
-      // Act
-      final result = await service.finalize(
-        transcript: transcript,
-        reduceDraft: reduceDraft,
-      );
-
-      // Assert
-      expect(result.metadata.contractStatus, equals('warning'));
-      expect(result.metadata.contractWarnings, contains(FinalizeWarnings.error));
-      expect(result.metadata.finalizeUsedEvidence, isFalse);
-    });
-
-    test('returns fallback with empty_transcript warning on empty transcript', () async {
-      // Arrange
-      final reduceDraft = createReduceDraftWithRawData();
-      const transcript = '   '; // Whitespace only
-
-      // Act - should NOT call client at all
-      final result = await service.finalize(
-        transcript: transcript,
-        reduceDraft: reduceDraft,
-      );
-
-      // Assert
-      expect(result.metadata.contractStatus, equals('warning'));
-      expect(result.metadata.confidenceOverall, equals('baja'));
       expect(
         result.metadata.contractWarnings,
-        contains(FinalizeWarnings.emptyTranscript),
+        contains(FinalizeWarnings.error),
       );
       expect(result.metadata.finalizeUsedEvidence, isFalse);
-
-      // Structured should be sanitized reduce_draft
-      expect(result.structured, equals(reduceDraft));
-
-      // Verify client was NOT called
-      verifyNever(
-        () => mockClient.finalize(
-          systemPrompt: any(named: 'systemPrompt'),
-          userPrompt: any(named: 'userPrompt'),
-          timeoutOverride: any(named: 'timeoutOverride'),
-        ),
-      );
     });
+
+    test(
+      'returns fallback with error warning on MedGemmaUnauthorizedException',
+      () async {
+        // Arrange
+        final reduceDraft = createReduceDraftWithRawData();
+        const transcript = 'Test transcript';
+
+        when(
+          () => mockClient.finalize(
+            structuredFields: any(named: 'structuredFields'),
+            refine: any(named: 'refine'),
+            timeoutOverride: any(named: 'timeoutOverride'),
+          ),
+        ).thenThrow(
+          const MedGemmaUnauthorizedException(message: 'No bearer token'),
+        );
+
+        // Act
+        final result = await service.finalize(
+          transcript: transcript,
+          reduceDraft: reduceDraft,
+        );
+
+        // Assert
+        expect(result.metadata.contractStatus, equals('warning'));
+        expect(
+          result.metadata.contractWarnings,
+          contains(FinalizeWarnings.error),
+        );
+      },
+    );
+
+    test(
+      'returns fallback with invalid_json warning on client error response',
+      () async {
+        // Arrange
+        final reduceDraft = createReduceDraftWithRawData();
+        const transcript = 'Test transcript';
+
+        when(
+          () => mockClient.finalize(
+            structuredFields: any(named: 'structuredFields'),
+            refine: any(named: 'refine'),
+            timeoutOverride: any(named: 'timeoutOverride'),
+          ),
+        ).thenAnswer(
+          (_) async => const MedGemmaFinalizeResponse(
+            success: false,
+            error: MedGemmaErrorInfo(
+              code: 'MODEL_ERROR',
+              message: 'Model inference failed',
+            ),
+          ),
+        );
+
+        // Act
+        final result = await service.finalize(
+          transcript: transcript,
+          reduceDraft: reduceDraft,
+        );
+
+        // Assert
+        expect(result.metadata.contractStatus, equals('warning'));
+        expect(
+          result.metadata.contractWarnings,
+          contains(FinalizeWarnings.error),
+        );
+        expect(result.metadata.finalizeUsedEvidence, isFalse);
+      },
+    );
+
+    test(
+      'returns fallback with empty_transcript warning on empty transcript',
+      () async {
+        // Arrange
+        final reduceDraft = createReduceDraftWithRawData();
+        const transcript = '   '; // Whitespace only
+
+        // Act - should NOT call client at all
+        final result = await service.finalize(
+          transcript: transcript,
+          reduceDraft: reduceDraft,
+        );
+
+        // Assert
+        expect(result.metadata.contractStatus, equals('warning'));
+        expect(result.metadata.confidenceOverall, equals('baja'));
+        expect(
+          result.metadata.contractWarnings,
+          contains(FinalizeWarnings.emptyTranscript),
+        );
+        expect(result.metadata.finalizeUsedEvidence, isFalse);
+
+        // Structured should be sanitized reduce_draft (and normalized)
+        expect(
+          result.structured['motivo_consulta'],
+          equals('Dolor de garganta'),
+        );
+        expect(
+          result.structured['padecimiento_actual'],
+          equals('Paciente refiere dolor'),
+        );
+
+        // Verify client was NOT called
+        verifyNever(
+          () => mockClient.finalize(
+            structuredFields: any(named: 'structuredFields'),
+            refine: any(named: 'refine'),
+            timeoutOverride: any(named: 'timeoutOverride'),
+          ),
+        );
+      },
+    );
 
     test('sanitizes reduce_draft in fallback (trims strings)', () async {
       // Arrange
       final reduceDraft = {
         'motivoConsulta': '  Dolor de garganta  ',
-        'nested': {
-          'field': '  nested value  ',
-        },
+        'nested': {'field': '  nested value  '},
         'list': ['  item1  ', '  item2  '],
         'nullField': null,
         'number': 42,
@@ -621,7 +642,7 @@ void main() {
       );
 
       // Assert - strings should be trimmed
-      expect(result.structured['motivoConsulta'], equals('Dolor de garganta'));
+      expect(result.structured['motivo_consulta'], equals('Dolor de garganta'));
       expect(
         (result.structured['nested'] as Map)['field'],
         equals('nested value'),
@@ -644,8 +665,8 @@ void main() {
 
       when(
         () => mockClient.finalize(
-          systemPrompt: any(named: 'systemPrompt'),
-          userPrompt: any(named: 'userPrompt'),
+          structuredFields: any(named: 'structuredFields'),
+          refine: any(named: 'refine'),
           timeoutOverride: any(named: 'timeoutOverride'),
         ),
       ).thenAnswer(
@@ -667,8 +688,8 @@ void main() {
       // Assert - exactly one call
       verify(
         () => mockClient.finalize(
-          systemPrompt: any(named: 'systemPrompt'),
-          userPrompt: any(named: 'userPrompt'),
+          structuredFields: any(named: 'structuredFields'),
+          refine: any(named: 'refine'),
           timeoutOverride: any(named: 'timeoutOverride'),
         ),
       ).called(1);
@@ -681,8 +702,8 @@ void main() {
 
       when(
         () => mockClient.finalize(
-          systemPrompt: any(named: 'systemPrompt'),
-          userPrompt: any(named: 'userPrompt'),
+          structuredFields: any(named: 'structuredFields'),
+          refine: any(named: 'refine'),
           timeoutOverride: any(named: 'timeoutOverride'),
         ),
       ).thenThrow(
@@ -698,8 +719,8 @@ void main() {
       // Assert - exactly one call (no retries)
       verify(
         () => mockClient.finalize(
-          systemPrompt: any(named: 'systemPrompt'),
-          userPrompt: any(named: 'userPrompt'),
+          structuredFields: any(named: 'structuredFields'),
+          refine: any(named: 'refine'),
           timeoutOverride: any(named: 'timeoutOverride'),
         ),
       ).called(1);

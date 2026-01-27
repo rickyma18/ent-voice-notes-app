@@ -10,14 +10,15 @@ import '../../../../core/logger/log.dart';
 import '../../../../presentation/core/application_state/current_doctor_provider/current_doctor_provider.dart';
 import '../../application/scribe/process_encounter_usecase.dart';
 import '../../data/models/scribe_v2_result_model.dart';
-import '../../domain/entities/medical_note_entity.dart';
-import '../../data/models/pipeline_telemetry_model.dart';
-import '../../domain/entities/quality_gate_result.dart';
-import '../../domain/scribe/repositories/note_composer_repository.dart';
-import '../../domain/scribe/repositories/transcription_repository.dart'
+
+import 'package:medical_notes_app/src/features/medical_notes/domain/entities/medical_note_entity.dart';
+import 'package:medical_notes_app/src/features/medical_notes/data/models/pipeline_telemetry_model.dart';
+import 'package:medical_notes_app/src/features/medical_notes/domain/entities/quality_gate_result.dart';
+import 'package:medical_notes_app/src/features/medical_notes/domain/scribe/repositories/note_composer_repository.dart';
+import 'package:medical_notes_app/src/features/medical_notes/domain/scribe/repositories/transcription_repository.dart'
     show TranscriptionOptions;
-import '../../application/scribe/finalize_service.dart';
-import '../../data/medgemma/clients/medgemma_client.dart';
+import 'package:medical_notes_app/src/features/medical_notes/application/scribe/finalize_service.dart';
+import 'package:medical_notes_app/src/features/medical_notes/data/medgemma/clients/medgemma_client.dart';
 import '../../data/medgemma/providers/medgemma_providers.dart';
 import '../../medical_notes_providers.dart';
 import '../../domain/entities/pipeline_flags.dart';
@@ -724,11 +725,49 @@ class MedicalNotesController extends _$MedicalNotesController {
     // ─────────────────────────────────────────────────────────────────────────
     // Case 3: Call finalize (single LLM call)
     // ─────────────────────────────────────────────────────────────────────────
-    Log.info('[FINALIZE] Calling finalize service...');
+    Map<String, dynamic> _shape(Map<String, dynamic> m) {
+      final out = <String, dynamic>{};
+      for (final e in m.entries) {
+        final v = e.value;
+        String kind = v == null ? 'null' : v.runtimeType.toString();
+        bool empty = false;
+        int? size;
+
+        if (v is String) {
+          empty = v.trim().isEmpty;
+          size = v.length;
+        } else if (v is List) {
+          empty = v.isEmpty;
+          size = v.length;
+        } else if (v is Map) {
+          empty = v.isEmpty;
+          size = v.length;
+        }
+
+        out[e.key] = {'t': kind, 'empty': empty, 'size': size};
+      }
+      return out;
+    }
+
+    Log.info(
+      '[FINALIZE-PRE] keys=${reduceDraft.keys.toList()} shape=${_shape(reduceDraft)}',
+    );
 
     final result = await finalizeService.finalize(
       transcript: transcript,
       reduceDraft: reduceDraft,
+    );
+    Log.info(
+      '[FINALIZE-POST] keys=${(result.structured ?? {}).keys.toList()} shape=${_shape(result.structured ?? {})}',
+    );
+
+    Log.info(
+      '[FINALIZE-SERVICE] result '
+      'structuredIsNull=${result.structured == null} '
+      'structuredType=${result.structured?.runtimeType} '
+      'contractStatus=${result.metadata.contractStatus} '
+      'confidence=${result.metadata.confidenceOverall} '
+      'usedEvidence=${result.metadata.finalizeUsedEvidence}',
     );
 
     // Build final result with merged metadata
@@ -751,6 +790,7 @@ class MedicalNotesController extends _$MedicalNotesController {
     );
 
     // Merge finalized structured with metadata
+    // Service ensures snake_case keys (canonical) and non-null structured
     final finalResult = Map<String, dynamic>.from(result.structured);
     finalResult['metadata'] = metadataMap;
 

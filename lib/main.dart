@@ -13,6 +13,10 @@ import 'src/features/medical_notes/medical_notes_providers.dart';
 import 'src/features/medical_notes/data/medgemma/providers/medgemma_providers.dart'
     as medgemma;
 import 'src/features/medical_notes/data/medgemma/auth/firebase_auth_token_provider.dart';
+import 'src/features/medical_notes/application/medicalization/medicalization_glossary.dart';
+import 'src/features/medical_notes/application/medicalization/flutter_glossary_loader.dart';
+import 'src/features/medical_notes/data/medgemma/auth/dev_auth_token_provider.dart'
+    as medgemma;
 import 'src/presentation/core/application_state/localization_provider/localization_provider.dart';
 import 'src/presentation/core/router/router.dart';
 import 'src/ui/theme/docsoft_theme.dart';
@@ -39,9 +43,19 @@ Future<void> main() async {
   // ─────────────────────────────────────────────────────────────────────────────
   // Read MedGemma base URL from env (dart-define or .env)
   // FAIL-CLOSED: Empty string means disabled
-  final medGemmaBaseUrl = const String.fromEnvironment('MEDGEMMA_BASE_URL').isNotEmpty
+  final medGemmaBaseUrl =
+      const String.fromEnvironment('MEDGEMMA_BASE_URL').isNotEmpty
       ? const String.fromEnvironment('MEDGEMMA_BASE_URL')
       : (dotenv.env['MEDGEMMA_BASE_URL'] ?? '');
+
+  // Read AUTH_MODE (dev vs firebase)
+  final authMode = const String.fromEnvironment('AUTH_MODE').isNotEmpty
+      ? const String.fromEnvironment('AUTH_MODE')
+      : (dotenv.env['AUTH_MODE'] ?? 'firebase');
+  final isDevAuthMode = authMode == 'dev';
+
+  // FIX: Initialize MedicalizationGlossary loader to prevent legacy fallback crashes
+  MedicalizationGlossary.defaultLoader = FlutterGlossaryLoader();
 
   runApp(
     ProviderScope(
@@ -61,8 +75,12 @@ Future<void> main() async {
         // FAIL-CLOSED: If baseUrl empty, NO MedGemma providers instantiated
         if (medGemmaBaseUrl.isNotEmpty) ...[
           medgemma.medGemmaBaseUrlProvider.overrideWithValue(medGemmaBaseUrl),
+
+          // FIX: Use correct AuthTokenProvider based on AUTH_MODE
           medgemma.authTokenProviderProvider.overrideWithValue(
-            FirebaseAuthTokenProvider(FirebaseAuth.instance),
+            isDevAuthMode
+                ? medgemma.DevAuthTokenProvider()
+                : FirebaseAuthTokenProvider(FirebaseAuth.instance),
           ),
         ],
       ],

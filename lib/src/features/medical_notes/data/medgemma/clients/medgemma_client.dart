@@ -13,6 +13,7 @@ import 'package:medical_notes_app/src/core/logger/log.dart';
 import '../auth/auth_token_provider.dart';
 import '../config/medgemma_config.dart';
 import '../utils/request_id_generator.dart';
+import '../../utils/key_normalizer.dart';
 
 /// Response from MedGemma extract endpoint.
 class MedGemmaExtractResponse {
@@ -566,23 +567,26 @@ class MedGemmaServiceClient {
   /// Finalizes a reduce_draft using transcript evidence.
   ///
   /// Calls `/v1/finalize` endpoint with:
-  /// - systemPrompt: Finalize instructions
-  /// - userPrompt: Template with transcript + reduce_draft
+  /// - structuredFields: The structured clinical data (camelCase keys)
+  /// - refine: Optional flag for refinement mode (default: false)
+  ///
+  /// Also supports legacy format with `structuredV1` key.
   ///
   /// Single LLM call - no retries. On timeout/error, caller handles fallback.
   ///
   /// PHI-safe: Does NOT log transcripts, prompts, outputs, or auth headers.
   ///
   /// Returns [MedGemmaFinalizeResponse] with:
-  /// - structured: Same shape as reduce_draft (finalized values)
+  /// - structured: Same shape as input (finalized values)
   /// - metadata: confidenceOverall, contractStatus, contractWarnings, finalizeUsedEvidence
   ///
   /// Throws:
   /// - [MedGemmaUnauthorizedException] if token is null/empty
   /// - [DioException] for network/timeout errors (caller should handle fallback)
   Future<MedGemmaFinalizeResponse> finalize({
-    required String systemPrompt,
-    required String userPrompt,
+    required Map<String, dynamic> structuredFields,
+    bool refine = false,
+    bool useLegacyFormat = false,
     Duration? timeoutOverride,
   }) async {
     final stopwatch = Stopwatch()..start();
@@ -604,21 +608,47 @@ class MedGemmaServiceClient {
     final isDev = MedGemmaConfig.isDevAuthMode;
     final timeoutSeconds = effectiveTimeout.inSeconds;
 
-    // PHI-safe logging: Log endpoint and timeout only
+    // Build request body - supports both current and legacy formats
+    final Map<String, dynamic> requestBody;
+    if (useLegacyFormat) {
+      requestBody = {'structuredV1': structuredFields};
+    } else {
+      requestBody = {'structuredFields': structuredFields, 'refine': refine};
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PHI-SAFE DEBUG: Log payload types BEFORE sending (no clinical content)
+    // ═══════════════════════════════════════════════════════════════════════════
+    final sf = requestBody['structuredFields'] ?? requestBody['structuredV1'];
+    Log.info('[MEDGEMMA-FINALIZE] payload keys=${requestBody.keys.toList()}');
+    Log.info(
+      '[MEDGEMMA-FINALIZE] structuredFields runtimeType=${sf.runtimeType}',
+    );
+    Log.info('[MEDGEMMA-FINALIZE] structuredFields isMap=${sf is Map}');
+    Log.info(
+      '[MEDGEMMA-FINALIZE] refine=$refine refineType=${refine.runtimeType}',
+    );
+
+    // Log nested keys if it's a Map (PHI-safe: only key names, no values)
+    if (sf is Map) {
+      Log.info('[MEDGEMMA-FINALIZE] structuredFields.keys=${sf.keys.toList()}');
+    }
+
+    // PHI-safe logging: Log endpoint, timeout, and body shape
+    final bodyKeys = requestBody.keys.toList();
+    final fieldsCount = structuredFields.keys.length;
     Log.info(
       '[MEDGEMMA-FINALIZE] request start url=$_baseUrl/v1/finalize '
       'requestId=$requestId '
       'authMode=${isDev ? "DEV" : "FIREBASE"} '
-      'timeout=${timeoutSeconds}s',
+      'timeout=${timeoutSeconds}s '
+      'bodyKeys=$bodyKeys fieldsCount=$fieldsCount',
     );
 
     try {
       final response = await _dio.post<dynamic>(
         '$_baseUrl/v1/finalize',
-        data: {
-          'systemPrompt': systemPrompt,
-          'userPrompt': userPrompt,
-        },
+        data: requestBody,
         options: Options(
           headers: {
             'Authorization': 'Bearer $token',
@@ -628,23 +658,60 @@ class MedGemmaServiceClient {
           responseType: ResponseType.json,
           sendTimeout: effectiveTimeout,
           receiveTimeout: effectiveTimeout,
+          // Accept ALL status codes to inspect 400 responses without exception
+          validateStatus: (status) => true,
         ),
       );
 
       stopwatch.stop();
       final elapsedMs = stopwatch.elapsedMilliseconds;
 
-      // PHI-safe diagnostic log: Only types and keys
+      // ═══════════════════════════════════════════════════════════════════════════
+      // PHI-SAFE DEBUG: Log response metadata (no clinical content)
+      // ═══════════════════════════════════════════════════════════════════════════
       final contentType = response.headers.value(Headers.contentTypeHeader);
       final dataType = response.data.runtimeType;
       Log.info(
-        '[MEDGEMMA-FINALIZE] resp meta '
-        'status=${response.statusCode} '
-        'ct=$contentType '
-        'dataType=$dataType',
+        '[MEDGEMMA-FINALIZE] resp status=${response.statusCode} '
+        'dataType=$dataType ct=$contentType',
       );
 
-      // Parse response
+      // Log error details for 4xx responses (PHI-safe: only keys and error codes)
+      if (response.statusCode != null && response.statusCode! >= 400) {
+        String? errorCode;
+        String? errorMsg;
+
+        if (response.data is Map) {
+          final m = response.data as Map;
+          Log.warning('[MEDGEMMA-FINALIZE] resp keys=${m.keys.toList()}');
+          errorCode = m['error']?['code']?.toString();
+          errorMsg = m['error']?['message']?.toString();
+          Log.warning(
+            '[MEDGEMMA-FINALIZE] backend errorCode=$errorCode errorMsg=$errorMsg',
+          );
+        } else {
+          Log.warning(
+            '[MEDGEMMA-FINALIZE] resp is not Map, raw type=${response.data.runtimeType}',
+          );
+        }
+
+        // Return error response for 4xx status codes
+        Log.error(
+          '[MEDGEMMA-FINALIZE] request fail type=http_error '
+          'status=${response.statusCode} elapsedMs=$elapsedMs '
+          'errorCode=$errorCode',
+        );
+        return MedGemmaFinalizeResponse(
+          success: false,
+          error: MedGemmaErrorInfo(
+            code: errorCode ?? MedGemmaErrorCodes.badRequest,
+            message: errorMsg ?? 'HTTP ${response.statusCode} error',
+            retryable: response.statusCode == 503 || response.statusCode == 429,
+          ),
+        );
+      }
+
+      // Parse response (only for 2xx responses now)
       final parsedData = _parseResponseData(response.data);
       if (parsedData == null) {
         Log.error(
@@ -758,19 +825,24 @@ class MedGemmaServiceClient {
   Future<JobEnqueueResponse> enqueueJob({
     required Map<String, dynamic> body,
   }) async {
-    final token = await _tokenProvider.getBearerToken();
-    if (token == null || token.isEmpty) {
+    final rawToken = await _tokenProvider.getBearerToken();
+    if (rawToken == null || rawToken.trim().isEmpty) {
       Log.error('[MEDGEMMA-QUEUE] enqueue fail type=auth error=no_token');
       throw const MedGemmaUnauthorizedException(
         message: 'No bearer token available',
       );
     }
 
+    final token = _normalizeBearerToken(rawToken);
+
+    // PHI-safe debug
+    Log.info(
+      '[MEDGEMMA-QUEUE] tokenLen=${token.length} rawStartsBearer=${rawToken.trimLeft().toLowerCase().startsWith('bearer ')}',
+    );
+
     final requestId = _requestIdGenerator.generate();
 
-    Log.info(
-      '[MEDGEMMA-QUEUE] enqueue start requestId=$requestId',
-    );
+    Log.info('[MEDGEMMA-QUEUE] enqueue start requestId=$requestId');
 
     try {
       final response = await _dio.post<dynamic>(
@@ -780,6 +852,7 @@ class MedGemmaServiceClient {
           headers: {
             'Authorization': 'Bearer $token',
             'Content-Type': 'application/json',
+            'Accept': 'application/json',
             'X-Request-ID': requestId,
           },
           responseType: ResponseType.json,
@@ -787,7 +860,8 @@ class MedGemmaServiceClient {
           receiveTimeout: _timeout,
           // Accept 202 as success
           validateStatus: (status) =>
-              status != null && (status >= 200 && status < 300 || status == 409),
+              status != null &&
+              (status >= 200 && status < 300 || status == 409),
         ),
       );
 
@@ -838,9 +912,7 @@ class MedGemmaServiceClient {
   /// PHI-safe: Does NOT log result content.
   ///
   /// Returns [JobStatusResponse] with current job state.
-  Future<JobStatusResponse> getJobStatus({
-    required String jobId,
-  }) async {
+  Future<JobStatusResponse> getJobStatus({required String jobId}) async {
     final token = await _tokenProvider.getBearerToken();
     if (token == null || token.isEmpty) {
       Log.error('[MEDGEMMA-QUEUE] status fail type=auth error=no_token');
@@ -1062,6 +1134,18 @@ class MedGemmaServiceClient {
       'durationMs=$durationMs',
     );
   }
+
+  /// Normalizes bearer token by stripping "Bearer " prefix and whitespace.
+  ///
+  /// This prevents "Bearer Bearer ..." double prefixing and handles
+  /// tokens with accidental whitespace (copy-paste errors).
+  String _normalizeBearerToken(String raw) {
+    var t = raw.trim();
+    if (t.toLowerCase().startsWith('bearer ')) {
+      t = t.substring(7).trim();
+    }
+    return t;
+  }
 }
 
 // =============================================================================
@@ -1112,66 +1196,7 @@ class MedGemmaStructuredV1Response {
   /// - etc.
   Map<String, dynamic>? toFlutterFormat() {
     if (data == null) return null;
-    return _convertToSnakeCase(data!);
-  }
-
-  static Map<String, dynamic> _convertToSnakeCase(Map<String, dynamic> input) {
-    final result = <String, dynamic>{};
-
-    // =========================================================================
-    // ROOT FIELDS
-    // =========================================================================
-    result['motivo_consulta'] = input['motivoConsulta'];
-    result['padecimiento_actual'] = input['padecimientoActual'];
-    result['plan_tratamiento'] = input['planTratamiento'];
-    result['pronostico'] = input['pronostico'];
-    // estudiosIndicados is now string (not list) in V2
-    result['estudios_indicados'] = input['estudiosIndicados'];
-    result['notas_adicionales'] = input['notasAdicionales'];
-
-    // =========================================================================
-    // ANTECEDENTES (simplified to 3 fields in V2)
-    // =========================================================================
-    final backendAntecedentes =
-        input['antecedentes'] as Map<String, dynamic>? ?? {};
-    result['antecedentes'] = {
-      'heredofamiliares': backendAntecedentes['heredofamiliares'],
-      'personales_no_patologicos':
-          backendAntecedentes['personalesNoPatologicos'],
-      'personales_patologicos': backendAntecedentes['personalesPatologicos'],
-    };
-
-    // =========================================================================
-    // EXPLORACION FISICA (renamed from exploracionOrl in V2)
-    // =========================================================================
-    final backendExploracion =
-        input['exploracionFisica'] as Map<String, dynamic>? ?? {};
-    result['exploracion_fisica'] = {
-      'signos_vitales': backendExploracion['signosVitales'],
-      'otoscopia': backendExploracion['otoscopia'],
-      'otomicroscopia': backendExploracion['otomicroscopia'],
-      'rinoscopia': backendExploracion['rinoscopia'],
-      'endoscopia_nasal': backendExploracion['endoscopiaNasal'],
-      'orofaringe': backendExploracion['orofaringe'],
-      'cuello': backendExploracion['cuello'],
-      'laringoscopia': backendExploracion['laringoscopia'],
-    };
-
-    // =========================================================================
-    // DIAGNOSTICO (now includes cie10)
-    // =========================================================================
-    final backendDx = input['diagnostico'] as Map<String, dynamic>?;
-    if (backendDx != null) {
-      result['diagnostico'] = {
-        'texto': backendDx['texto'],
-        'tipo': backendDx['tipo'],
-        'cie10': backendDx['cie10'],
-      };
-    } else {
-      result['diagnostico'] = {'texto': null, 'tipo': null, 'cie10': null};
-    }
-
-    return result;
+    return KeyNormalizer.toSnakeCaseDeep(data!);
   }
 }
 
@@ -1222,9 +1247,32 @@ class MedGemmaFinalizeResponse {
   });
 
   factory MedGemmaFinalizeResponse.fromJson(Map<String, dynamic> json) {
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ROBUST PARSING: Support multiple field names for structured data
+    // Backend may return: "data", "structured", or "structuredFields"
+    // ═══════════════════════════════════════════════════════════════════════════
+    final raw = json['data'] ?? json['structured'] ?? json['structuredFields'];
+
+    Map<String, dynamic>? structured;
+    if (raw is Map) {
+      // Normal case: already a Map
+      structured = Map<String, dynamic>.from(raw);
+    } else if (raw is String && raw.isNotEmpty) {
+      // Edge case: double-encoded JSON string (PHI-safe: don't log content)
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          structured = Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {
+        // Invalid JSON string - leave structured as null
+      }
+    }
+    // else: raw is null or unsupported type → structured stays null
+
     return MedGemmaFinalizeResponse(
       success: json['success'] as bool? ?? false,
-      structured: json['structured'] as Map<String, dynamic>?,
+      structured: structured,
       metadata: json['metadata'] != null
           ? MedGemmaFinalizeMetadata.fromJson(
               json['metadata'] as Map<String, dynamic>,
@@ -1241,6 +1289,12 @@ class MedGemmaFinalizeResponse {
   /// Finalized structured data (same shape as reduce_draft).
   /// PHI: NEVER log this field.
   final Map<String, dynamic>? structured;
+
+  /// Converts finalized data to Flutter snake_case format.
+  Map<String, dynamic>? toFlutterFormat() {
+    if (structured == null) return null;
+    return KeyNormalizer.toSnakeCaseDeep(structured!);
+  }
 
   final MedGemmaFinalizeMetadata? metadata;
   final MedGemmaErrorInfo? error;

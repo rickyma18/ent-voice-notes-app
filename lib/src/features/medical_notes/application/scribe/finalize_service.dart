@@ -4,21 +4,15 @@
 // Single LLM call to finalize reduce_draft using transcript evidence.
 // PHI-safe: NO transcripts, prompts, outputs, or headers logged.
 
-import 'dart:convert';
-
 import 'package:dio/dio.dart';
 
 import 'package:medical_notes_app/src/core/logger/log.dart';
 import 'package:medical_notes_app/src/features/medical_notes/data/medgemma/clients/medgemma_client.dart';
-
-import 'prompt_templates/finalize_prompts.dart';
+import 'package:medical_notes_app/src/features/medical_notes/data/utils/key_normalizer.dart';
 
 /// Result of finalize operation.
 class FinalizeResult {
-  const FinalizeResult({
-    required this.structured,
-    required this.metadata,
-  });
+  const FinalizeResult({required this.structured, required this.metadata});
 
   /// Finalized structured data (same shape as reduce_draft).
   final Map<String, dynamic> structured;
@@ -61,7 +55,8 @@ abstract class FinalizeWarnings {
   /// Used when FinalizeService provider is null (MedGemma not configured).
   static const finalize_disabled_no_client = 'finalize_disabled:no_client';
 
-  static String unresolvedConflict(String topic) => 'unresolved_conflict:$topic';
+  static String unresolvedConflict(String topic) =>
+      'unresolved_conflict:$topic';
   static String resolvedContradiction(String topic) =>
       'resolved_contradiction:$topic';
   static String missingField(String field) => 'missing_field:$field';
@@ -81,31 +76,35 @@ class FinalizeService {
   FinalizeService({
     required MedGemmaServiceClient client,
     Duration? timeoutOverride,
-  })  : _client = client,
-        _timeoutOverride = timeoutOverride;
+  }) : _client = client,
+       _timeoutOverride = timeoutOverride;
 
   final MedGemmaServiceClient _client;
   final Duration? _timeoutOverride;
 
-  /// Finalizes reduce_draft using transcript evidence.
+  /// Finalizes reduce_draft by sending structured fields to backend.
   ///
-  /// Single LLM call. If finalize fails for ANY reason, returns
+  /// Single call to `/v1/finalize`. If it fails for ANY reason, returns
   /// deterministic fallback: sanitized reduce_draft with warning metadata.
   ///
-  /// [transcript] - Raw transcript text (may be empty)
-  /// [reduceDraft] - Schema V1 structured data from reduce step
+  /// [transcript] - Raw transcript text (may be empty) - used for logging only
+  /// [reduceDraft] - Schema V1 structured data to finalize (camelCase keys)
+  /// [refine] - Optional refinement flag (default: false)
   ///
   /// Always returns a valid [FinalizeResult], never throws.
   Future<FinalizeResult> finalize({
     required String transcript,
     required Map<String, dynamic> reduceDraft,
+    bool refine = false,
   }) async {
-    // PHI-safe: Log operation start, not content
-    Log.info('[FINALIZE-SERVICE] Starting finalize operation');
+    final fieldsCount = reduceDraft.keys.length;
+    final transcriptLen = transcript.length;
 
     // Handle empty transcript
     if (transcript.trim().isEmpty) {
-      Log.info('[FINALIZE-SERVICE] Empty transcript - returning reduce_draft unchanged');
+      Log.info(
+        '[FINALIZE-SERVICE] Empty transcript - returning reduce_draft unchanged',
+      );
       return _buildFallbackResult(
         reduceDraft: reduceDraft,
         warnings: [FinalizeWarnings.emptyTranscript],
@@ -113,17 +112,34 @@ class FinalizeService {
       );
     }
 
-    // Build prompts
-    final userPrompt = _buildUserPrompt(
-      transcript: transcript,
-      reduceDraft: reduceDraft,
+    // Detect HPI
+    final hpiRaw =
+        reduceDraft['padecimientoActual'] ?? reduceDraft['padecimiento_actual'];
+    final hasHpi = hpiRaw is String && hpiRaw.trim().isNotEmpty;
+
+    // Auto-refine if HPI exists (or caller forced refine)
+    final effectiveRefine = refine || hasHpi;
+
+    Log.info(
+      '[FINALIZE-SERVICE] Starting finalize operation '
+      'fieldsCount=$fieldsCount transcriptLen=$transcriptLen refine=$effectiveRefine',
     );
 
+    // Handle empty reduceDraft
+    if (reduceDraft.isEmpty) {
+      Log.warning('[FINALIZE-SERVICE] Empty reduceDraft - returning fallback');
+      return _buildFallbackResult(
+        reduceDraft: reduceDraft,
+        warnings: [FinalizeWarnings.invalidReduceDraft],
+        usedEvidence: false,
+      );
+    }
+
     try {
-      // Single LLM call
+      // Single call to finalize endpoint with structured fields
       final response = await _client.finalize(
-        systemPrompt: finalizeSystemPrompt,
-        userPrompt: userPrompt,
+        structuredFields: reduceDraft,
+        refine: effectiveRefine,
         timeoutOverride: _timeoutOverride,
       );
 
@@ -143,7 +159,9 @@ class FinalizeService {
       // Validate response structure
       final metadata = response.metadata;
       if (metadata == null) {
-        Log.warning('[FINALIZE-SERVICE] Missing metadata in response - using fallback');
+        Log.warning(
+          '[FINALIZE-SERVICE] Missing metadata in response - using fallback',
+        );
         return _buildFallbackResult(
           reduceDraft: reduceDraft,
           warnings: [FinalizeWarnings.invalidJson],
@@ -159,7 +177,7 @@ class FinalizeService {
       );
 
       return FinalizeResult(
-        structured: response.structured!,
+        structured: KeyNormalizer.toSnakeCaseDeep(response.structured!),
         metadata: FinalizeMetadata(
           confidenceOverall: metadata.confidenceOverall ?? 'baja',
           contractStatus: metadata.contractStatus ?? 'warning',
@@ -169,11 +187,14 @@ class FinalizeService {
       );
     } on DioException catch (e) {
       // Timeout or network error
-      final isTimeout = e.type == DioExceptionType.connectionTimeout ||
+      final isTimeout =
+          e.type == DioExceptionType.connectionTimeout ||
           e.type == DioExceptionType.receiveTimeout ||
           e.type == DioExceptionType.sendTimeout;
 
-      final warning = isTimeout ? FinalizeWarnings.timeout : FinalizeWarnings.error;
+      final warning = isTimeout
+          ? FinalizeWarnings.timeout
+          : FinalizeWarnings.error;
 
       Log.warning(
         '[FINALIZE-SERVICE] DioException - using fallback. '
@@ -186,7 +207,9 @@ class FinalizeService {
         usedEvidence: false,
       );
     } on MedGemmaUnauthorizedException catch (e) {
-      Log.warning('[FINALIZE-SERVICE] Unauthorized - using fallback. ${e.message}');
+      Log.warning(
+        '[FINALIZE-SERVICE] Unauthorized - using fallback. ${e.message}',
+      );
       return _buildFallbackResult(
         reduceDraft: reduceDraft,
         warnings: [FinalizeWarnings.error],
@@ -210,18 +233,6 @@ class FinalizeService {
     }
   }
 
-  /// Builds the user prompt by replacing placeholders.
-  String _buildUserPrompt({
-    required String transcript,
-    required Map<String, dynamic> reduceDraft,
-  }) {
-    final reduceDraftJson = const JsonEncoder.withIndent('  ').convert(reduceDraft);
-
-    return finalizeUserPromptTemplate
-        .replaceAll('{{TRANSCRIPT}}', transcript)
-        .replaceAll('{{REDUCE_DRAFT_JSON}}', reduceDraftJson);
-  }
-
   /// Builds deterministic fallback result.
   ///
   /// Returns sanitized reduce_draft (trimmed strings, valid JSON)
@@ -231,8 +242,11 @@ class FinalizeService {
     required List<String> warnings,
     required bool usedEvidence,
   }) {
+    final sanitized = _sanitizeReduceDraft(reduceDraft);
+    final normalized = KeyNormalizer.toSnakeCaseDeep(sanitized);
+
     return FinalizeResult(
-      structured: _sanitizeReduceDraft(reduceDraft),
+      structured: normalized,
       metadata: FinalizeMetadata(
         confidenceOverall: 'baja',
         contractStatus: 'warning',
