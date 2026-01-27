@@ -921,7 +921,7 @@ class _SurgicalNoteWizardPageState
           ),
         );
 
-        Navigator.of(context).pop();
+        Navigator.of(context).pop(true); // Return true to indicate note created
       }
     } catch (e) {
       if (mounted) {

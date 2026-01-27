@@ -71,13 +71,21 @@ class _NotesListPageState extends ConsumerState<NotesListPage> {
     ref.read(notesListControllerProvider(_scope).notifier).loadNotes();
   }
 
-  void _handleNewNote() {
+  Future<void> _handleNewNote() async {
+    bool? created;
+
     if (widget.patient != null) {
       // Patient context: show note type selection
-      showNoteTypeSelectorBottomSheet(context, widget.patient!);
+      created = await showNoteTypeSelectorBottomSheet(context, widget.patient!);
     } else {
       // Global mode: navigate to select patient first
-      context.pushNamed(RouteNames.selectPatient);
+      created = await context.pushNamed<bool>(RouteNames.selectPatient);
+    }
+
+    // Refresh list if a note was created
+    if (created == true && mounted) {
+      ref.invalidate(notesListControllerProvider(_scope));
+      _loadNotes();
     }
   }
 

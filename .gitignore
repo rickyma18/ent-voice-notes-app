@@ -156,3 +156,4 @@ NUL
 *.exe
 *.json
 *_debug.txt
+.aider*

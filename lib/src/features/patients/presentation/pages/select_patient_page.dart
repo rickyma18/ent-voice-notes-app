@@ -62,8 +62,11 @@ class _SelectPatientPageState extends ConsumerState<SelectPatientPage> {
     context.pushNamed(RouteNames.medicalNotesList, extra: patient);
   }
 
-  void _handleCreateNote(PatientEntity patient) {
-    showNoteTypeSelectorBottomSheet(context, patient);
+  Future<void> _handleCreateNote(PatientEntity patient) async {
+    final created = await showNoteTypeSelectorBottomSheet(context, patient);
+    if (mounted && created == true) {
+      Navigator.of(context).pop(true);
+    }
   }
 
   @override

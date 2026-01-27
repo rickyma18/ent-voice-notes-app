@@ -571,13 +571,6 @@ class _ClinicalHistoryWizardPageState
   bool get _canGenerateSuggestions =>
       _hasDictation && !_isGeneratingSuggestions;
 
-  /// Whether the AI banner should be shown.
-  bool _shouldShowAiBanner(bool keyboardOpen) =>
-      !keyboardOpen &&
-      _hasDictation &&
-      !_isGeneratingSuggestions &&
-      !_bannerDismissed;
-
   /// Whether the post-dictation options sheet should be shown.
   bool _shouldShowPostDictationSheet(String transcript) =>
       transcript.length > 80 &&
@@ -585,15 +578,6 @@ class _ClinicalHistoryWizardPageState
       !_dictationChoiceShown &&
       !_neverShowDictationChoice &&
       _canGenerateSuggestions;
-
-  /// Builds filtered AI suggestion sections for a specific wizard step.
-  List<AISuggestionSection> _buildSectionsForStep(
-    Map<String, String> suggestions,
-    int stepIndex,
-  ) {
-    final allSections = _buildSuggestionsForSheet(suggestions);
-    return _filterSectionsForStep(allSections, stepIndex);
-  }
 
   Future<void> _generateAISuggestions() async {
     if (!_canGenerateSuggestions) return;
@@ -822,182 +806,6 @@ class _ClinicalHistoryWizardPageState
     }
 
     return parts.join(' ');
-  }
-
-  /// Builds suggestion sections for the sheet using current controller values.
-  List<AISuggestionSection> _buildSuggestionsForSheet(
-    Map<String, String> suggestions,
-  ) {
-    // Parse antecedentes if it has structure
-    final antecedentes = suggestions['antecedentes'] ?? '';
-    final parsedAntecedentes = _parseAntecedentesFromSuggestion(antecedentes);
-
-    // Parse exploracion if it has structure
-    final exploracion = suggestions['exploracionFisicaOrl'] ?? '';
-    final parsedOrl = _parseExploracionFromSuggestion(exploracion);
-
-    return [
-      AISuggestionSection(
-        id: 'motivoConsulta',
-        label: 'Motivo de consulta',
-        suggestion: suggestions['motivoConsulta'] ?? '',
-        currentValue: _motivoController.text,
-      ),
-      AISuggestionSection(
-        id: 'heredofamiliares',
-        label: 'Antecedentes heredofamiliares',
-        suggestion: parsedAntecedentes['heredofamiliares'] ?? '',
-        currentValue: _antecedentesHeredofamiliaresController.text,
-      ),
-      AISuggestionSection(
-        id: 'noPatologicos',
-        label: 'Antecedentes NO patologicos',
-        suggestion: parsedAntecedentes['noPatologicos'] ?? '',
-        currentValue: _antecedentesNoPatologicosController.text,
-      ),
-      AISuggestionSection(
-        id: 'patologicos',
-        label: 'Antecedentes patologicos',
-        suggestion: parsedAntecedentes['patologicos'] ?? '',
-        currentValue: _antecedentesPatologicosController.text,
-      ),
-      AISuggestionSection(
-        id: 'padecimientoActual',
-        label: 'Padecimiento actual',
-        suggestion: parsedAntecedentes['padecimientoActual'] ?? '',
-        currentValue: _padecimientoActualController.text,
-      ),
-      // ORL sections
-      AISuggestionSection(
-        id: 'otoscopia',
-        label: 'Otoscopia',
-        suggestion: parsedOrl['otoscopia'] ?? '',
-        currentValue: _orlControllers['otoscopia']?.text ?? '',
-      ),
-      AISuggestionSection(
-        id: 'rinoscopia',
-        label: 'Rinoscopia',
-        suggestion: parsedOrl['rinoscopia'] ?? '',
-        currentValue: _orlControllers['rinoscopia']?.text ?? '',
-      ),
-      AISuggestionSection(
-        id: 'orofaringe',
-        label: 'Orofaringe',
-        suggestion: parsedOrl['orofaringe'] ?? '',
-        currentValue: _orlControllers['orofaringe']?.text ?? '',
-      ),
-      AISuggestionSection(
-        id: 'cuello',
-        label: 'Cuello',
-        suggestion: parsedOrl['cuello'] ?? '',
-        currentValue: _orlControllers['cuello']?.text ?? '',
-      ),
-      AISuggestionSection(
-        id: 'laringoscopia',
-        label: 'Laringoscopia',
-        suggestion: parsedOrl['laringoscopia'] ?? '',
-        currentValue: _orlControllers['laringoscopia']?.text ?? '',
-      ),
-      AISuggestionSection(
-        id: 'diagnostico',
-        label: 'Diagnostico',
-        suggestion: suggestions['diagnostico'] ?? '',
-        currentValue: _diagnosticoController.text,
-      ),
-      AISuggestionSection(
-        id: 'planTratamiento',
-        label: 'Plan de tratamiento',
-        suggestion: suggestions['planTratamiento'] ?? '',
-        currentValue: _planController.text,
-      ),
-    ];
-  }
-
-  /// Parse antecedentes from suggestion - reuses existing non-destructive logic.
-  Map<String, String> _parseAntecedentesFromSuggestion(String antecedentes) {
-    if (antecedentes.isEmpty) return {};
-
-    final result = <String, String>{};
-
-    // Check if text has structured format
-    final hasStructuredFormat = RegExp(
-      r'(HEREDOFAMILIARES?|NO PATOL[OÓ]GICOS?|PATOL[OÓ]GICOS?|PADECIMIENTO ACTUAL):',
-      caseSensitive: false,
-    ).hasMatch(antecedentes);
-
-    // If no structured format, put everything in heredofamiliares (non-destructive)
-    if (!hasStructuredFormat) {
-      result['heredofamiliares'] = antecedentes.trim();
-      return result;
-    }
-
-    // Parse structured format
-    final heredofamiliaresMatch = RegExp(
-      r'HEREDOFAMILIARES?:\s*([^\n]*(?:\n(?![A-Z\s]+:)[^\n]*)*)',
-      caseSensitive: false,
-    ).firstMatch(antecedentes);
-    if (heredofamiliaresMatch != null) {
-      result['heredofamiliares'] = heredofamiliaresMatch.group(1)?.trim() ?? '';
-    }
-
-    final noPatologicosMatch = RegExp(
-      r'NO PATOL[OÓ]GICOS?:\s*([^\n]*(?:\n(?![A-Z\s]+:)[^\n]*)*)',
-      caseSensitive: false,
-    ).firstMatch(antecedentes);
-    if (noPatologicosMatch != null) {
-      result['noPatologicos'] = noPatologicosMatch.group(1)?.trim() ?? '';
-    }
-
-    final patologicosMatch = RegExp(
-      r'(?<!NO )PATOL[OÓ]GICOS?:\s*([^\n]*(?:\n(?![A-Z\s]+:)[^\n]*)*)',
-      caseSensitive: false,
-    ).firstMatch(antecedentes);
-    if (patologicosMatch != null) {
-      result['patologicos'] = patologicosMatch.group(1)?.trim() ?? '';
-    }
-
-    final padecimientoMatch = RegExp(
-      r'PADECIMIENTO ACTUAL:\s*([^\n]*(?:\n(?![A-Z\s]+:)[^\n]*)*)',
-      caseSensitive: false,
-    ).firstMatch(antecedentes);
-    if (padecimientoMatch != null) {
-      result['padecimientoActual'] = padecimientoMatch.group(1)?.trim() ?? '';
-    }
-
-    return result;
-  }
-
-  /// Parse exploracion from suggestion - reuses existing non-destructive logic.
-  Map<String, String> _parseExploracionFromSuggestion(String exploracion) {
-    if (exploracion.isEmpty) return {};
-
-    final result = <String, String>{};
-
-    // Check if text has structured format
-    final hasStructuredFormat = RegExp(
-      r'(OTOSCOPIA|RINOSCOPIA|OROFARINGE|CUELLO|LARINGOSCOPIA):',
-      caseSensitive: false,
-    ).hasMatch(exploracion);
-
-    // If no structured format, put everything in otoscopia (non-destructive)
-    if (!hasStructuredFormat) {
-      result['otoscopia'] = exploracion.trim();
-      return result;
-    }
-
-    // Parse structured format
-    for (final section in OrlSection.defaultSections) {
-      final regex = RegExp(
-        '${section.title.toUpperCase()}:\\s*([\\s\\S]*?)(?=(?:OTOSCOPIA|RINOSCOPIA|OROFARINGE|CUELLO|LARINGOSCOPIA):|\\Z)',
-        caseSensitive: false,
-      );
-      final match = regex.firstMatch(exploracion);
-      if (match != null && match.group(1) != null) {
-        result[section.id] = match.group(1)!.trim();
-      }
-    }
-
-    return result;
   }
 
   void _showSuggestionsSheet(
@@ -1229,178 +1037,7 @@ class _ClinicalHistoryWizardPageState
       );
   }
 
-  // ---------------------------------------------------------------------------
-  // Step-specific AI Suggestions
-  // ---------------------------------------------------------------------------
 
-  /// Returns section IDs relevant to a specific wizard step.
-  List<String> _getSectionIdsForStep(int stepIndex) {
-    switch (stepIndex) {
-      case 0:
-        return ['motivoConsulta'];
-      case 1:
-        return ['heredofamiliares'];
-      case 2:
-        return ['noPatologicos'];
-      case 3:
-        return ['patologicos'];
-      case 4:
-        return ['padecimientoActual'];
-      case 5:
-        return [
-          'otoscopia',
-          'rinoscopia',
-          'orofaringe',
-          'cuello',
-          'laringoscopia',
-        ];
-      case 7:
-        return ['diagnostico', 'planTratamiento'];
-      default:
-        return [];
-    }
-  }
-
-  /// Filters sections: step-relevant first, then others with content.
-  ///
-  /// This ensures the user sees all AI-extracted findings, prioritizing
-  /// the current step but not losing data from other fields.
-  List<AISuggestionSection> _filterSectionsForStep(
-    List<AISuggestionSection> allSections,
-    int stepIndex,
-  ) {
-    final relevantIds = _getSectionIdsForStep(stepIndex);
-
-    // Primary: sections for this step WITH content
-    final primary = allSections
-        .where((s) => relevantIds.contains(s.id) && s.hasContent)
-        .toList();
-
-    // Secondary: other sections WITH content (don't lose findings)
-    final secondary = allSections
-        .where((s) => !relevantIds.contains(s.id) && s.hasContent)
-        .toList();
-
-    // Diagnostic logs for debugging filter behavior
-    debugPrint('[AISuggestions] stepIndex=$stepIndex');
-    debugPrint('[AISuggestions] relevantIds=$relevantIds');
-    debugPrint(
-      '[AISuggestions] allWithContent=${allSections.where((s) => s.hasContent).map((s) => s.id).toList()}',
-    );
-    debugPrint('[AISuggestions] primary=${primary.map((s) => s.id).toList()}');
-    debugPrint(
-      '[AISuggestions] secondary=${secondary.map((s) => s.id).toList()}',
-    );
-
-    return [...primary, ...secondary];
-  }
-
-  /// Generates AI suggestions filtered for a specific step.
-  Future<void> _generateAISuggestionsForStep(int stepIndex) async {
-    if (!_canGenerateSuggestions) return;
-
-    setState(() {
-      _isGeneratingSuggestions = true;
-      _bannerDismissed = true;
-    });
-
-    try {
-      // Use cached structured fields if available, otherwise generate new
-      // using the controller's generateAISuggestionsWithFallback method
-      Map<String, dynamic> structuredV1;
-      String? fallbackNotice;
-
-      if (_structuredFieldsV1 != null) {
-        structuredV1 = _structuredFieldsV1!;
-      } else {
-        final controller = ref.read(medicalNotesControllerProvider.notifier);
-        final result = await controller.generateAISuggestionsWithFallback(
-          _rawTranscript!,
-          language: 'es',
-        );
-        structuredV1 = result['suggestions'] as Map<String, dynamic>;
-        _structuredFieldsV1 = structuredV1;
-
-        // Check if fallback was used
-        final source = result['source'] as String;
-        if (source == MedicalNotesController.kSourceFallback) {
-          final reason = result['fallbackReason'] as String?;
-          fallbackNotice =
-              'Se usó el procesador alternativo. ${reason != null ? "(Razón: ${reason.split('\n').first})" : ""}';
-        }
-      }
-      debugPrint('--- Structured V1 (top) ---');
-      debugPrint('v1 motivo_consulta: ${structuredV1['motivo_consulta']}');
-      debugPrint(
-        'v1 padecimiento_actual: ${structuredV1['padecimiento_actual']}',
-      );
-      debugPrint('v1 antecedentes: ${structuredV1['antecedentes']}');
-      debugPrint('v1 exploracion_orl: ${structuredV1['exploracion_orl']}');
-      debugPrint('v1 diagnostico: ${structuredV1['diagnostico']}');
-      debugPrint('v1 plan_tratamiento: ${structuredV1['plan_tratamiento']}');
-      debugPrint(
-        'v1 estudios_indicados: ${structuredV1['estudios_indicados']}',
-      );
-      debugPrint('v1 notas_adicionales: ${structuredV1['notas_adicionales']}');
-      debugPrint('---------------------------');
-      if (!mounted) return;
-
-      setState(() {
-        _isGeneratingSuggestions = false;
-      });
-
-      // Show fallback notice if applicable
-      if (fallbackNotice != null && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(fallbackNotice),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
-
-      // Build all sections from structured data, then filter for this step
-      final allSections = _buildSuggestionsFromStructuredV1(structuredV1);
-      final stepSections = _filterSectionsForStep(allSections, stepIndex);
-
-      if (stepSections.isEmpty || stepSections.every((s) => !s.hasContent)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'No se encontraron hallazgos clinicos claros en el dictado para sugerir campos.',
-            ),
-            backgroundColor: Colors.orange,
-          ),
-        );
-
-        return;
-      }
-
-      // Show suggestions sheet with filtered sections
-      final legacySuggestions = LegacyFieldsAdapter.toLegacy(structuredV1);
-
-      // Cache for reopening
-      _lastSuggestionSections = stepSections;
-      _lastLegacySuggestions = legacySuggestions;
-
-      if (mounted) {
-        _showSuggestionsSheet(stepSections, legacySuggestions);
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isGeneratingSuggestions = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al generar sugerencias: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
 
   // ---------------------------------------------------------------------------
   // AI Plan Autocomplete (Step 6 - no dictation required)
@@ -1590,29 +1227,7 @@ class _ClinicalHistoryWizardPageState
     );
   }
 
-  /// Builds the CTA widget for step-specific AI suggestions.
-  Widget? _buildStepAICta(int stepIndex, TextEditingController controller) {
-    // Don't show CTA for step 6 (attachments/laboratorio)
-    if (stepIndex == 6) return null;
 
-    // Don't show if no transcript or field is not empty
-    if (!_hasDictation) return null;
-    if (controller.text.trim().isNotEmpty) return null;
-
-    return TextButton.icon(
-      onPressed: _isGeneratingSuggestions
-          ? null
-          : () => _generateAISuggestionsForStep(stepIndex),
-      icon: _isGeneratingSuggestions
-          ? const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Icon(Icons.auto_awesome, size: 18),
-      label: const Text('Sugerir con IA'),
-    );
-  }
 
   @override
   void dispose() {
@@ -2030,7 +1645,7 @@ class _ClinicalHistoryWizardPageState
           ),
         );
 
-        Navigator.of(context).pop();
+        Navigator.of(context).pop(true); // Return true to indicate note created
       }
     } catch (e) {
       if (mounted) {
@@ -2539,9 +2154,13 @@ class _ClinicalHistoryWizardPageState
 
                           // Step content (PageView inside Expanded)
                           Expanded(
-                            child: Form(
-                              key: _formKey,
-                              child: PageView(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: DocsoftSpacing.screenPadding,
+                              ),
+                              child: Form(
+                                key: _formKey,
+                                child: PageView(
                                 controller: _pageController,
                                 physics: const NeverScrollableScrollPhysics(),
                                 onPageChanged: (page) {
@@ -2565,6 +2184,7 @@ class _ClinicalHistoryWizardPageState
                               ),
                             ),
                           ),
+                        ),
                         ],
                       ),
                     ),
@@ -2674,7 +2294,7 @@ class _ClinicalHistoryWizardPageState
       builder: (context, constraints) {
         return SingleChildScrollView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(vertical: 16),
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: constraints.maxHeight),
             child: child,
@@ -2731,158 +2351,148 @@ class _ClinicalHistoryWizardPageState
   }
 
   // Step 0: Motivo de consulta
-  Widget _buildStep0MotivoConsulta() {
-    final cta = _buildStepAICta(0, _motivoController);
-    return _buildScrollableStep(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 8),
-          if (cta != null) cta,
-          GuidedTextArea(
-            controller: _motivoController,
-            label: 'Motivo de consulta',
-            hintText:
-                'Ej: Dolor de oido derecho persistente desde hace 3 dias...',
-            maxLines: 8,
-            minLines: 4,
-            onDictate: () => _handleFieldDictation(_motivoController),
-            quickActions: const [
-              QuickAction(
-                label: 'Revision',
-                text: 'Revision de rutina',
-                icon: Icons.check,
-              ),
-              QuickAction(
-                label: 'Seguimiento',
-                text: 'Seguimiento de tratamiento',
-                icon: Icons.sync,
-              ),
-            ],
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Ingresa el motivo de consulta';
-              }
-              return null;
-            },
+Widget _buildStep0MotivoConsulta() {
+  return _buildScrollableStep(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+      const SizedBox(height: 8),
+      GuidedTextArea(
+        controller: _motivoController,
+        label: 'Motivo de consulta',
+        hintText: 'Ej: Dolor de oido derecho persistente desde hace 3 dias...',
+        maxLines: 8,
+        minLines: 4,
+        onDictate: () => _handleFieldDictation(_motivoController),
+        quickActions: const [
+          QuickAction(
+            label: 'Revision',
+            text: 'Revision de rutina',
+            icon: Icons.check,
+          ),
+          QuickAction(
+            label: 'Seguimiento',
+            text: 'Seguimiento de tratamiento',
+            icon: Icons.sync,
           ),
         ],
+        validator: (value) {
+          if (value == null || value.trim().isEmpty) {
+            return 'Ingresa el motivo de consulta';
+          }
+          return null;
+        },
       ),
-    );
-  }
+    ],
+    ),
+  );
+}
+
 
   // Step 1: Antecedentes heredofamiliares
   Widget _buildStep1AntecedentesHeredofamiliares() {
-    final cta = _buildStepAICta(1, _antecedentesHeredofamiliaresController);
     return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 8),
-          if (cta != null) cta,
-          GuidedTextArea(
-            controller: _antecedentesHeredofamiliaresController,
-            label: 'Antecedentes heredofamiliares',
-            guidanceHints: ClinicalHints.familyHistory,
-            maxLines: 10,
-            minLines: 6,
-            onDictate: () =>
-                _handleFieldDictation(_antecedentesHeredofamiliaresController),
-            quickActions: QuickActionButtons.historyActions,
-          ),
-        ],
-      ),
-    );
-  }
+        const SizedBox(height: 8),
+        GuidedTextArea(
+          controller: _antecedentesHeredofamiliaresController,
+          label: 'Antecedentes heredofamiliares',
+          guidanceHints: ClinicalHints.familyHistory,
+          maxLines: 10,
+          minLines: 6,
+          onDictate: () =>
+              _handleFieldDictation(_antecedentesHeredofamiliaresController),
+          quickActions: QuickActionButtons.historyActions,
+        ),
+      ],
+    ),
+  );
+}
 
   // Step 2: Antecedentes personales NO patologicos
   Widget _buildStep2AntecedentesNoPatologicos() {
-    final cta = _buildStepAICta(2, _antecedentesNoPatologicosController);
     return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 8),
-          if (cta != null) cta,
-          GuidedTextArea(
-            controller: _antecedentesNoPatologicosController,
-            label: 'Antecedentes personales NO patologicos',
-            guidanceHints: ClinicalHints.nonPathologicalHistory,
-            maxLines: 10,
-            minLines: 6,
-            onDictate: () =>
-                _handleFieldDictation(_antecedentesNoPatologicosController),
-            quickActions: QuickActionButtons.historyActions,
-          ),
-        ],
-      ),
-    );
-  }
+        const SizedBox(height: 8),
+        GuidedTextArea(
+          controller: _antecedentesNoPatologicosController,
+          label: 'Antecedentes personales NO patologicos',
+          guidanceHints: ClinicalHints.nonPathologicalHistory,
+          maxLines: 10,
+          minLines: 6,
+          onDictate: () =>
+              _handleFieldDictation(_antecedentesNoPatologicosController),
+          quickActions: QuickActionButtons.historyActions,
+        ),
+      ],
+    ),
+  );
+}
 
   // Step 3: Antecedentes personales patologicos
   Widget _buildStep3AntecedentesPatologicos() {
-    final cta = _buildStepAICta(3, _antecedentesPatologicosController);
     return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 8),
-          if (cta != null) cta,
-          GuidedTextArea(
-            controller: _antecedentesPatologicosController,
-            label: 'Antecedentes personales patologicos',
-            guidanceHints: ClinicalHints.pathologicalHistory,
-            maxLines: 12,
-            minLines: 8,
-            onDictate: () =>
-                _handleFieldDictation(_antecedentesPatologicosController),
-            quickActions: QuickActionButtons.historyActions,
-          ),
-        ],
-      ),
-    );
-  }
+        const SizedBox(height: 8),
+        GuidedTextArea(
+          controller: _antecedentesPatologicosController,
+          label: 'Antecedentes personales patologicos',
+          guidanceHints: ClinicalHints.pathologicalHistory,
+          maxLines: 12,
+          minLines: 8,
+          onDictate: () =>
+              _handleFieldDictation(_antecedentesPatologicosController),
+          quickActions: QuickActionButtons.historyActions,
+        ),
+      ],
+    ),
+  );
+}
 
   // Step 4: Padecimiento actual
   Widget _buildStep4PadecimientoActual() {
-    final cta = _buildStepAICta(4, _padecimientoActualController);
     return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 8),
-          if (cta != null) cta,
-          GuidedTextArea(
-            controller: _padecimientoActualController,
-            label: 'Padecimiento actual',
-            hintText:
-                'Descripcion detallada del padecimiento actual, evolucion, sintomas...',
-            maxLines: 12,
-            minLines: 8,
-            onDictate: () =>
-                _handleFieldDictation(_padecimientoActualController),
-            quickActions: const [
-              QuickAction(
-                label: 'Agudo',
-                text: 'Inicio agudo',
-                icon: Icons.flash_on,
-              ),
-              QuickAction(
-                label: 'Cronico',
-                text: 'Evolucion cronica',
-                icon: Icons.timeline,
-              ),
-              QuickAction(
-                label: 'Progresivo',
-                text: 'Curso progresivo',
-                icon: Icons.trending_up,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+        const SizedBox(height: 8),
+        GuidedTextArea(
+          controller: _padecimientoActualController,
+          label: 'Padecimiento actual',
+          hintText:
+              'Descripcion detallada del padecimiento actual, evolucion, sintomas...',
+          maxLines: 12,
+          minLines: 8,
+          onDictate: () =>
+              _handleFieldDictation(_padecimientoActualController),
+          quickActions: const [
+            QuickAction(
+              label: 'Agudo',
+              text: 'Inicio agudo',
+              icon: Icons.flash_on,
+            ),
+            QuickAction(
+              label: 'Cronico',
+              text: 'Evolucion cronica',
+              icon: Icons.timeline,
+            ),
+            QuickAction(
+              label: 'Progresivo',
+              text: 'Curso progresivo',
+              icon: Icons.trending_up,
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
 
   // Step 5: Exploracion fisica ORL
   Widget _buildStep5ExploracionOrl() {
@@ -2937,13 +2547,11 @@ class _ClinicalHistoryWizardPageState
 
   // Step 6: Diagnostico y plan
   Widget _buildStep7DiagnosticoPlan() {
-    final cta = _buildStepAICta(6, _diagnosticoController);
     return _buildScrollableStep(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
-          if (cta != null) cta,
 
           // Diagnostico
           _WizardSectionCard(
@@ -3041,7 +2649,7 @@ class _ClinicalHistoryWizardPageState
               ],
             ),
           ),
-        ],
+        ], 
       ),
     );
   }

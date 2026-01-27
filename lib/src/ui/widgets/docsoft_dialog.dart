@@ -186,6 +186,9 @@ class DocsoftDialog extends StatelessWidget {
                           backgroundColor: _confirmButtonColor,
                           foregroundColor: _confirmButtonTextColor,
                           elevation: 0,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: DocsoftSpacing.md,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(
                               DocsoftRadii.full,
@@ -198,6 +201,7 @@ class DocsoftDialog extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: DocsoftTextStyles.button.copyWith(
                             color: _confirmButtonTextColor,
+                            height: 1.2,
                           ),
                         ),
                       ),
@@ -244,6 +248,9 @@ class DocsoftDialog extends StatelessWidget {
                         backgroundColor: _confirmButtonColor,
                         foregroundColor: _confirmButtonTextColor,
                         elevation: 0,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: DocsoftSpacing.md,
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(
                             DocsoftRadii.full,
@@ -256,6 +263,7 @@ class DocsoftDialog extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: DocsoftTextStyles.button.copyWith(
                           color: _confirmButtonTextColor,
+                          height: 1.2,
                         ),
                       ),
                     ),

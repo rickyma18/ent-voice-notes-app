@@ -9,8 +9,9 @@ import '../../../../../ui/docsoft_ui.dart';
 class NotesHeader extends StatelessWidget {
   const NotesHeader({super.key, required this.onNewNote, this.patientName});
 
-  /// Callback when "Nueva nota" button is pressed
-  final VoidCallback onNewNote;
+  /// Callback when "Nueva nota" button is pressed.
+  /// Returns a Future to allow awaiting navigation results.
+  final Future<void> Function() onNewNote;
 
   /// Optional patient name to display in the title.
   /// When provided, title becomes "Notas de <patientName>".

@@ -14,15 +14,18 @@ import '../../../patients/domain/entities/patient_entity.dart';
 /// - Clinical History notes go to the wizard (RouteNames.clinicalHistoryWizard)
 /// - Surgical Notes go to the wizard (RouteNames.surgicalNoteWizard)
 ///
+/// Returns `true` if a note was created, `false` or `null` otherwise.
+///
 /// Usage:
 /// ```dart
-/// showNoteTypeSelectorBottomSheet(context, patient);
+/// final created = await showNoteTypeSelectorBottomSheet(context, patient);
+/// if (created == true) { /* refresh list */ }
 /// ```
-Future<void> showNoteTypeSelectorBottomSheet(
+Future<bool?> showNoteTypeSelectorBottomSheet(
   BuildContext context,
   PatientEntity patient,
 ) {
-  return showModalBottomSheet(
+  return showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
     backgroundColor: DocsoftColors.surface,
@@ -92,9 +95,14 @@ class _NoteTypeSelectorContent extends StatelessWidget {
                     'La forma más rápida. Graba libremente y la IA transcribirá la nota.',
                 isHighlighted: true,
                 semanticLabel: 'Dictar nota, opción recomendada',
-                onTap: () {
-                  Navigator.pop(context);
-                  context.pushNamed(RouteNames.dictationAssist, extra: patient);
+                onTap: () async {
+                  final created = await context.pushNamed<bool>(
+                    RouteNames.dictationAssist,
+                    extra: patient,
+                  );
+                  if (context.mounted) {
+                    Navigator.pop(context, created ?? false);
+                  }
                 },
               ),
               const SizedBox(height: DocsoftSpacing.itemSpacing),
@@ -106,12 +114,14 @@ class _NoteTypeSelectorContent extends StatelessWidget {
                 description:
                     'Formulario guiado para documentar consultas paso a paso.',
                 semanticLabel: 'Historia clínica',
-                onTap: () {
-                  Navigator.pop(context);
-                  context.pushNamed(
+                onTap: () async {
+                  final created = await context.pushNamed<bool>(
                     RouteNames.clinicalHistoryWizard,
                     extra: patient,
                   );
+                  if (context.mounted) {
+                    Navigator.pop(context, created ?? false);
+                  }
                 },
               ),
               const SizedBox(height: DocsoftSpacing.itemSpacing),
@@ -123,12 +133,14 @@ class _NoteTypeSelectorContent extends StatelessWidget {
                 description:
                     'Plantilla especializada para procedimientos y cirugías.',
                 semanticLabel: 'Nota quirúrgica',
-                onTap: () {
-                  Navigator.pop(context);
-                  context.pushNamed(
+                onTap: () async {
+                  final created = await context.pushNamed<bool>(
                     RouteNames.surgicalNoteWizard,
                     extra: patient,
                   );
+                  if (context.mounted) {
+                    Navigator.pop(context, created ?? false);
+                  }
                 },
               ),
             ],

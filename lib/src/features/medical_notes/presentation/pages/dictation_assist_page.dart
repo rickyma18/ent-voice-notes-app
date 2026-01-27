@@ -555,13 +555,17 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
       _isGenerating = false;
     });
 
-    context.pushNamed(
+    final created = await context.pushNamed<bool>(
       RouteNames.clinicalHistoryWizard,
       extra: {
         'patient': widget.patient,
         'initialRawTranscript': _rawTranscript,
       },
     );
+
+    if (mounted && created == true) {
+      Navigator.of(context).pop(true);
+    }
   }
 
   void _continueToSurgicalNote() async {
@@ -579,13 +583,17 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
       _isGenerating = false;
     });
 
-    context.pushNamed(
+    final created = await context.pushNamed<bool>(
       RouteNames.surgicalNoteWizard,
       extra: {
         'patient': widget.patient,
         'initialRawTranscript': _rawTranscript,
       },
     );
+
+    if (mounted && created == true) {
+      Navigator.of(context).pop(true);
+    }
   }
 
   bool get _ctasEnabled =>
@@ -1092,6 +1100,7 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
           // ─────────────────────────────────────────────────────────────────
           // DEBUG HOOK BUTTON
           // ─────────────────────────────────────────────────────────────────
+          /*
           if (kDebugMode &&
               ref.watch(enableEvidenceDebugHookProvider) &&
               (_lastAudioPath != null || _rawTranscript.isNotEmpty) &&
@@ -1113,6 +1122,7 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
               ),
             ),
           ],
+          */
         ],
       ),
     );
@@ -1168,6 +1178,7 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
   /// Tracks if the debug loading dialog is currently shown.
   bool _debugLoadingDialogOpen = false;
 
+  // ignore: unused_element
   Future<void> _debugTestScribePipeline() async {
     final controller = ref.read(medicalNotesControllerProvider.notifier);
     var result = controller.lastScribeResult;
