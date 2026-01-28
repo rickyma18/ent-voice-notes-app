@@ -2,10 +2,10 @@
 ///
 /// Persisted as string values in SharedPreferences.
 enum AiEngine {
-  /// MedGemma via backend (default).
+  /// MedGemma via backend.
   medgemma('medgemma', 'MedGemma (Backend)'),
 
-  /// OpenAI directly from Flutter.
+  /// OpenAI directly from Flutter (default).
   openai('openai', 'OpenAI (Direct)');
 
   const AiEngine(this.storageKey, this.displayName);
@@ -18,11 +18,11 @@ enum AiEngine {
 
   /// Converts a string from storage to [AiEngine].
   ///
-  /// Returns [medgemma] if the key is unknown or null.
+  /// Returns [openai] if the key is unknown or null.
   static AiEngine fromString(String? key) {
     return AiEngine.values.firstWhere(
       (e) => e.storageKey == key,
-      orElse: () => medgemma,
+      orElse: () => openai,
     );
   }
 

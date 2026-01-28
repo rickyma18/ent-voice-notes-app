@@ -54,11 +54,26 @@ class JobQueueService {
         etaSeconds: response.etaSeconds,
       );
     } on MedGemmaBusyException catch (e) {
-      // 2. Handle 409 Busy -> Use existing Job ID
-      Log.warning(
-        '[JobQueueService] User busy, resuming job ${e.existingJobId}',
-      );
-      jobId = e.existingJobId;
+      // 2. Handle 409 Busy
+      final existingId = e.existingJobId;
+      if (existingId == null) {
+        Log.error(
+          '[JobQueueService] User busy, but no existingJobId returned. Code: ${e.code}',
+        );
+        yield const JobStatusResponse(
+          success: false,
+          status: 'failed',
+          error: MedGemmaErrorInfo(
+            code: 'SERVER_BUSY',
+            message: 'Servidor ocupado, intenta más tarde.',
+          ),
+        );
+        return;
+      }
+
+      // Resume existing job
+      Log.warning('[JobQueueService] User busy, resuming job $existingId');
+      jobId = existingId;
 
       // Yield an update saying we are resuming
       yield JobStatusResponse(

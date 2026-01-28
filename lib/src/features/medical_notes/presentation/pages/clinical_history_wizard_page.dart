@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/base/result.dart';
+import '../../../../core/logger/log.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 import '../../../patients/patients_providers.dart';
 import '../../application/legacy_fields_adapter.dart';
@@ -30,6 +31,7 @@ import '../widgets/clinical_history_wizard/dictation_quick_sheet.dart';
 import '../widgets/clinical_history_wizard/vitals_card.dart';
 import '../../../../ui/docsoft_ui.dart';
 import '../../../../ui/widgets/advanced_analysis_badge.dart';
+import '../../../../ui/widgets/docsoft_ai_fallback_banner.dart';
 
 /// Multi-step wizard page for creating/editing clinical history notes.
 ///
@@ -89,6 +91,7 @@ class _ClinicalHistoryWizardPageState
   bool _isGeneratingSuggestions = false;
   bool _isGeneratingPlan = false;
   bool _bannerDismissed = false;
+  bool _fallbackBannerDismissed = false;
 
   /// Dictation status for UI display (none, available, generated)
   DictationStatus _dictationStatus = DictationStatus.none;
@@ -104,6 +107,9 @@ class _ClinicalHistoryWizardPageState
 
   // Job Queue Modal State
   bool _isQueueModalShown = false;
+
+  // Job Queue Subscription (manual listen)
+  ProviderSubscription<AsyncValue<JobStatusResponse?>>? _jobQueueSub;
 
   // ScaffoldMessenger key for SnackBars inside the AI suggestions BottomSheet
   // This ensures SnackBars appear ABOVE the BottomSheet, not behind it
@@ -250,6 +256,68 @@ class _ClinicalHistoryWizardPageState
       'laringoscopia': TextEditingController(),
     };
 
+    // Manual listener for Job Queue (moved from build to avoid rebuild side-effects)
+    _jobQueueSub = ref.listenManual<AsyncValue<JobStatusResponse?>>(
+      jobQueueControllerProvider,
+      (prev, next) {
+        next.when(
+          data: (status) {
+            // Check if we should show the modal
+            if (status != null &&
+                (status.isPending ||
+                    status.status == 'resuming' ||
+                    status.status == 'processing') &&
+                !_isQueueModalShown) {
+              if (mounted) _showQueueModal();
+            }
+            // Check for Terminal State
+            else if (status != null && status.isTerminal) {
+              if (_isQueueModalShown) {
+                if (mounted && Navigator.canPop(context)) {
+                  Navigator.pop(context);
+                }
+                if (mounted) setState(() => _isQueueModalShown = false);
+              }
+            }
+            // Handle explicit null (reset)
+            else if (status == null && _isQueueModalShown) {
+              if (mounted && Navigator.canPop(context)) {
+                Navigator.pop(context);
+              }
+              if (mounted) setState(() => _isQueueModalShown = false);
+            }
+          },
+          loading: () {},
+          error: (err, st) {
+            // Close modal safely if open
+            if (_isQueueModalShown) {
+              if (mounted && Navigator.canPop(context)) {
+                Navigator.pop(context);
+              }
+              if (mounted) setState(() => _isQueueModalShown = false);
+            }
+
+            Log.error('[JobQueue] Error listener: $err');
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'No se pudo conectar al backend. Continuando con motor estándar.',
+                    style: DocsoftTextStyles.caption.copyWith(
+                      color: DocsoftColors.onWarning,
+                    ),
+                  ),
+                  backgroundColor: DocsoftColors.warning,
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+            }
+          },
+        );
+      },
+    );
     // Vital signs controllers
     _weightController = TextEditingController();
     _heightController = TextEditingController();
@@ -602,7 +670,6 @@ class _ClinicalHistoryWizardPageState
 
       final structuredV1 = result['suggestions'] as Map<String, dynamic>;
       final source = result['source'] as String;
-      final fallbackReason = result['fallbackReason'] as String?;
 
       // Cache structured response for later use
       _structuredFieldsV1 = structuredV1;
@@ -614,16 +681,24 @@ class _ClinicalHistoryWizardPageState
       });
 
       // Show notification if fallback was used
-      if (source == MedicalNotesController.kSourceFallback && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Se usó el procesador alternativo. ${fallbackReason != null ? "(Razón: ${fallbackReason.split('\n').first})" : ""}',
-            ),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 4),
-          ),
-        );
+      if (source == 'fallback') {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Backend no disponible. Se usó OpenAI (Direct).',
+                  style: DocsoftTextStyles.caption.copyWith(
+                    color: DocsoftColors.onWarning,
+                  ),
+                ),
+                backgroundColor: DocsoftColors.warning,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
+        });
       }
 
       // Build sections for the sheet using structured v1 data
@@ -664,6 +739,84 @@ class _ClinicalHistoryWizardPageState
         );
       }
     }
+  }
+
+  void _showFallbackDetailsSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        final reason =
+            _structuredFieldsV1?['fallbackReason'] as String? ?? 'Desconocida';
+        final timestamp = DateTime.now();
+
+        return Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Detalles de procesamiento',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              _buildDetailRow('Motor solicitado', 'MedGemma (Clínico)'),
+              const SizedBox(height: 12),
+              _buildDetailRow('Motor utilizado', 'OpenAI (Estándar)'),
+              const SizedBox(height: 12),
+              _buildDetailRow('Razón', reason),
+              const SizedBox(height: 12),
+              _buildDetailRow(
+                'Fecha',
+                DateFormat('dd/MM/yyyy HH:mm:ss').format(timestamp),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: DocsoftColors.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('ENTENDIDO'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 120,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              color: Colors.grey,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w500),
+          ),
+        ),
+      ],
+    );
   }
 
   /// Builds suggestion sections directly from structured v1 data.
@@ -854,33 +1007,6 @@ class _ClinicalHistoryWizardPageState
     });
   }
 
-  void _showFallbackSnackBar() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(
-              Icons.warning_amber_rounded,
-              color: Colors.orange.shade100,
-              size: 20,
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text(
-                'Nota generada con respaldo. Revisa el contenido.',
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.orange.shade900,
-        duration: const Duration(seconds: 6), // Persistent for a bit
-        behavior: SnackBarBehavior.floating,
-        showCloseIcon: true,
-      ),
-    );
-  }
-
   /// Applies suggestions to controllers based on mode.
   void _applySuggestions(List<AISuggestionSection> sections, ApplyMode mode) {
     int appliedCount = 0;
@@ -1036,8 +1162,6 @@ class _ClinicalHistoryWizardPageState
         ),
       );
   }
-
-
 
   // ---------------------------------------------------------------------------
   // AI Plan Autocomplete (Step 6 - no dictation required)
@@ -1227,10 +1351,9 @@ class _ClinicalHistoryWizardPageState
     );
   }
 
-
-
   @override
   void dispose() {
+    _jobQueueSub?.close();
     _pageController.dispose();
     _motivoController.dispose();
     _antecedentesHeredofamiliaresController.dispose();
@@ -1891,46 +2014,6 @@ class _ClinicalHistoryWizardPageState
 
   @override
   Widget build(BuildContext context) {
-    // Listen to Job Queue Status (ÉPICA 18)
-    ref.listen<AsyncValue<JobStatusResponse?>>(jobQueueControllerProvider, (
-      prev,
-      next,
-    ) {
-      final status = next.value;
-
-      // Check if we should show the modal
-      // Status is valid AND (pending OR 'resuming' OR 'processing') AND not already shown
-      if (status != null &&
-          (status.isPending ||
-              status.status == 'resuming' ||
-              status.status == 'processing') &&
-          !_isQueueModalShown) {
-        if (mounted) _showQueueModal();
-      }
-      // Check for Terminal State
-      else if (status != null && status.isTerminal) {
-        if (_isQueueModalShown) {
-          if (mounted && Navigator.canPop(context)) {
-            Navigator.pop(context);
-          }
-        }
-
-        // Show Fallback Notice (Persistent SnackBar) if used
-        if (status.fallbackUsed) {
-          // Delay slightly to ensure modal is gone
-          Future.delayed(const Duration(milliseconds: 300), () {
-            if (mounted) _showFallbackSnackBar();
-          });
-        }
-      }
-      // Handle explicit null (reset)
-      else if (status == null && _isQueueModalShown) {
-        if (mounted && Navigator.canPop(context)) {
-          Navigator.pop(context);
-        }
-      }
-    });
-
     final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
     return PopScope(
@@ -2128,10 +2211,39 @@ class _ClinicalHistoryWizardPageState
                               },
                             ),
 
+                          // AI Fallback Banner
+                          // Shows when MedGemma fails and standard engine (OpenAI) is used
+                          if (!keyboardOpen &&
+                              _structuredFieldsV1?['source'] == 'fallback' &&
+                              !_fallbackBannerDismissed)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                DocsoftSpacing.md,
+                                DocsoftSpacing.md,
+                                DocsoftSpacing.md,
+                                0,
+                              ),
+                              child: DocsoftAiFallbackBanner(
+                                fallbackReason:
+                                    _structuredFieldsV1?['fallbackReason']
+                                        as String? ??
+                                    'No disponible',
+                                onDismiss: () {
+                                  setState(() {
+                                    _fallbackBannerDismissed = true;
+                                  });
+                                },
+                                onShowDetails: _showFallbackDetailsSheet,
+                              ),
+                            ),
+
                           // AI dictation banner - Stitch style with states
                           if (!keyboardOpen &&
                               _dictationStatus == DictationStatus.available &&
-                              !_bannerDismissed)
+                              !_bannerDismissed &&
+                              // Only show if fallback banner is NOT active/visible
+                              !(_structuredFieldsV1?['source'] == 'fallback' &&
+                                  !_fallbackBannerDismissed))
                             Padding(
                               padding: const EdgeInsets.fromLTRB(
                                 DocsoftSpacing.md,
@@ -2161,30 +2273,30 @@ class _ClinicalHistoryWizardPageState
                               child: Form(
                                 key: _formKey,
                                 child: PageView(
-                                controller: _pageController,
-                                physics: const NeverScrollableScrollPhysics(),
-                                onPageChanged: (page) {
-                                  ScaffoldMessenger.of(
-                                    context,
-                                  ).clearSnackBars();
-                                  setState(() {
-                                    _currentStep = page;
-                                  });
-                                },
-                                children: [
-                                  _buildStep0MotivoConsulta(),
-                                  _buildStep1AntecedentesHeredofamiliares(),
-                                  _buildStep2AntecedentesNoPatologicos(),
-                                  _buildStep3AntecedentesPatologicos(),
-                                  _buildStep4PadecimientoActual(),
-                                  _buildStep5ExploracionOrl(),
-                                  _buildStep6Attachments(),
-                                  _buildStep7DiagnosticoPlan(),
-                                ],
+                                  controller: _pageController,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  onPageChanged: (page) {
+                                    ScaffoldMessenger.of(
+                                      context,
+                                    ).clearSnackBars();
+                                    setState(() {
+                                      _currentStep = page;
+                                    });
+                                  },
+                                  children: [
+                                    _buildStep0MotivoConsulta(),
+                                    _buildStep1AntecedentesHeredofamiliares(),
+                                    _buildStep2AntecedentesNoPatologicos(),
+                                    _buildStep3AntecedentesPatologicos(),
+                                    _buildStep4PadecimientoActual(),
+                                    _buildStep5ExploracionOrl(),
+                                    _buildStep6Attachments(),
+                                    _buildStep7DiagnosticoPlan(),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
                         ],
                       ),
                     ),
@@ -2351,43 +2463,43 @@ class _ClinicalHistoryWizardPageState
   }
 
   // Step 0: Motivo de consulta
-Widget _buildStep0MotivoConsulta() {
-  return _buildScrollableStep(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-      const SizedBox(height: 8),
-      GuidedTextArea(
-        controller: _motivoController,
-        label: 'Motivo de consulta',
-        hintText: 'Ej: Dolor de oido derecho persistente desde hace 3 dias...',
-        maxLines: 8,
-        minLines: 4,
-        onDictate: () => _handleFieldDictation(_motivoController),
-        quickActions: const [
-          QuickAction(
-            label: 'Revision',
-            text: 'Revision de rutina',
-            icon: Icons.check,
-          ),
-          QuickAction(
-            label: 'Seguimiento',
-            text: 'Seguimiento de tratamiento',
-            icon: Icons.sync,
+  Widget _buildStep0MotivoConsulta() {
+    return _buildScrollableStep(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 8),
+          GuidedTextArea(
+            controller: _motivoController,
+            label: 'Motivo de consulta',
+            hintText:
+                'Ej: Dolor de oido derecho persistente desde hace 3 dias...',
+            maxLines: 8,
+            minLines: 4,
+            onDictate: () => _handleFieldDictation(_motivoController),
+            quickActions: const [
+              QuickAction(
+                label: 'Revision',
+                text: 'Revision de rutina',
+                icon: Icons.check,
+              ),
+              QuickAction(
+                label: 'Seguimiento',
+                text: 'Seguimiento de tratamiento',
+                icon: Icons.sync,
+              ),
+            ],
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return 'Ingresa el motivo de consulta';
+              }
+              return null;
+            },
           ),
         ],
-        validator: (value) {
-          if (value == null || value.trim().isEmpty) {
-            return 'Ingresa el motivo de consulta';
-          }
-          return null;
-        },
       ),
-    ],
-    ),
-  );
-}
-
+    );
+  }
 
   // Step 1: Antecedentes heredofamiliares
   Widget _buildStep1AntecedentesHeredofamiliares() {
@@ -2395,21 +2507,21 @@ Widget _buildStep0MotivoConsulta() {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-        const SizedBox(height: 8),
-        GuidedTextArea(
-          controller: _antecedentesHeredofamiliaresController,
-          label: 'Antecedentes heredofamiliares',
-          guidanceHints: ClinicalHints.familyHistory,
-          maxLines: 10,
-          minLines: 6,
-          onDictate: () =>
-              _handleFieldDictation(_antecedentesHeredofamiliaresController),
-          quickActions: QuickActionButtons.historyActions,
-        ),
-      ],
-    ),
-  );
-}
+          const SizedBox(height: 8),
+          GuidedTextArea(
+            controller: _antecedentesHeredofamiliaresController,
+            label: 'Antecedentes heredofamiliares',
+            guidanceHints: ClinicalHints.familyHistory,
+            maxLines: 10,
+            minLines: 6,
+            onDictate: () =>
+                _handleFieldDictation(_antecedentesHeredofamiliaresController),
+            quickActions: QuickActionButtons.historyActions,
+          ),
+        ],
+      ),
+    );
+  }
 
   // Step 2: Antecedentes personales NO patologicos
   Widget _buildStep2AntecedentesNoPatologicos() {
@@ -2417,21 +2529,21 @@ Widget _buildStep0MotivoConsulta() {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-        const SizedBox(height: 8),
-        GuidedTextArea(
-          controller: _antecedentesNoPatologicosController,
-          label: 'Antecedentes personales NO patologicos',
-          guidanceHints: ClinicalHints.nonPathologicalHistory,
-          maxLines: 10,
-          minLines: 6,
-          onDictate: () =>
-              _handleFieldDictation(_antecedentesNoPatologicosController),
-          quickActions: QuickActionButtons.historyActions,
-        ),
-      ],
-    ),
-  );
-}
+          const SizedBox(height: 8),
+          GuidedTextArea(
+            controller: _antecedentesNoPatologicosController,
+            label: 'Antecedentes personales NO patologicos',
+            guidanceHints: ClinicalHints.nonPathologicalHistory,
+            maxLines: 10,
+            minLines: 6,
+            onDictate: () =>
+                _handleFieldDictation(_antecedentesNoPatologicosController),
+            quickActions: QuickActionButtons.historyActions,
+          ),
+        ],
+      ),
+    );
+  }
 
   // Step 3: Antecedentes personales patologicos
   Widget _buildStep3AntecedentesPatologicos() {
@@ -2439,21 +2551,21 @@ Widget _buildStep0MotivoConsulta() {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-        const SizedBox(height: 8),
-        GuidedTextArea(
-          controller: _antecedentesPatologicosController,
-          label: 'Antecedentes personales patologicos',
-          guidanceHints: ClinicalHints.pathologicalHistory,
-          maxLines: 12,
-          minLines: 8,
-          onDictate: () =>
-              _handleFieldDictation(_antecedentesPatologicosController),
-          quickActions: QuickActionButtons.historyActions,
-        ),
-      ],
-    ),
-  );
-}
+          const SizedBox(height: 8),
+          GuidedTextArea(
+            controller: _antecedentesPatologicosController,
+            label: 'Antecedentes personales patologicos',
+            guidanceHints: ClinicalHints.pathologicalHistory,
+            maxLines: 12,
+            minLines: 8,
+            onDictate: () =>
+                _handleFieldDictation(_antecedentesPatologicosController),
+            quickActions: QuickActionButtons.historyActions,
+          ),
+        ],
+      ),
+    );
+  }
 
   // Step 4: Padecimiento actual
   Widget _buildStep4PadecimientoActual() {
@@ -2461,38 +2573,38 @@ Widget _buildStep0MotivoConsulta() {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-        const SizedBox(height: 8),
-        GuidedTextArea(
-          controller: _padecimientoActualController,
-          label: 'Padecimiento actual',
-          hintText:
-              'Descripcion detallada del padecimiento actual, evolucion, sintomas...',
-          maxLines: 12,
-          minLines: 8,
-          onDictate: () =>
-              _handleFieldDictation(_padecimientoActualController),
-          quickActions: const [
-            QuickAction(
-              label: 'Agudo',
-              text: 'Inicio agudo',
-              icon: Icons.flash_on,
-            ),
-            QuickAction(
-              label: 'Cronico',
-              text: 'Evolucion cronica',
-              icon: Icons.timeline,
-            ),
-            QuickAction(
-              label: 'Progresivo',
-              text: 'Curso progresivo',
-              icon: Icons.trending_up,
-            ),
-          ],
-        ),
-      ],
-    ),
-  );
-}
+          const SizedBox(height: 8),
+          GuidedTextArea(
+            controller: _padecimientoActualController,
+            label: 'Padecimiento actual',
+            hintText:
+                'Descripcion detallada del padecimiento actual, evolucion, sintomas...',
+            maxLines: 12,
+            minLines: 8,
+            onDictate: () =>
+                _handleFieldDictation(_padecimientoActualController),
+            quickActions: const [
+              QuickAction(
+                label: 'Agudo',
+                text: 'Inicio agudo',
+                icon: Icons.flash_on,
+              ),
+              QuickAction(
+                label: 'Cronico',
+                text: 'Evolucion cronica',
+                icon: Icons.timeline,
+              ),
+              QuickAction(
+                label: 'Progresivo',
+                text: 'Curso progresivo',
+                icon: Icons.trending_up,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   // Step 5: Exploracion fisica ORL
   Widget _buildStep5ExploracionOrl() {
@@ -2649,7 +2761,7 @@ Widget _buildStep0MotivoConsulta() {
               ],
             ),
           ),
-        ], 
+        ],
       ),
     );
   }

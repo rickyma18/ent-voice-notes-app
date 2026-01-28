@@ -91,7 +91,8 @@ class StartupCoordinator extends _$StartupCoordinator {
   void onSplashVideoCompleted() {
     if (state != StartupPhase.splashActive) {
       Log.warning(
-        '[StartupCoordinator] onSplashVideoCompleted called in wrong phase: $state',
+        '[StartupCoordinator] onSplashVideoCompleted called in wrong phase: '
+        '$state',
       );
       return;
     }
@@ -161,7 +162,7 @@ class StartupCoordinator extends _$StartupCoordinator {
     }
 
     // Update the target route (router will pick this up)
-    ref.read(startupDestinationProvider.notifier).state = destination;
+    ref.read(startupDestinationProvider.notifier).setDestination(destination);
 
     // Mark startup as complete
     state = StartupPhase.completed;
@@ -182,4 +183,8 @@ class StartupCoordinator extends _$StartupCoordinator {
 class StartupDestination extends _$StartupDestination {
   @override
   String? build() => null;
+
+  void setDestination(String destination) {
+    state = destination;
+  }
 }

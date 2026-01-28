@@ -3,6 +3,21 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../core/logger/log.dart';
+import 'domain/sources/engine_setting_source.dart';
+import 'data/sources/engine_setting_source_impl.dart';
+import 'domain/scribe/repositories/ai_engine_router_repository.dart';
+import 'data/scribe/repositories/ai_engine_router_repository_impl.dart';
+
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/di/dependency_injection.dart';
+import 'domain/sources/engine_setting_source.dart';
+import 'data/sources/engine_setting_source_impl.dart';
+import 'domain/entities/ai_engine.dart';
+import 'domain/scribe/repositories/ai_engine_router_repository.dart';
+import 'data/scribe/repositories/ai_engine_router_repository_impl.dart';
 
 import '../../core/base/result.dart';
 import 'application/note_ai_service.dart';
@@ -741,33 +756,80 @@ final advancedEncounterExtractorRepositoryProvider =
 /// Orchestrates the full Scribe V2 pipeline:
 /// Stage 1: Transcription → Stage 1.5: Medicalization → Stage 2: Extraction → Stage 3: Composition
 ///
-/// ÉPICA 10 - MedGemma Integration:
-/// - Injects advancedExtractorRepository when available (Pro + configured + flag ON)
-/// - Injects featureFlags for pipeline behavior control
-/// - ExtractorPipelineSelector handles automatic fallback on timeout/error
-///
-/// IMPORTANT: advancedExtractorRepository is NOT read for free users (fail-closed).
-/// The conditional in advancedEncounterExtractorRepositoryProvider ensures this.
+/// AI Engine Routing:
+/// - Uses [AiEngineRouterRepository] to route extraction requests between
+///   MedGemma (Advanced) and OpenAI (Basic) based on user settings.
 ///
 /// keepAlive: true to prevent disposal during long-running pipeline execution.
 @Riverpod(keepAlive: true)
 ProcessEncounterUseCase processEncounterUseCase(Ref ref) {
-  // Get advanced extractor (null for free users or if not configured)
-  // IMPORTANT: This is the ONLY place that reads advancedEncounterExtractorRepositoryProvider
-  final advancedExtractor = ref.watch(
-    advancedEncounterExtractorRepositoryProvider,
-  );
-
-  // Get feature flags for pipeline behavior
+  // Get feature flags for pipeline behavior (logging, etc.)
   final featureFlags = ref.watch(scribeFeatureFlagsProvider);
 
   return ProcessEncounterUseCase(
     transcriptionRepository: ref.watch(transcriptionRepositoryProvider),
-    extractorRepository: ref.watch(encounterExtractorRepositoryProvider),
+    // Route extraction through the AI Engine Router
+    extractorRepository: ref.watch(aiEngineRouterRepositoryProvider),
     composerRepository: ref.watch(noteComposerRepositoryProvider),
     medicalizationService: ref.watch(medicalizationServiceProvider),
-    advancedExtractorRepository: advancedExtractor,
     featureFlags: featureFlags,
+  );
+}
+
+/// Engine Setting Source provider.
+@Riverpod(keepAlive: true)
+EngineSettingSource engineSettingSource(Ref ref) {
+  return EngineSettingSourceImpl(
+    ref.watch(initializedSharedPreferencesProvider),
+  );
+}
+
+/// Notifier to manage and expose the current AI Engine selection.
+///
+/// UI can retrieve the current engine via:
+/// `ref.watch(currentAiEngineProvider)` -> AsyncValue<AiEngine>
+///
+/// UI can update the engine via:
+/// `ref.read(currentAiEngineProvider.notifier).setEngine(AiEngine.medgemma)`
+@Riverpod(keepAlive: true)
+class CurrentAiEngine extends _$CurrentAiEngine {
+  @override
+  Future<AiEngine> build() async {
+    final source = ref.watch(engineSettingSourceProvider);
+    return source.getEngine();
+  }
+
+  Future<void> setEngine(AiEngine engine) async {
+    final source = ref.read(engineSettingSourceProvider);
+    await source.setEngine(engine);
+    // Invalidate self to reload or just update state
+    state = AsyncData(engine);
+  }
+}
+
+/// AI Engine Router Repository Provider.
+///
+/// Determines which extractor to use (OpenAI vs MedGemma) based on user preference.
+@Riverpod(keepAlive: true)
+AiEngineRouterRepository aiEngineRouterRepository(Ref ref) {
+  final openAiRepo = ref.watch(encounterExtractorRepositoryProvider);
+
+  final EncounterExtractorRepository? medGemmaRepoOrNull = ref.watch(
+    advancedEncounterExtractorRepositoryProvider,
+  );
+
+  final medGemmaRepo = medGemmaRepoOrNull ?? openAiRepo;
+
+  if (medGemmaRepoOrNull == null) {
+    Log.info(
+      '[AiEngineRouter] MedGemma unavailable → falling back to OpenAI extractor',
+    );
+  }
+
+  return AiEngineRouterRepositoryImpl(
+    engineSettingSource: ref.watch(engineSettingSourceProvider),
+    medgemmaRepository: medGemmaRepo,
+    openAiRepository: openAiRepo,
   );
 }
 

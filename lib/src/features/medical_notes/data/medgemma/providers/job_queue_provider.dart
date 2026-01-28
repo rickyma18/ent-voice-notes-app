@@ -146,13 +146,23 @@ class JobQueueNotifier extends StateNotifier<JobQueueState> {
 
       return response.jobId;
     } on MedGemmaBusyException catch (e) {
-      Log.warning('[JOB-QUEUE] User busy: ${e.existingJobId}');
+      final existingId = e.existingJobId;
+      Log.warning('[JOB-QUEUE] User busy: $existingId');
+
+      if (existingId == null) {
+        state = const JobQueueState(
+          status: JobQueueStatus.failed,
+          errorMessage: 'Servidor ocupado, intenta más tarde.',
+        );
+        return null;
+      }
+
       state = JobQueueState(
-        jobId: e.existingJobId,
+        jobId: existingId,
         status: JobQueueStatus.busy,
         errorMessage: 'Ya tienes un trabajo en proceso',
       );
-      return e.existingJobId;
+      return existingId;
     } catch (e) {
       Log.error('[JOB-QUEUE] Enqueue error: $e');
       state = JobQueueState(

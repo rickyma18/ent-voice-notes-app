@@ -12,8 +12,9 @@ import '../../medical_notes_providers.dart';
 import '../widgets/evidence_debug_sheet.dart'; // For Scribe Pipeline Hook
 
 import '../controllers/medical_notes_controller.dart'; // For Scribe Pipeline Hook
-
+import '../../domain/entities/ai_engine.dart';
 import '../../../../presentation/core/router/route_names.dart';
+
 import '../../../../ui/docsoft_ui.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 import '../../application/audio_recording_service.dart';
@@ -629,6 +630,7 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
                     'Asistente de dictado',
                     style: DocsoftTextStyles.appBarTitle,
                   ),
+                  const Spacer(),
                 ],
               ),
             ),
@@ -820,50 +822,16 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
   }
 
   Widget _buildContextSelector() {
-    return Column(
-      children: [
-        // Context indicators row
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _buildContextIndicator(
-              icon: Icons.description_outlined,
-              label: 'Nota médica',
-            ),
-            Container(
-              height: 12,
-              width: 1,
-              margin: const EdgeInsets.symmetric(horizontal: DocsoftSpacing.md),
-              color: DocsoftColors.border,
-            ),
-            _buildContextIndicator(
-              icon: Icons.forum_outlined,
-              label: 'Entrevista',
-            ),
-          ],
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: DocsoftSpacing.sm),
+        child: _AiEnginePill(
+          enabled:
+              (_status == DictationStatus.idle ||
+                  _status == DictationStatus.ready) &&
+              !_isGenerating,
         ),
-        const SizedBox(height: DocsoftSpacing.sm),
-      ],
-    );
-  }
-
-  Widget _buildContextIndicator({
-    required IconData icon,
-    required String label,
-  }) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: DocsoftColors.textSecondary),
-        const SizedBox(width: DocsoftSpacing.xs),
-        Text(
-          label,
-          style: DocsoftTextStyles.caption.copyWith(
-            color: DocsoftColors.textSecondary,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -1266,5 +1234,246 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
         ),
       );
     }
+  }
+}
+
+/// Pill widget that shows current AI Engine and opens selector sheet.
+class _AiEnginePill extends ConsumerWidget {
+  const _AiEnginePill({this.enabled = true});
+
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final aiEngineAsync = ref.watch(currentAiEngineProvider);
+
+    // Watch parent state to disable during processing
+    final isLoading = aiEngineAsync.isLoading;
+    final isInteractive = enabled && !isLoading;
+
+    final currentEngine = aiEngineAsync.valueOrNull ?? AiEngine.openai;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isInteractive
+            ? () {
+                showModalBottomSheet(
+                  context: context,
+                  backgroundColor: Colors.transparent,
+                  isScrollControlled: true,
+                  builder: (context) => const _AiEngineSelectorSheet(),
+                );
+              }
+            : null,
+        borderRadius: BorderRadius.circular(DocsoftRadii.full),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: DocsoftSpacing.sm,
+            vertical: 6,
+          ),
+          decoration: BoxDecoration(
+            color: isInteractive
+                ? DocsoftColors.surfaceAlt
+                : DocsoftColors.surfaceAlt.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(DocsoftRadii.full),
+            border: Border.all(
+              color: isInteractive
+                  ? DocsoftColors.border
+                  : DocsoftColors.border.withOpacity(0.5),
+            ),
+          ),
+          child: Opacity(
+            opacity: isInteractive ? 1.0 : 0.6,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.auto_fix_high,
+                  size: 16,
+                  color: DocsoftColors.primary,
+                ),
+                const SizedBox(width: 6),
+                if (isLoading)
+                  const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  Text(
+                    currentEngine == AiEngine.medgemma
+                        ? 'MedGemma (Backend)'
+                        : 'OpenAI (Direct)',
+                    style: DocsoftTextStyles.caption.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: DocsoftColors.textSecondary,
+                    ),
+                  ),
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.expand_more,
+                  size: 16,
+                  color: DocsoftColors.textTertiary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Bottom sheet for selecting AI Engine.
+class _AiEngineSelectorSheet extends ConsumerWidget {
+  const _AiEngineSelectorSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final currentEngine =
+        ref.watch(currentAiEngineProvider).valueOrNull ?? AiEngine.openai;
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: DocsoftColors.surface,
+        borderRadius: DocsoftRadii.bottomSheet,
+      ),
+      padding: const EdgeInsets.fromLTRB(
+        DocsoftSpacing.lg, // 24
+        DocsoftSpacing.sm, // 8
+        DocsoftSpacing.lg, // 24
+        DocsoftSpacing.xl, // 32
+      ),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: DocsoftSpacing.lg),
+                decoration: BoxDecoration(
+                  color: DocsoftColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+
+            // Header
+            Text('Motor de IA', style: DocsoftTextStyles.title),
+            const SizedBox(height: 4),
+            Text(
+              'Selecciona el motor para estructurar la nota.',
+              style: DocsoftTextStyles.body.copyWith(
+                color: DocsoftColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: DocsoftSpacing.lg),
+
+            // Option 1: MedGemma
+            _EngineTile(
+              title: 'MedGemma (Backend)',
+              subtitle: 'Más clínico cuando está disponible.',
+              isSelected: currentEngine == AiEngine.medgemma,
+              onTap: () {
+                ref
+                    .read(currentAiEngineProvider.notifier)
+                    .setEngine(AiEngine.medgemma);
+                Navigator.pop(context);
+              },
+            ),
+
+            const SizedBox(height: DocsoftSpacing.sm),
+
+            // Option 2: OpenAI
+            _EngineTile(
+              title: 'OpenAI (Direct)',
+              subtitle: 'Más estable como opción estándar.',
+              isSelected: currentEngine == AiEngine.openai,
+              onTap: () {
+                ref
+                    .read(currentAiEngineProvider.notifier)
+                    .setEngine(AiEngine.openai);
+                Navigator.pop(context);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EngineTile extends StatelessWidget {
+  const _EngineTile({
+    required this.title,
+    required this.subtitle,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(DocsoftRadii.md),
+      child: Container(
+        padding: const EdgeInsets.all(DocsoftSpacing.md),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? DocsoftColors.primary.withValues(alpha: 0.05)
+              : null,
+          borderRadius: BorderRadius.circular(DocsoftRadii.md),
+          border: Border.all(
+            color: isSelected ? DocsoftColors.primary : DocsoftColors.border,
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: DocsoftTextStyles.body.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: isSelected
+                          ? DocsoftColors.primary
+                          : DocsoftColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: DocsoftTextStyles.caption.copyWith(
+                      color: DocsoftColors.textTertiary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isSelected)
+              Icon(Icons.check_circle, color: DocsoftColors.primary, size: 20)
+            else
+              Icon(
+                Icons.radio_button_unchecked,
+                color: DocsoftColors.textTertiary,
+                size: 20,
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -540,10 +540,17 @@ class MedicalNotesController extends _$MedicalNotesController {
     meta['fallbackUsed'] = true;
     suggestions['metadata'] = meta;
 
+    Log.warning(
+      '[AI] Fallback used reason=backend_unreachable_or_error engine=openai_direct',
+    );
+
     return {
       'suggestions': suggestions,
-      'source': kSourceLegacy,
-      'source_original': kSourceFallback,
+      'source': 'fallback',
+      // Metadata for UI Banner
+      'source_original': kSourceFallback, // Triggers source=='fallback' check
+      'fallbackReason': 'backend_unreachable',
+      'fallbackEngine': 'openai_direct',
     };
   }
 

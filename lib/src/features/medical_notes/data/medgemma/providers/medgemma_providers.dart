@@ -110,7 +110,7 @@ final medGemmaDioProvider = Provider<Dio?>((ref) {
 
   return Dio(
     BaseOptions(
-      connectTimeout: timeout,
+      connectTimeout: const Duration(seconds: 5), // Fail fast on connection
       receiveTimeout: timeout,
       sendTimeout: timeout,
       // PHI-safe: No logging interceptors added here
@@ -147,7 +147,8 @@ final medGemmaClientProvider = Provider<MedGemmaServiceClient?>((ref) {
     dio: dio,
     baseUrl: baseUrl,
     tokenProvider: tokenProvider,
-    timeout: timeout,
+    connectTimeout: const Duration(seconds: 5), // Fail fast
+    readWriteTimeout: timeout, // Configurable (30s dev, 5s prod)
   );
 });
 
@@ -194,21 +195,18 @@ final medGemmaExtractorRepositoryProvider =
 ///   // Use result.structured and result.metadata
 /// }
 /// ```
-final finalizeServiceProvider =
-    Provider<FinalizeService?>((ref) {
-      final client = ref.watch(medGemmaClientProvider);
+final finalizeServiceProvider = Provider<FinalizeService?>((ref) {
+  final client = ref.watch(medGemmaClientProvider);
 
-      // FAIL-CLOSED: If client is null, finalize is disabled
-      if (client == null) {
-        Log.warning(
-          '[MEDGEMMA] Provider: FinalizeService disabled (no client)',
-        );
-        return null;
-      }
+  // FAIL-CLOSED: If client is null, finalize is disabled
+  if (client == null) {
+    Log.warning('[MEDGEMMA] Provider: FinalizeService disabled (no client)');
+    return null;
+  }
 
-      Log.info('[MEDGEMMA] Provider: FinalizeService enabled');
-      return FinalizeService(client: client);
-    });
+  Log.info('[MEDGEMMA] Provider: FinalizeService enabled');
+  return FinalizeService(client: client);
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EXAMPLE USAGE (for ÉPICA 10)

@@ -22,7 +22,8 @@ class Logout extends _$Logout {
     try {
       await ref.read(logoutUseCaseProvider).call();
       // Invalidate all repository providers to remove cached data
-      ref.read(resetRepositoryUseCaseProvider).call(ref);
+      // Note: We deliberately do NOT clear SharedPreferences (including AI Engine selection)
+      // so that user preferences persist across sessions/logouts.
 
       state = const AsyncValue.data(true);
     } catch (e) {

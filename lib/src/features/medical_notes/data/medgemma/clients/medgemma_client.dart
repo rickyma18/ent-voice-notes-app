@@ -119,7 +119,8 @@ class MedGemmaServiceClient {
     required String baseUrl,
     required AuthTokenProvider tokenProvider,
     RequestIdGenerator? requestIdGenerator,
-    Duration timeout = const Duration(seconds: 5),
+    Duration connectTimeout = const Duration(seconds: 5),
+    Duration readWriteTimeout = const Duration(seconds: 30),
   }) : _dio = dio,
        _baseUrl = baseUrl.endsWith('/')
            ? baseUrl.substring(0, baseUrl.length - 1)
@@ -127,13 +128,15 @@ class MedGemmaServiceClient {
        _tokenProvider = tokenProvider,
        _requestIdGenerator =
            requestIdGenerator ?? const UuidRequestIdGenerator(),
-       _timeout = timeout;
+       _connectTimeout = connectTimeout,
+       _readWriteTimeout = readWriteTimeout;
 
   final Dio _dio;
   final String _baseUrl;
   final AuthTokenProvider _tokenProvider;
   final RequestIdGenerator _requestIdGenerator;
-  final Duration _timeout;
+  final Duration _connectTimeout;
+  final Duration _readWriteTimeout;
 
   /// Extracts clinical facts from a transcript.
   ///
@@ -160,7 +163,7 @@ class MedGemmaServiceClient {
     // Generate request ID for correlation
     final requestId = _requestIdGenerator.generate();
     final isDev = MedGemmaConfig.isDevAuthMode;
-    final timeoutSeconds = _timeout.inSeconds;
+    final timeoutSeconds = _readWriteTimeout.inSeconds;
 
     // Check for config mismatch: Local URL but Prod/Firebase Auth
     final isLocalUrl =
@@ -203,8 +206,8 @@ class MedGemmaServiceClient {
             'X-Request-ID': requestId,
           },
           responseType: ResponseType.json,
-          sendTimeout: _timeout,
-          receiveTimeout: _timeout,
+          sendTimeout: _readWriteTimeout,
+          receiveTimeout: _readWriteTimeout,
         ),
       );
 
@@ -293,7 +296,7 @@ class MedGemmaServiceClient {
           e.type == DioExceptionType.sendTimeout) {
         Log.error(
           '[MEDGEMMA] request fail type=timeout elapsedMs=$elapsedMs '
-          'timeoutSetting=${_timeout.inSeconds}s message=${e.message}',
+          'timeoutSetting=${_readWriteTimeout.inSeconds}s message=${e.message}',
         );
       } else if (e.type == DioExceptionType.connectionError) {
         Log.error(
@@ -340,8 +343,8 @@ class MedGemmaServiceClient {
           'X-Request-ID': requestId,
         },
         responseType: ResponseType.json,
-        sendTimeout: _timeout,
-        receiveTimeout: _timeout,
+        sendTimeout: _readWriteTimeout,
+        receiveTimeout: _readWriteTimeout,
       ),
     );
     return _parseResponseData(response.data) ?? {};
@@ -383,7 +386,7 @@ class MedGemmaServiceClient {
     // Generate request ID for correlation
     final requestId = _requestIdGenerator.generate();
     final isDev = MedGemmaConfig.isDevAuthMode;
-    final timeoutSeconds = _timeout.inSeconds;
+    final timeoutSeconds = _readWriteTimeout.inSeconds;
 
     // PHI-safe logging: Log endpoint and timeout only
     Log.info(
@@ -409,8 +412,8 @@ class MedGemmaServiceClient {
             'X-Request-ID': requestId,
           },
           responseType: ResponseType.json,
-          sendTimeout: _timeout,
-          receiveTimeout: _timeout,
+          sendTimeout: _readWriteTimeout,
+          receiveTimeout: _readWriteTimeout,
         ),
       );
 
@@ -534,7 +537,7 @@ class MedGemmaServiceClient {
           e.type == DioExceptionType.sendTimeout) {
         Log.error(
           '[MEDGEMMA-V1] request fail type=timeout elapsedMs=$elapsedMs '
-          'timeoutSetting=${_timeout.inSeconds}s message=${e.message}',
+          'timeoutSetting=${_readWriteTimeout.inSeconds}s message=${e.message}',
         );
       } else if (e.type == DioExceptionType.connectionError) {
         Log.error(
@@ -845,6 +848,13 @@ class MedGemmaServiceClient {
     Log.info('[MEDGEMMA-QUEUE] enqueue start requestId=$requestId');
 
     try {
+      // PHI-safe debug: Log effective timeouts
+      Log.info(
+        '[MEDGEMMA-QUEUE] timeouts: '
+        'connect=${_connectTimeout.inSeconds}s '
+        'readWrite=${_readWriteTimeout.inSeconds}s',
+      );
+
       final response = await _dio.post<dynamic>(
         '$_baseUrl/v1/jobs',
         data: body,
@@ -856,9 +866,10 @@ class MedGemmaServiceClient {
             'X-Request-ID': requestId,
           },
           responseType: ResponseType.json,
-          sendTimeout: _timeout,
-          receiveTimeout: _timeout,
-          // Accept 202 as success
+          // Use longer timeout for payload processing
+          sendTimeout: _readWriteTimeout,
+          receiveTimeout: _readWriteTimeout,
+          // Accept 202 as success, 409 for Busy
           validateStatus: (status) =>
               status != null &&
               (status >= 200 && status < 300 || status == 409),
@@ -866,15 +877,63 @@ class MedGemmaServiceClient {
       );
 
       // Handle 409 Conflict - user already has job
+      // Handle 409 Conflict - user already has job
       if (response.statusCode == 409) {
-        final data = _parseResponseData(response.data);
-        final existingJobId = data?['existingJobId'] as String? ?? 'unknown';
+        final data = _parseResponseData(response.data) ?? {};
+
+        // Extract error code if available
+        String? errorCode;
+        if (data['error'] is Map) {
+          errorCode = data['error']['code'] as String?;
+        }
+
+        // Priority 1: Root existingJobId
+        String? existingJobId = data['existingJobId'] as String?;
+
+        // Priority 2: Error object existingJobId
+        if (existingJobId == null && data['error'] is Map) {
+          existingJobId = data['error']['existingJobId'] as String?;
+        }
+
+        // Priority 3: Regex from error message (UUID)
+        if (existingJobId == null) {
+          final errorMsg = data['error'] is Map
+              ? data['error']['message'] as String?
+              : null;
+          if (errorMsg != null) {
+            // Standard UUID regex (case insensitive)
+            final uuidRegExp = RegExp(
+              r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+              caseSensitive: false,
+            );
+            final match = uuidRegExp.firstMatch(errorMsg);
+            if (match != null) {
+              existingJobId = match.group(0);
+            }
+          }
+        }
+
+        // Guard Rail: Strictly validate strict UUID format and treat garbage as null.
+        if (existingJobId != null) {
+          final exactUuidRegExp = RegExp(
+            r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+            caseSensitive: false,
+          );
+          if (!exactUuidRegExp.hasMatch(existingJobId)) {
+            Log.warning(
+              '[MEDGEMMA-QUEUE] Rejected non-UUID existingJobId: $existingJobId',
+            );
+            existingJobId = null;
+          }
+        }
+
         Log.warning(
-          '[MEDGEMMA-QUEUE] enqueue blocked: user busy, existingJobId=$existingJobId',
+          '[MEDGEMMA-QUEUE] enqueue blocked: user busy, existingJobId=$existingJobId, code=$errorCode',
         );
         throw MedGemmaBusyException(
           existingJobId: existingJobId,
           message: 'User already has a job in progress',
+          code: errorCode,
         );
       }
 
@@ -932,8 +991,8 @@ class MedGemmaServiceClient {
             'Content-Type': 'application/json',
           },
           responseType: ResponseType.json,
-          sendTimeout: _timeout,
-          receiveTimeout: _timeout,
+          sendTimeout: _readWriteTimeout,
+          receiveTimeout: _readWriteTimeout,
         ),
       );
 
@@ -1328,7 +1387,7 @@ class MedGemmaFinalizeMetadata {
   /// "ok" | "warning" | "drift"
   final String? contractStatus;
 
-  /// Canonical warnings: empty_transcript, unresolved_conflict:<topic>, etc.
+  /// Canonical warnings: empty_transcript, unresolved_conflict:{topic}, etc.
   final List<String>? contractWarnings;
 
   /// Whether transcript evidence was used in finalization.
@@ -1428,14 +1487,25 @@ class MedGemmaBusyException implements Exception {
   const MedGemmaBusyException({
     required this.existingJobId,
     required this.message,
+    this.code,
   });
 
   /// The ID of the existing job that's blocking.
-  final String existingJobId;
+  ///
+  /// Can be null if the backend reports 409 but doesn't provide the ID.
+  final String? existingJobId;
   final String message;
 
+  /// Optional error code from the backend (PHI-safe).
+  final String? code;
+
+  /// Compatibility getter: returns existingJobId or "unknown" if null.
+  /// Use this to prevent breaking changes in consumers expecting non-null.
+  String get existingJobIdOrUnknown => existingJobId ?? 'unknown';
+
   @override
-  String toString() => 'MedGemmaBusyException: $message (job: $existingJobId)';
+  String toString() =>
+      'MedGemmaBusyException: $message (code: $code, job: $existingJobIdOrUnknown)';
 }
 
 /// Exception thrown when no bearer token is available.

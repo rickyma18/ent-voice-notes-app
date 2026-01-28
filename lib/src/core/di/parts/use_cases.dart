@@ -25,11 +25,10 @@ SetCurrentLocaleUseCase setCurrentLocaleUseCase(Ref ref) {
   return SetCurrentLocaleUseCase(ref.read(localeRepositoryProvider));
 }
 
-@riverpod
-ResetRepositoryUseCase resetRepositoryUseCase(Ref ref) {
-  return const ResetRepositoryUseCase();
-}
-
+//@riverpod
+//ResetRepositoryUseCase resetRepositoryUseCase(Ref ref) {
+//  return const ResetRepositoryUseCase();
+//}
 @riverpod
 GetOnboardingStatusUseCase getOnboardingStatusUseCase(Ref ref) {
   return GetOnboardingStatusUseCase(ref.read(routerRepositoryProvider));

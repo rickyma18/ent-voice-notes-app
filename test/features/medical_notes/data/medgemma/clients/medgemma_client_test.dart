@@ -46,7 +46,8 @@ void main() {
       baseUrl: baseUrl,
       tokenProvider: mockTokenProvider,
       requestIdGenerator: mockRequestIdGenerator,
-      timeout: const Duration(seconds: 5),
+      connectTimeout: const Duration(seconds: 5),
+      readWriteTimeout: const Duration(seconds: 5),
     );
   });
 
@@ -284,7 +285,7 @@ void main() {
           baseUrl: baseUrl,
           tokenProvider: mockTokenProvider,
           requestIdGenerator: mockRequestIdGenerator,
-          timeout: customTimeout,
+          readWriteTimeout: customTimeout,
         );
 
         when(

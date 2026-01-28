@@ -36,7 +36,7 @@ import '../widgets/navigation_shell.dart';
 import 'route_error_page.dart';
 import 'route_names.dart';
 import 'router_refresh_notifier.dart';
-import 'router_state/router_state_provider.dart';
+// import 'router_state/router_state_provider.dart'; // Deprecated in favor of startupDestinationProvider
 import 'routes.dart';
 
 part 'parts/authentication_routes.dart';
@@ -114,7 +114,7 @@ GoRouter goRouter(Ref ref) {
 
       // Handle startup routes (/, /splash, /onboarding)
       if ([Routes.initial, Routes.splash, Routes.onboarding].contains(path)) {
-        final targetRoute = ref.read(routerStateProvider);
+        final targetRoute = ref.read(startupDestinationProvider);
 
         if (targetRoute != null && targetRoute != path) {
           Log.info('[Router] Redirecting startup route to: $targetRoute');
