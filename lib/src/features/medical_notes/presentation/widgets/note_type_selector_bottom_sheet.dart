@@ -7,20 +7,13 @@ import '../../../../presentation/core/router/route_names.dart';
 import '../../../../ui/docsoft_ui.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 
-/// Shows a bottom sheet for selecting the type of medical note to create.
+/// Shows a bottom sheet for selecting how to create a new medical note.
 ///
-/// This is the unified entry point for creating notes, ensuring:
-/// - Dictation Assist is the recommended option (RouteNames.dictationAssist)
-/// - Clinical History notes go to the wizard (RouteNames.clinicalHistoryWizard)
-/// - Surgical Notes go to the wizard (RouteNames.surgicalNoteWizard)
+/// Unified entry point:
+/// - Voice-assisted note (recommended) -> RouteNames.dictationAssist
+/// - Manual wizard note -> RouteNames.clinicalHistoryWizard
 ///
 /// Returns `true` if a note was created, `false` or `null` otherwise.
-///
-/// Usage:
-/// ```dart
-/// final created = await showNoteTypeSelectorBottomSheet(context, patient);
-/// if (created == true) { /* refresh list */ }
-/// ```
 Future<bool?> showNoteTypeSelectorBottomSheet(
   BuildContext context,
   PatientEntity patient,
@@ -71,7 +64,7 @@ class _NoteTypeSelectorContent extends StatelessWidget {
 
               // Title
               Text(
-                '¿Cómo quieres crear la nota?',
+                'Crear nueva nota',
                 style: DocsoftTextStyles.title,
                 textAlign: TextAlign.center,
               ),
@@ -87,14 +80,15 @@ class _NoteTypeSelectorContent extends StatelessWidget {
               ),
               const SizedBox(height: DocsoftSpacing.xl),
 
-              // Option 1: Dictation (Recommended)
+              // Option 1: Voice-assisted (Recommended)
               DocsoftActionTile(
                 icon: Icons.mic_rounded,
-                title: '⚡ Dictar Nota (Recomendado)',
+                title: 'Nota médica asistida por voz',
                 description:
-                    'La forma más rápida. Graba libremente y la IA transcribirá la nota.',
+                    'Recomendado. Graba la consulta y revisa/edita la nota al final.',
                 isHighlighted: true,
-                semanticLabel: 'Dictar nota, opción recomendada',
+                semanticLabel:
+                    'Nota médica asistida por voz, opción recomendada',
                 onTap: () async {
                   final created = await context.pushNamed<bool>(
                     RouteNames.dictationAssist,
@@ -107,13 +101,13 @@ class _NoteTypeSelectorContent extends StatelessWidget {
               ),
               const SizedBox(height: DocsoftSpacing.itemSpacing),
 
-              // Option 2: Clinical History
+              // Option 2: Manual wizard
               DocsoftActionTile(
                 icon: Icons.assignment_outlined,
-                title: 'Historia clínica',
+                title: 'Nota médica manual',
                 description:
-                    'Formulario guiado para documentar consultas paso a paso.',
-                semanticLabel: 'Historia clínica',
+                    'Llena la nota paso a paso con un formulario guiado.',
+                semanticLabel: 'Nota médica manual',
                 onTap: () async {
                   final created = await context.pushNamed<bool>(
                     RouteNames.clinicalHistoryWizard,
@@ -125,24 +119,6 @@ class _NoteTypeSelectorContent extends StatelessWidget {
                 },
               ),
               const SizedBox(height: DocsoftSpacing.itemSpacing),
-
-              // Option 3: Surgical Note
-              DocsoftActionTile(
-                icon: Icons.content_cut_rounded,
-                title: 'Nota quirúrgica',
-                description:
-                    'Plantilla especializada para procedimientos y cirugías.',
-                semanticLabel: 'Nota quirúrgica',
-                onTap: () async {
-                  final created = await context.pushNamed<bool>(
-                    RouteNames.surgicalNoteWizard,
-                    extra: patient,
-                  );
-                  if (context.mounted) {
-                    Navigator.pop(context, created ?? false);
-                  }
-                },
-              ),
             ],
           ),
         ),
