@@ -260,51 +260,64 @@ class CompactStepIndicator extends StatelessWidget {
     required this.currentStep,
     required this.totalSteps,
     required this.stepTitle,
+    this.onTap,
   });
 
   final int currentStep;
   final int totalSteps;
   final String stepTitle;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: DocsoftSpacing.md,
-        vertical: DocsoftSpacing.sm,
-      ),
-      decoration: BoxDecoration(
-        color: DocsoftColors.primaryMuted,
-        border: Border(bottom: BorderSide(color: DocsoftColors.border)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: DocsoftColors.primary,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              '${currentStep + 1}/$totalSteps',
-              style: DocsoftTextStyles.caption.copyWith(
-                color: DocsoftColors.onPrimary,
-                fontWeight: FontWeight.bold,
-                fontSize: 11,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: DocsoftSpacing.md,
+          vertical: DocsoftSpacing.sm,
+        ),
+        decoration: BoxDecoration(
+          color: DocsoftColors.primaryMuted,
+          border: Border(bottom: BorderSide(color: DocsoftColors.border)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: DocsoftColors.primary,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${currentStep + 1}/$totalSteps',
+                style: DocsoftTextStyles.caption.copyWith(
+                  color: DocsoftColors.onPrimary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 11,
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              stepTitle,
-              style: DocsoftTextStyles.body.copyWith(
-                fontWeight: FontWeight.w500,
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                stepTitle,
+                style: DocsoftTextStyles.body.copyWith(
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
-              overflow: TextOverflow.ellipsis,
             ),
-          ),
-        ],
+            if (onTap != null) ...[
+              const SizedBox(width: 8),
+              Icon(
+                Icons.keyboard_arrow_down,
+                size: 16,
+                color: DocsoftColors.textSecondary,
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

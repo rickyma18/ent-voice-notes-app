@@ -56,11 +56,15 @@ class GuidedTextArea extends StatefulWidget {
     this.onDictate,
     this.isDictating = false,
     this.validator,
+    this.focusNode,
   });
 
   final TextEditingController controller;
   final String? label;
   final String? hintText;
+
+  /// Optional FocusNode to control focus from outside.
+  final FocusNode? focusNode;
 
   /// List of hint lines to show as guidance template.
   /// These are displayed as a template inside the text area when empty.
@@ -82,8 +86,11 @@ class _GuidedTextAreaState extends State<GuidedTextArea> {
   bool _isFocused = false;
   bool _showHints = true;
 
-  // FocusNode for detecting focus and scrolling into view
-  late final FocusNode _focusNode;
+  // Internal FocusNode fallback if widget.focusNode is not provided
+  FocusNode? _internalFocusNode;
+
+  FocusNode get _effectiveFocusNode =>
+      widget.focusNode ?? (_internalFocusNode ??= FocusNode());
 
   // Key for scrolling the text field into view when focused
   final GlobalKey _textFieldKey = GlobalKey();
@@ -95,20 +102,19 @@ class _GuidedTextAreaState extends State<GuidedTextArea> {
     widget.controller.addListener(_onTextChanged);
 
     // Initialize FocusNode with listener
-    _focusNode = FocusNode();
-    _focusNode.addListener(_onFocusChange);
+    _effectiveFocusNode.addListener(_onFocusChange);
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_onTextChanged);
-    _focusNode.removeListener(_onFocusChange);
-    _focusNode.dispose();
+    _effectiveFocusNode.removeListener(_onFocusChange);
+    _internalFocusNode?.dispose();
     super.dispose();
   }
 
   void _onFocusChange() {
-    final focused = _focusNode.hasFocus;
+    final focused = _effectiveFocusNode.hasFocus;
     setState(() {
       _isFocused = focused;
       _showHints = widget.controller.text.isEmpty && !focused;
@@ -232,7 +238,7 @@ class _GuidedTextAreaState extends State<GuidedTextArea> {
           children: [
             TextFormField(
               key: _textFieldKey,
-              focusNode: _focusNode,
+              focusNode: _effectiveFocusNode,
               controller: widget.controller,
               maxLines: widget.maxLines,
               minLines: widget.minLines,

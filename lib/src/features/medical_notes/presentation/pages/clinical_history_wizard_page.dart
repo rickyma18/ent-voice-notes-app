@@ -4,9 +4,11 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/base/result.dart';
@@ -14,16 +16,21 @@ import '../../../../core/logger/log.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 import '../../../patients/patients_providers.dart';
 import '../../application/legacy_fields_adapter.dart';
-import '../../application/structured_fields_schema_v1.dart';
-import '../../application/vital_signs_parser.dart';
 import '../../domain/entities/attachment_entity.dart';
+import '../../application/structured_fields_schema_v1.dart';
 import '../../domain/entities/medical_note_entity.dart';
-import '../../domain/entities/medical_note_type.dart';
-import '../../domain/entities/note_status.dart';
+// Note: medical_note_type.dart, note_status.dart might be needed if used elsewhere, check.
+// They are used in the new provider but here?
+// Checking usages: MedicalNoteType is used in _saveNote (which I moved to provider)?
+// Actually I moved the LOGIC of _saveNote, but I still have a _saveNote wrapper.
+// However, the wrapper calls provider.
+// NoteStatus.draft is used in _saveNote wrapper? No, calls provider(asDraft: true).
+// So probably safe to remove.
 import '../../medical_notes_providers.dart';
 import '../controllers/medical_notes_controller.dart';
 import '../../data/medgemma/clients/medgemma_client.dart';
 import '../controllers/job_queue_controller.dart';
+import '../controllers/clinical_history_form_controller.dart';
 import '../widgets/job_queue_status_modal.dart';
 import '../widgets/clinical_history_wizard/ai_suggestions_sheet.dart';
 import '../widgets/clinical_history_wizard/clinical_history_wizard.dart';
@@ -31,7 +38,7 @@ import '../widgets/clinical_history_wizard/dictation_quick_sheet.dart';
 import '../widgets/clinical_history_wizard/vitals_card.dart';
 import '../../../../ui/docsoft_ui.dart';
 import '../../../../ui/widgets/advanced_analysis_badge.dart';
-import '../../../../ui/widgets/docsoft_ai_fallback_banner.dart';
+import '../../../../ui/widgets/docsoft_wizard_progress.dart';
 
 /// Multi-step wizard page for creating/editing clinical history notes.
 ///
@@ -70,37 +77,39 @@ class ClinicalHistoryWizardPage extends ConsumerStatefulWidget {
 
 class _ClinicalHistoryWizardPageState
     extends ConsumerState<ClinicalHistoryWizardPage> {
-  // Form key for validation
-  final _formKey = GlobalKey<FormState>();
+  final _formKey = GlobalKey<FormState>(); // Used in form
+
+  // Unique session ID to ensure a fresh provider state for each wizard open
+  final String _sessionId = const Uuid().v4();
 
   // PageView controller - must be persistent across builds
   late final PageController _pageController;
 
-  // Current wizard step (0-indexed)
-  int _currentStep = 0;
-
   // Date for the note
-  late DateTime _noteDate;
+  // late DateTime _noteDate; // Managed by provider
 
   // Patient entity (loaded async)
   PatientEntity? _patient;
-  bool _isLoadingPatient = true;
+  // bool _isSaving = false; // Removed duplicate (use getter)
+  bool _isLoadingPatient =
+      false; // Re-enabled usage later or remove if truly dead
+  // Track banner dismissals
+  // bool _bannerDismissed = false; // Removed unused
+  // bool _fallbackBannerDismissed = false; // Removed unused
 
-  // State flags
-  bool _isSaving = false;
-  bool _isGeneratingSuggestions = false;
-  bool _isGeneratingPlan = false;
-  bool _bannerDismissed = false;
-  bool _fallbackBannerDismissed = false;
+  bool _allowPop = false;
 
   /// Dictation status for UI display (none, available, generated)
   DictationStatus _dictationStatus = DictationStatus.none;
-  bool _dictationChoiceShown = false;
-  bool _neverShowDictationChoice = false;
-  bool _suggestionsGenerated = false;
+  // bool _dictationChoiceShown = false; // Unused
+  // bool _neverShowDictationChoice = false; // Unused
 
-  // Raw transcript from DictationAssistPage (for future AI processing)
-  String? _rawTranscript;
+  // AI State
+  bool _suggestionsGenerated = false;
+  bool _isGeneratingSuggestions = false;
+
+  // State for AI Plan generation (spinner)
+  bool _isGeneratingPlan = false;
 
   // Cached structured fields from AI (v1 schema)
   Map<String, dynamic>? _structuredFieldsV1;
@@ -110,6 +119,9 @@ class _ClinicalHistoryWizardPageState
 
   // Job Queue Subscription (manual listen)
   ProviderSubscription<AsyncValue<JobStatusResponse?>>? _jobQueueSub;
+
+  // Overlay controller for persistent side navigation arrows
+  final OverlayPortalController _overlayController = OverlayPortalController();
 
   // ScaffoldMessenger key for SnackBars inside the AI suggestions BottomSheet
   // This ensures SnackBars appear ABOVE the BottomSheet, not behind it
@@ -121,7 +133,19 @@ class _ClinicalHistoryWizardPageState
 
   // Cached suggestions for re-opening
   List<AISuggestionSection>? _lastSuggestionSections;
-  Map<String, String>? _lastLegacySuggestions;
+
+  // FocusNodes for steps
+  late final FocusNode _motivoFocus;
+  late final FocusNode _heredoFocus;
+  late final FocusNode _noPatologicosFocus;
+  late final FocusNode _patologicosFocus;
+  late final FocusNode _padecimientoFocus;
+  late final FocusNode _diagnosticoFocus;
+
+  // Track pending focus target step index
+  int? _pendingFocusStepIndex;
+  // Track if keyboard was open when navigation started (to restore it)
+  bool _shouldRestoreKeyboard = false;
 
   /// Returns the active ScaffoldMessenger for showing SnackBars.
   /// Priority: sheet messenger (if open) > parent messenger > context fallback
@@ -130,78 +154,72 @@ class _ClinicalHistoryWizardPageState
       _parentMessenger ??
       ScaffoldMessenger.of(context);
 
-  // Text controllers for each section
-  late final TextEditingController _motivoController;
-  late final TextEditingController _antecedentesHeredofamiliaresController;
-  late final TextEditingController _antecedentesNoPatologicosController;
-  late final TextEditingController _antecedentesPatologicosController;
-  late final TextEditingController _padecimientoActualController;
-  late final TextEditingController _diagnosticoController;
-  late final TextEditingController _planController;
-
-  // ORL Accordion controllers
-  late final Map<String, TextEditingController> _orlControllers;
-
-  // Vital signs controllers
-  late final TextEditingController _weightController;
-  late final TextEditingController _heightController;
-  late final TextEditingController _bpSystolicController;
-  late final TextEditingController _bpDiastolicController;
-  late final TextEditingController _heartRateController;
-  late final TextEditingController _respiratoryRateController;
-  late final TextEditingController _temperatureController;
-  late final TextEditingController _spo2Controller;
-
-  // Prognosis controller
-  late final TextEditingController _prognosisController;
-
-  // Attachments list (managed locally, saved with note)
-  List<AttachmentEntity> _attachments = [];
-
-  // Temp note ID for new notes (used for attachment uploads before save)
-  late final String _tempNoteId;
-
-  // Upload state
-  bool _isUploading = false;
-
   // Bootstrap guard: prevents PopScope from triggering during initialization
-  bool _isWizardReady = false;
+  bool _isWizardReady =
+      false; // Kept to delay pop scope until provider is ready? Or we can check provider.
 
-  // Wizard snapshot for change detection
-  // Captures initial state after data load to detect real changes
-  String? _initialWizardSignature;
+  ClinicalHistoryFormArgs get _formArgs => ClinicalHistoryFormArgs(
+    patientId: widget.patientId,
+    doctorId: widget.doctorId,
+    existingNote: widget.existingNote,
+    initialRawTranscript: widget.initialRawTranscript,
+    sessionId: _sessionId,
+  );
 
-  /// Generates a signature of the current wizard state.
-  ///
-  /// Used to detect if user has made changes since initial load.
-  /// Includes all relevant fields: text controllers, ORL, vitals, attachments.
-  String get _currentWizardSignature {
-    final parts = <String>[
-      _motivoController.text.trim(),
-      _antecedentesHeredofamiliaresController.text.trim(),
-      _antecedentesNoPatologicosController.text.trim(),
-      _antecedentesPatologicosController.text.trim(),
-      _padecimientoActualController.text.trim(),
-      _diagnosticoController.text.trim(),
-      _planController.text.trim(),
-      // ORL fields
-      ..._orlControllers.values.map((c) => c.text.trim()),
-      // Vital signs
-      _weightController.text.trim(),
-      _heightController.text.trim(),
-      _bpSystolicController.text.trim(),
-      _bpDiastolicController.text.trim(),
-      _heartRateController.text.trim(),
-      _respiratoryRateController.text.trim(),
-      _temperatureController.text.trim(),
-      _spo2Controller.text.trim(),
-      _prognosisController.text.trim(),
-      // Attachments (just count and IDs for signature)
-      _attachments.length.toString(),
-      ..._attachments.map((a) => a.id),
-    ];
-    return parts.join('|');
-  }
+  ClinicalHistoryFormState get _formState =>
+      ref.watch(clinicalHistoryFormProvider(_formArgs));
+  ClinicalHistoryForm get _formNotifier =>
+      ref.read(clinicalHistoryFormProvider(_formArgs).notifier);
+
+  // Helper getters for backward compatibility with UI code
+  TextEditingController get _motivoController => _formState.motivoController;
+  TextEditingController get _antecedentesHeredofamiliaresController =>
+      _formState.antecedentesHeredofamiliaresController;
+  TextEditingController get _antecedentesNoPatologicosController =>
+      _formState.antecedentesNoPatologicosController;
+  TextEditingController get _antecedentesPatologicosController =>
+      _formState.antecedentesPatologicosController;
+  TextEditingController get _padecimientoActualController =>
+      _formState.padecimientoActualController;
+  TextEditingController get _diagnosticoController =>
+      _formState.diagnosticoController;
+  TextEditingController get _planController => _formState.planController;
+  TextEditingController get _prognosisController =>
+      _formState.prognosisController;
+  Map<String, TextEditingController> get _orlControllers =>
+      _formState.orlControllers;
+
+  TextEditingController get _weightController => _formState.weightController;
+  TextEditingController get _heightController => _formState.heightController;
+  TextEditingController get _bpSystolicController =>
+      _formState.bpSystolicController;
+  TextEditingController get _bpDiastolicController =>
+      _formState.bpDiastolicController;
+  TextEditingController get _heartRateController =>
+      _formState.heartRateController;
+  TextEditingController get _respiratoryRateController =>
+      _formState.respiratoryRateController;
+  TextEditingController get _temperatureController =>
+      _formState.temperatureController;
+  TextEditingController get _spo2Controller => _formState.spo2Controller;
+
+  List<AttachmentEntity> get _attachments => _formState.attachments;
+  bool get _isUploading => _formState.isUploading;
+  bool get _isSaving => _formState.isSaving;
+  DateTime get _noteDate => _formState.noteDate;
+  String? get _rawTranscript => _formState
+      .rawTranscript; // Provider might return empty string, but original was nullable? Provider says non-nullable in State default '' but updated.
+
+  // Signature
+  String? get _initialWizardSignature => _formState.initialSignature;
+  String get _currentWizardSignature => _formNotifier
+      .currentSignature; // Or expose via state if computed there? I exposed a getter in notifier but accessing it via state is better if we want reactivity?
+  // I added `currentSignature` to notifier class, not state. So `_formNotifier.currentSignature`.
+  // Note: `currentSignature` computation reads controller.text. Calling it here is fine.
+
+  /// Validates if there's any content to save as draft.
+  /// Delegates to the form notifier.
+  bool get _canSaveDraft => _formNotifier.canSaveDraft();
 
   // Step definitions
   static const List<String> _stepTitles = [
@@ -224,37 +242,36 @@ class _ClinicalHistoryWizardPageState
     return '${parts[0][0]}${parts[parts.length - 1][0]}'.toUpperCase();
   }
 
+  // Scroll controllers for each step to handle reset and keyboard insets properly
+  late final List<ScrollController> _stepScrollControllers;
+
   @override
   void initState() {
     super.initState();
-    _noteDate = widget.existingNote?.createdAt ?? DateTime.now();
 
-    // Initialize temp note ID for attachment uploads
-    // Use existing note ID if editing, otherwise generate a new UUID
-    _tempNoteId = widget.existingNote?.id ?? const Uuid().v4();
+    // Show overlay navigation arrows once the frame is ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _overlayController.show();
+    });
+    // Initialize step scroll controllers for manual scroll reset
+    _stepScrollControllers = List.generate(
+      _totalSteps,
+      (_) => ScrollController(),
+    );
+
+    // Initialize FocusNodes
+    _motivoFocus = FocusNode();
+    _heredoFocus = FocusNode();
+    _noPatologicosFocus = FocusNode();
+    _patologicosFocus = FocusNode();
+    _padecimientoFocus = FocusNode();
+    _diagnosticoFocus = FocusNode();
+
+    // No more manual controller init.
+    // Provider handles it.
 
     // Initialize page controller
     _pageController = PageController(initialPage: _currentStep);
-
-    // Initialize controllers
-    _motivoController = TextEditingController();
-    _antecedentesHeredofamiliaresController = TextEditingController();
-    _antecedentesNoPatologicosController = TextEditingController();
-    _antecedentesPatologicosController = TextEditingController();
-    _padecimientoActualController = TextEditingController();
-    _diagnosticoController = TextEditingController();
-    _planController = TextEditingController();
-
-    // ORL accordion controllers (exploracion fisica)
-    _orlControllers = {
-      'otoscopia': TextEditingController(),
-      'otomicroscopia': TextEditingController(),
-      'rinoscopia': TextEditingController(),
-      'endoscopiaNasal': TextEditingController(),
-      'orofaringe': TextEditingController(),
-      'cuello': TextEditingController(),
-      'laringoscopia': TextEditingController(),
-    };
 
     // Manual listener for Job Queue (moved from build to avoid rebuild side-effects)
     _jobQueueSub = ref.listenManual<AsyncValue<JobStatusResponse?>>(
@@ -318,52 +335,22 @@ class _ClinicalHistoryWizardPageState
         );
       },
     );
-    // Vital signs controllers
-    _weightController = TextEditingController();
-    _heightController = TextEditingController();
-    _bpSystolicController = TextEditingController();
-    _bpDiastolicController = TextEditingController();
-    _heartRateController = TextEditingController();
-    _respiratoryRateController = TextEditingController();
-    _temperatureController = TextEditingController();
-    _spo2Controller = TextEditingController();
-
-    // Prognosis controller
-    _prognosisController = TextEditingController();
-
-    // Pre-fill if editing existing note
-    if (widget.existingNote != null) {
-      _prefillFromExistingNote(widget.existingNote!);
-    }
-
-    // Store initial raw transcript from DictationAssistPage
-    // This can be used for future AI processing
-    _rawTranscript = widget.initialRawTranscript;
 
     // Initialize dictation status based on transcript availability
-    if (_rawTranscript != null && _rawTranscript!.trim().isNotEmpty) {
+    // Note: Provider handles args.initialRawTranscript.
+    // We just check if it's there to show banner UI.
+    if (widget.initialRawTranscript != null &&
+        widget.initialRawTranscript!.trim().isNotEmpty) {
       _dictationStatus = DictationStatus.available;
     }
 
-    // Parse and apply vital signs from initial transcript (if any)
-    if (_rawTranscript != null && _rawTranscript!.trim().isNotEmpty) {
-      // Defer to after first frame to allow widget to build
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _parseAndApplyVitalSignsFromTranscript(_rawTranscript!);
-      });
-    }
-
     // Capture initial wizard state for change detection
-    // Must be done after all prefill operations complete
-    // For new notes: captures empty state (or transcript-filled vitals)
-    // For edit mode: captures loaded note data
+    // Wait for provider to perform any prefill/parse.
+    // Actually provider does it in build().
+    // We just set _isWizardReady.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Wait one more frame to ensure vital signs parsing completes
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        setState(() {
-          _initialWizardSignature = _currentWizardSignature;
-          _isWizardReady = true; // Enable PopScope guards
-        });
+      setState(() {
+        _isWizardReady = true;
       });
     });
 
@@ -371,143 +358,14 @@ class _ClinicalHistoryWizardPageState
     _loadPatient();
   }
 
-  void _prefillFromExistingNote(MedicalNoteEntity note) {
-    _motivoController.text = note.motivoConsulta;
-    _diagnosticoController.text = note.diagnostico;
-    _planController.text = note.planTratamiento;
+  // Removed _prefillFromExistingNote, _parseAntecedentes, _parseExploracion, _loadPatient (kept loadPatient)
+  // _parseAndApplyVitalSignsFromTranscript moved to provider, but we might keep a wrapper?
+  // No, just call provider.
+  // Actually I removed _parseAndApplyVitalSignsFromTranscript from initState but I should keep a wrapper if it's called from other places?
+  // It is called in initState (removed) and potentially AI flow? No.
 
-    // Parse antecedentes into sections
-    _parseAntecedentes(note.antecedentes);
-
-    // Parse exploracion into ORL sections
-    _parseExploracion(note.exploracionFisicaOrl);
-
-    // Prefill vital signs
-    if (note.weightKg != null) {
-      _weightController.text = note.weightKg!.toString();
-    }
-    if (note.heightCm != null) {
-      _heightController.text = note.heightCm!.toString();
-    }
-    if (note.bpSystolic != null) {
-      _bpSystolicController.text = note.bpSystolic!.toString();
-    }
-    if (note.bpDiastolic != null) {
-      _bpDiastolicController.text = note.bpDiastolic!.toString();
-    }
-    if (note.heartRate != null) {
-      _heartRateController.text = note.heartRate!.toString();
-    }
-    if (note.respiratoryRate != null) {
-      _respiratoryRateController.text = note.respiratoryRate!.toString();
-    }
-    if (note.temperatureC != null) {
-      _temperatureController.text = note.temperatureC!.toString();
-    }
-    if (note.spo2 != null) {
-      _spo2Controller.text = note.spo2!.toString();
-    }
-
-    // Prefill prognosis
-    if (note.prognosis != null) {
-      _prognosisController.text = note.prognosis!;
-    }
-
-    // Initialize attachments from existing note
-    _attachments = List.from(note.attachments);
-  }
-
-  /// NON-DESTRUCTIVE parsing of antecedentes.
-  ///
-  /// If the text matches structured format (has section headers), parse into sections.
-  /// If the text does NOT match structured format, preserve it exactly in heredofamiliares
-  /// to avoid data loss.
-  void _parseAntecedentes(String antecedentes) {
-    if (antecedentes.isEmpty) return;
-
-    // First, check if text has ANY known section headers
-    final hasStructuredFormat = RegExp(
-      r'(HEREDOFAMILIARES?|NO PATOL[OÓ]GICOS?|PATOL[OÓ]GICOS?|PADECIMIENTO ACTUAL):',
-      caseSensitive: false,
-    ).hasMatch(antecedentes);
-
-    // If no structured format found, preserve original text exactly
-    if (!hasStructuredFormat) {
-      _antecedentesHeredofamiliaresController.text = antecedentes;
-      return;
-    }
-
-    // Parse structured format - only extract what explicitly matches
-    final heredofamiliaresMatch = RegExp(
-      r'HEREDOFAMILIARES?:\s*([^\n]*(?:\n(?![A-Z\s]+:)[^\n]*)*)',
-      caseSensitive: false,
-    ).firstMatch(antecedentes);
-
-    final noPatologicosMatch = RegExp(
-      r'NO PATOL[OÓ]GICOS?:\s*([^\n]*(?:\n(?![A-Z\s]+:)[^\n]*)*)',
-      caseSensitive: false,
-    ).firstMatch(antecedentes);
-
-    // Match PATOLOGICOS but NOT "NO PATOLOGICOS"
-    final patologicosMatch = RegExp(
-      r'(?<!NO )PATOL[OÓ]GICOS?:\s*([^\n]*(?:\n(?![A-Z\s]+:)[^\n]*)*)',
-      caseSensitive: false,
-    ).firstMatch(antecedentes);
-
-    final padecimientoMatch = RegExp(
-      r'PADECIMIENTO ACTUAL:\s*([^\n]*(?:\n(?![A-Z\s]+:)[^\n]*)*)',
-      caseSensitive: false,
-    ).firstMatch(antecedentes);
-
-    if (heredofamiliaresMatch != null) {
-      _antecedentesHeredofamiliaresController.text =
-          heredofamiliaresMatch.group(1)?.trim() ?? '';
-    }
-    if (noPatologicosMatch != null) {
-      _antecedentesNoPatologicosController.text =
-          noPatologicosMatch.group(1)?.trim() ?? '';
-    }
-    if (patologicosMatch != null) {
-      _antecedentesPatologicosController.text =
-          patologicosMatch.group(1)?.trim() ?? '';
-    }
-    if (padecimientoMatch != null) {
-      _padecimientoActualController.text =
-          padecimientoMatch.group(1)?.trim() ?? '';
-    }
-  }
-
-  /// NON-DESTRUCTIVE parsing of exploracion fisica ORL.
-  ///
-  /// If the text matches structured format (has section headers), parse into sections.
-  /// If the text does NOT match structured format, preserve it exactly in first section.
-  void _parseExploracion(String exploracion) {
-    if (exploracion.isEmpty) return;
-
-    // First, check if text has ANY known ORL section headers
-    final hasStructuredFormat = RegExp(
-      r'(OTOSCOPIA|RINOSCOPIA|OROFARINGE|CUELLO|LARINGOSCOPIA):',
-      caseSensitive: false,
-    ).hasMatch(exploracion);
-
-    // If no structured format found, preserve original text exactly in first section
-    if (!hasStructuredFormat) {
-      _orlControllers['otoscopia']?.text = exploracion;
-      return;
-    }
-
-    // Parse structured format
-    for (final section in OrlSection.defaultSections) {
-      final regex = RegExp(
-        '${section.title.toUpperCase()}:\\s*([\\s\\S]*?)(?=(?:OTOSCOPIA|RINOSCOPIA|OROFARINGE|CUELLO|LARINGOSCOPIA):|\\Z)',
-        caseSensitive: false,
-      );
-      final match = regex.firstMatch(exploracion);
-      if (match != null && match.group(1) != null) {
-        _orlControllers[section.id]?.text = match.group(1)!.trim();
-      }
-    }
-  }
+  // Wait, I should keep _loadPatient.
+  // And remove the parsing logic.
 
   Future<void> _loadPatient() async {
     try {
@@ -539,96 +397,6 @@ class _ClinicalHistoryWizardPageState
   }
 
   // ---------------------------------------------------------------------------
-  // Vital Signs Parsing from Transcript
-  // ---------------------------------------------------------------------------
-
-  /// Parses vital signs from a transcript and applies them to empty fields.
-  ///
-  /// Only fills fields that are currently empty. Shows a SnackBar with the
-  /// number of fields filled.
-  void _parseAndApplyVitalSignsFromTranscript(String transcript) {
-    if (!mounted) return;
-
-    final parsed = VitalSignsParser.parse(transcript);
-    if (!parsed.hasAnyValue) return;
-
-    int filledCount = 0;
-
-    // Apply weight if empty
-    if (parsed.weightKg != null && _weightController.text.trim().isEmpty) {
-      _weightController.text = parsed.weightKg!.toString();
-      filledCount++;
-    }
-
-    // Apply height if empty
-    if (parsed.heightCm != null && _heightController.text.trim().isEmpty) {
-      _heightController.text = parsed.heightCm!.toString();
-      filledCount++;
-    }
-
-    // Apply blood pressure if empty
-    if (parsed.bpSystolic != null &&
-        _bpSystolicController.text.trim().isEmpty) {
-      _bpSystolicController.text = parsed.bpSystolic!.toString();
-      filledCount++;
-    }
-    if (parsed.bpDiastolic != null &&
-        _bpDiastolicController.text.trim().isEmpty) {
-      _bpDiastolicController.text = parsed.bpDiastolic!.toString();
-      filledCount++;
-    }
-
-    // Apply heart rate if empty
-    if (parsed.heartRate != null && _heartRateController.text.trim().isEmpty) {
-      _heartRateController.text = parsed.heartRate!.toString();
-      filledCount++;
-    }
-
-    // Apply respiratory rate if empty
-    if (parsed.respiratoryRate != null &&
-        _respiratoryRateController.text.trim().isEmpty) {
-      _respiratoryRateController.text = parsed.respiratoryRate!.toString();
-      filledCount++;
-    }
-
-    // Apply temperature if empty
-    if (parsed.temperatureC != null &&
-        _temperatureController.text.trim().isEmpty) {
-      _temperatureController.text = parsed.temperatureC!.toString();
-      filledCount++;
-    }
-
-    // Apply SpO2 if empty
-    if (parsed.spo2 != null && _spo2Controller.text.trim().isEmpty) {
-      _spo2Controller.text = parsed.spo2!.toString();
-      filledCount++;
-    }
-
-    // Apply prognosis if empty
-    if (parsed.prognosis != null && _prognosisController.text.trim().isEmpty) {
-      _prognosisController.text = parsed.prognosis!;
-      filledCount++;
-    }
-
-    // Show feedback if any fields were filled
-    if (filledCount > 0 && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            filledCount == 1
-                ? 'Se extrajo 1 signo vital del dictado'
-                : 'Se extrajeron $filledCount signos vitales del dictado',
-          ),
-          backgroundColor: Colors.blue,
-          duration: const Duration(seconds: 3),
-          behavior: SnackBarBehavior.floating,
-          showCloseIcon: true,
-        ),
-      );
-    }
-  }
-
-  // ---------------------------------------------------------------------------
   // AI Suggestions
   // ---------------------------------------------------------------------------
 
@@ -639,20 +407,11 @@ class _ClinicalHistoryWizardPageState
   bool get _canGenerateSuggestions =>
       _hasDictation && !_isGeneratingSuggestions;
 
-  /// Whether the post-dictation options sheet should be shown.
-  bool _shouldShowPostDictationSheet(String transcript) =>
-      transcript.length > 80 &&
-      _countEmptyKeyFields() >= 2 &&
-      !_dictationChoiceShown &&
-      !_neverShowDictationChoice &&
-      _canGenerateSuggestions;
-
   Future<void> _generateAISuggestions() async {
     if (!_canGenerateSuggestions) return;
 
     setState(() {
       _isGeneratingSuggestions = true;
-      _bannerDismissed = true;
     });
 
     try {
@@ -721,7 +480,6 @@ class _ClinicalHistoryWizardPageState
 
       // Cache for reopening
       _lastSuggestionSections = sections;
-      _lastLegacySuggestions = legacySuggestions;
 
       if (mounted) {
         _showSuggestionsSheet(sections, legacySuggestions);
@@ -739,84 +497,6 @@ class _ClinicalHistoryWizardPageState
         );
       }
     }
-  }
-
-  void _showFallbackDetailsSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) {
-        final reason =
-            _structuredFieldsV1?['fallbackReason'] as String? ?? 'Desconocida';
-        final timestamp = DateTime.now();
-
-        return Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Detalles de procesamiento',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              _buildDetailRow('Motor solicitado', 'MedGemma (Clínico)'),
-              const SizedBox(height: 12),
-              _buildDetailRow('Motor utilizado', 'OpenAI (Estándar)'),
-              const SizedBox(height: 12),
-              _buildDetailRow('Razón', reason),
-              const SizedBox(height: 12),
-              _buildDetailRow(
-                'Fecha',
-                DateFormat('dd/MM/yyyy HH:mm:ss').format(timestamp),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: DocsoftColors.primary,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('ENTENDIDO'),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 120,
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              color: Colors.grey,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.w500),
-          ),
-        ),
-      ],
-    );
   }
 
   /// Builds suggestion sections directly from structured v1 data.
@@ -1008,46 +688,31 @@ class _ClinicalHistoryWizardPageState
   }
 
   /// Applies suggestions to controllers based on mode.
+  /// Delegates to the form notifier.
   void _applySuggestions(List<AISuggestionSection> sections, ApplyMode mode) {
-    int appliedCount = 0;
-
-    for (final section in sections) {
-      if (!section.hasContent) continue;
-
-      // Use isEffectivelyEmpty to include placeholders as "empty"
-      final shouldApply =
-          mode == ApplyMode.replace ||
-          (mode == ApplyMode.onlyEmpty && _isEffectivelyEmptyNow(section.id));
-
-      if (shouldApply) {
-        _setControllerValue(section.id, section.suggestion);
-        appliedCount++;
-      }
-    }
-
+    final appliedCount = _formNotifier.applySuggestions(sections, mode);
     setState(() {});
-
     _showApplySnackBar(appliedCount, mode);
   }
 
   /// Applies a single section suggestion with individual field feedback.
   ///
   /// Shows a short SnackBar indicating which field was updated.
+  /// Delegates to the form notifier.
   void _applySingleSectionWithFeedback(
     AISuggestionSection section,
     ApplyMode mode,
   ) {
     if (!section.hasContent) return;
 
-    // Use isEffectivelyEmpty to include placeholders as "empty"
-    final shouldApply =
-        mode == ApplyMode.replace ||
-        (mode == ApplyMode.onlyEmpty && section.isEffectivelyEmpty);
+    // Use notifier's isEffectivelyEmpty to include placeholders as "empty"
+    final shouldApply = mode == ApplyMode.replace ||
+        (mode == ApplyMode.onlyEmpty &&
+            _formNotifier.isEffectivelyEmpty(section.id));
 
     if (!shouldApply) return;
 
-    _setControllerValue(section.id, section.suggestion);
-
+    _formNotifier.setControllerValue(section.id, section.suggestion);
     setState(() {});
 
     // Show individual field feedback SnackBar
@@ -1070,63 +735,6 @@ class _ClinicalHistoryWizardPageState
       );
   }
 
-  /// Sets a controller value by section ID.
-  void _setControllerValue(String sectionId, String value) {
-    switch (sectionId) {
-      case 'motivoConsulta':
-        _motivoController.text = value;
-        break;
-      case 'heredofamiliares':
-        _antecedentesHeredofamiliaresController.text = value;
-        break;
-      case 'noPatologicos':
-        _antecedentesNoPatologicosController.text = value;
-        break;
-      case 'patologicos':
-        _antecedentesPatologicosController.text = value;
-        break;
-      case 'padecimientoActual':
-        _padecimientoActualController.text = value;
-        break;
-      case 'otoscopia':
-        _orlControllers['otoscopia']?.text = value;
-        break;
-      case 'otomicroscopia':
-        _orlControllers['otomicroscopia']?.text = value;
-        break;
-      case 'rinoscopia':
-        _orlControllers['rinoscopia']?.text = value;
-        break;
-      case 'endoscopiaNasal':
-        _orlControllers['endoscopiaNasal']?.text = value;
-        break;
-      case 'orofaringe':
-        _orlControllers['orofaringe']?.text = value;
-        break;
-      case 'cuello':
-        _orlControllers['cuello']?.text = value;
-        break;
-      case 'laringoscopia':
-        _orlControllers['laringoscopia']?.text = value;
-        break;
-      case 'signosVitales':
-        // Signos vitales come as string; parse if needed or show as note
-        // For now, we could store in a dedicated field or parse
-        debugPrint('signosVitales received: $value');
-        break;
-      case 'pronostico':
-        _prognosisController.text = value;
-        break;
-      case 'diagnostico':
-        _diagnosticoController.text = value;
-        break;
-      case 'planTratamiento':
-        _planController.text = value;
-        break;
-      default:
-        debugPrint('⚠️ Unknown sectionId: $sectionId');
-    }
-  }
 
   /// Shows a short SnackBar after applying all suggestions.
   ///
@@ -1353,29 +961,18 @@ class _ClinicalHistoryWizardPageState
 
   @override
   void dispose() {
+    _overlayController.hide();
     _jobQueueSub?.close();
     _pageController.dispose();
-    _motivoController.dispose();
-    _antecedentesHeredofamiliaresController.dispose();
-    _antecedentesNoPatologicosController.dispose();
-    _antecedentesPatologicosController.dispose();
-    _padecimientoActualController.dispose();
-    _diagnosticoController.dispose();
-    _planController.dispose();
-    for (final controller in _orlControllers.values) {
+    for (var controller in _stepScrollControllers) {
       controller.dispose();
     }
-    // Dispose vital signs controllers
-    _weightController.dispose();
-    _heightController.dispose();
-    _bpSystolicController.dispose();
-    _bpDiastolicController.dispose();
-    _heartRateController.dispose();
-    _respiratoryRateController.dispose();
-    _temperatureController.dispose();
-    _spo2Controller.dispose();
-    // Dispose prognosis controller
-    _prognosisController.dispose();
+    _motivoFocus.dispose();
+    _heredoFocus.dispose();
+    _noPatologicosFocus.dispose();
+    _patologicosFocus.dispose();
+    _padecimientoFocus.dispose();
+    _diagnosticoFocus.dispose();
     super.dispose();
   }
 
@@ -1399,28 +996,7 @@ class _ClinicalHistoryWizardPageState
 
     final trimmedTranscript = transcript.trim();
 
-    // Check if we should show the dictation options modal
-    if (_shouldShowPostDictationSheet(trimmedTranscript)) {
-      _dictationChoiceShown = true;
-
-      final action = await _showDictationOptionsSheet();
-      if (!mounted) return;
-
-      switch (action) {
-        case _DictationOptionsAction.applyToField:
-          _applyTranscriptToController(controller, trimmedTranscript);
-        case _DictationOptionsAction.generateAI:
-          // Store transcript for AI processing if not already set
-          _rawTranscript ??= trimmedTranscript;
-          _generateAISuggestions();
-        case _DictationOptionsAction.cancel:
-        case null:
-          // Do nothing - user cancelled
-          break;
-      }
-      return;
-    }
-
+    // Simplified: Always apply to controller (standard behavior)
     _applyTranscriptToController(controller, trimmedTranscript);
   }
 
@@ -1494,129 +1070,96 @@ class _ClinicalHistoryWizardPageState
     );
   }
 
-  /// Counts how many key wizard fields are empty.
-  int _countEmptyKeyFields() {
-    int count = 0;
-    if (_motivoController.text.trim().isEmpty) count++;
-    if (_antecedentesHeredofamiliaresController.text.trim().isEmpty) count++;
-    if (_antecedentesNoPatologicosController.text.trim().isEmpty) count++;
-    if (_antecedentesPatologicosController.text.trim().isEmpty) count++;
-    if (_padecimientoActualController.text.trim().isEmpty) count++;
-    if (_diagnosticoController.text.trim().isEmpty) count++;
-    if (_planController.text.trim().isEmpty) count++;
-    // Check ORL fields
-    for (final controller in _orlControllers.values) {
-      if (controller.text.trim().isEmpty) count++;
-    }
-    return count;
-  }
-
   /// Shows options sheet for long dictations when multiple fields are empty.
   ///
   /// Returns the chosen action or null if cancelled.
-  Future<_DictationOptionsAction?> _showDictationOptionsSheet() {
-    return showModalBottomSheet<_DictationOptionsAction>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                '¿Que deseas hacer con el dictado?',
-                style: Theme.of(ctx).textTheme.titleLarge,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              FilledButton.icon(
-                onPressed: () =>
-                    Navigator.pop(ctx, _DictationOptionsAction.applyToField),
-                icon: const Icon(Icons.text_fields),
-                label: const Text('Aplicar solo a este campo'),
-              ),
-              const SizedBox(height: 12),
-              FilledButton.tonalIcon(
-                onPressed: () =>
-                    Navigator.pop(ctx, _DictationOptionsAction.generateAI),
-                icon: const Icon(Icons.auto_awesome),
-                label: const Text('Generar sugerencias con IA'),
-              ),
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: () =>
-                    Navigator.pop(ctx, _DictationOptionsAction.cancel),
-                child: const Text('Cancelar'),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () {
-                  _neverShowDictationChoice = true;
-                  Navigator.pop(ctx, _DictationOptionsAction.applyToField);
-                },
-                child: Text(
-                  'No volver a mostrar',
-                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(ctx).colorScheme.outline,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+
+  // Removed _buildAntecedentes and _buildExploracionOrl (moved to provider)
+
+  // Removed _buildAntecedentes and _buildExploracionOrl (moved to provider)
+
+  /// Captures keyboard state and marks target step for auto-focus.
+  ///
+  /// Must be called BEFORE starting navigation so we capture the keyboard state
+  /// while the current field still has focus.
+  void _setPendingFocus(int targetStep) {
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+    final hasEditableFocus =
+        FocusManager.instance.primaryFocus?.context
+            ?.findAncestorWidgetOfExactType<EditableText>() !=
+        null;
+
+    // Only set pending focus if keyboard is open AND we're in an editable field
+    if (keyboardOpen && hasEditableFocus) {
+      _pendingFocusStepIndex = targetStep;
+      _shouldRestoreKeyboard = true;
+    } else {
+      _pendingFocusStepIndex = null;
+      _shouldRestoreKeyboard = false;
+    }
+    Log.info(
+      '[FOCUS] target=$targetStep keyboardOpen=$keyboardOpen hasEditable=$hasEditableFocus',
     );
   }
 
-  /// Combines all antecedentes sections into a single formatted string.
-  String _buildAntecedentes() {
-    final buffer = StringBuffer();
-
-    if (_antecedentesHeredofamiliaresController.text.trim().isNotEmpty) {
-      buffer.writeln('HEREDOFAMILIARES:');
-      buffer.writeln(_antecedentesHeredofamiliaresController.text.trim());
-      buffer.writeln();
+  /// Handles focus restoration after a page change.
+  ///
+  /// Called from onPageChanged. Uses double postFrameCallback to ensure
+  /// the new page's widgets are fully built before requesting focus.
+  void _handlePendingFocusOnPageChange(int newPage) {
+    if (_pendingFocusStepIndex != newPage) {
+      // Not the expected page, clear state
+      _pendingFocusStepIndex = null;
+      _shouldRestoreKeyboard = false;
+      return;
     }
 
-    if (_antecedentesNoPatologicosController.text.trim().isNotEmpty) {
-      buffer.writeln('NO PATOLOGICOS:');
-      buffer.writeln(_antecedentesNoPatologicosController.text.trim());
-      buffer.writeln();
-    }
+    final node = _getFocusNodeForStep(newPage);
+    final shouldRestore = _shouldRestoreKeyboard;
 
-    if (_antecedentesPatologicosController.text.trim().isNotEmpty) {
-      buffer.writeln('PATOLOGICOS:');
-      buffer.writeln(_antecedentesPatologicosController.text.trim());
-      buffer.writeln();
-    }
+    // Clear state early to prevent re-entry
+    _pendingFocusStepIndex = null;
+    _shouldRestoreKeyboard = false;
 
-    if (_padecimientoActualController.text.trim().isNotEmpty) {
-      buffer.writeln('PADECIMIENTO ACTUAL:');
-      buffer.writeln(_padecimientoActualController.text.trim());
+    if (node != null && shouldRestore) {
+      // Double postFrameCallback: first waits for setState rebuild,
+      // second ensures the TextField is fully laid out
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          node.requestFocus();
+          // Force keyboard to show since it may have closed during transition
+          SystemChannels.textInput.invokeMethod('TextInput.show');
+        });
+      });
     }
-
-    return buffer.toString().trim();
+    // If node is null (e.g., Attachments step), keyboard closes naturally - that's correct UX
   }
 
-  /// Combines all ORL sections into a single formatted string.
-  String _buildExploracionOrl() {
-    final buffer = StringBuffer();
-
-    for (final section in OrlSection.defaultSections) {
-      final text = _orlControllers[section.id]?.text.trim() ?? '';
-      if (text.isNotEmpty) {
-        buffer.writeln('${section.title.toUpperCase()}:');
-        buffer.writeln(text);
-        buffer.writeln();
-      }
+  FocusNode? _getFocusNodeForStep(int step) {
+    switch (step) {
+      case 0:
+        return _motivoFocus;
+      case 1:
+        return _heredoFocus;
+      case 2:
+        return _noPatologicosFocus;
+      case 3:
+        return _patologicosFocus;
+      case 4:
+        return _padecimientoFocus;
+      case 7:
+        // Diagnostico acts as main entry for Step 7
+        return _diagnosticoFocus;
+      default:
+        return null; // No auto-focus for other steps (e.g. ORL, Attachments)
     }
-
-    return buffer.toString().trim();
   }
 
   void _goToStep(int step) {
     if (step >= 0 && step < _totalSteps) {
+      _setPendingFocus(step);
       _pageController.animateToPage(
         step,
         duration: const Duration(milliseconds: 300),
@@ -1627,6 +1170,7 @@ class _ClinicalHistoryWizardPageState
 
   void _nextStep() {
     if (_currentStep < _totalSteps - 1) {
+      _setPendingFocus(_currentStep + 1);
       _pageController.nextPage(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
@@ -1634,8 +1178,12 @@ class _ClinicalHistoryWizardPageState
     }
   }
 
+  // Current wizard step (0-indexed)
+  int _currentStep = 0;
+
   void _previousStep() {
     if (_currentStep > 0) {
+      _setPendingFocus(_currentStep - 1);
       _pageController.previousPage(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
@@ -1644,114 +1192,35 @@ class _ClinicalHistoryWizardPageState
   }
 
   Future<void> _saveNote({bool asDraft = false}) async {
-    // Validate required fields
-    if (!asDraft) {
-      if (_motivoController.text.trim().isEmpty) {
-        _showValidationError('El motivo de consulta es requerido');
-        _goToStep(0);
+    // Prevent double taps
+    if (_isSaving) return;
+
+    if (asDraft) {
+      // Draft specific validation: avoid saving empty drafts
+      if (!_formNotifier.canSaveDraft()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Escribe algo para guardar un borrador.'),
+              backgroundColor: Colors.orange,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
         return;
       }
-      if (_diagnosticoController.text.trim().isEmpty) {
-        _showValidationError('El diagnostico es requerido');
-        _goToStep(6);
-        return;
-      }
-      if (_planController.text.trim().isEmpty) {
-        _showValidationError('El plan de tratamiento es requerido');
-        _goToStep(6);
+    } else {
+      // Final save validation - delegate to notifier
+      final validation = _formNotifier.validateForFinalSave();
+      if (validation != null) {
+        _showValidationError(validation.message);
+        _goToStep(validation.stepIndex);
         return;
       }
     }
 
-    setState(() {
-      _isSaving = true;
-    });
-
     try {
-      final now = DateTime.now();
-      final isEditing = widget.isEditMode;
-      final existingNote = widget.existingNote;
-
-      // Build combined fields
-      final antecedentes = _buildAntecedentes();
-      final exploracionOrl = _buildExploracionOrl();
-
-      final MedicalNoteEntity note;
-
-      // Parse vital signs from controllers
-      final weightKg = double.tryParse(_weightController.text);
-      final heightCm = double.tryParse(_heightController.text);
-      final bpSystolic = int.tryParse(_bpSystolicController.text);
-      final bpDiastolic = int.tryParse(_bpDiastolicController.text);
-      final heartRate = int.tryParse(_heartRateController.text);
-      final respiratoryRate = int.tryParse(_respiratoryRateController.text);
-      final temperatureC = double.tryParse(_temperatureController.text);
-      final spo2 = int.tryParse(_spo2Controller.text);
-      final prognosis = _prognosisController.text.trim().isEmpty
-          ? null
-          : _prognosisController.text.trim();
-
-      if (isEditing && existingNote != null) {
-        note = existingNote.copyWith(
-          updatedAt: now,
-          type: MedicalNoteType.clinicalHistory,
-          motivoConsulta: _motivoController.text.trim(),
-          antecedentes: antecedentes,
-          exploracionFisicaOrl: exploracionOrl,
-          diagnostico: _diagnosticoController.text.trim(),
-          planTratamiento: _planController.text.trim(),
-          weightKg: weightKg,
-          heightCm: heightCm,
-          bpSystolic: bpSystolic,
-          bpDiastolic: bpDiastolic,
-          heartRate: heartRate,
-          respiratoryRate: respiratoryRate,
-          temperatureC: temperatureC,
-          spo2: spo2,
-          prognosis: prognosis,
-          status: asDraft ? NoteStatus.draft : existingNote.status,
-          attachments: _attachments,
-        );
-
-        await ref
-            .read(medicalNotesControllerProvider.notifier)
-            .updateMedicalNote(note);
-      } else {
-        note = MedicalNoteEntity(
-          id: '',
-          patientId: widget.patientId,
-          doctorId: widget.doctorId,
-          createdAt: _noteDate,
-          updatedAt: now,
-          type: MedicalNoteType.clinicalHistory,
-          motivoConsulta: _motivoController.text.trim(),
-          antecedentes: antecedentes,
-          exploracionFisicaOrl: exploracionOrl,
-          diagnostico: _diagnosticoController.text.trim(),
-          planTratamiento: _planController.text.trim(),
-          weightKg: weightKg,
-          heightCm: heightCm,
-          bpSystolic: bpSystolic,
-          bpDiastolic: bpDiastolic,
-          heartRate: heartRate,
-          respiratoryRate: respiratoryRate,
-          temperatureC: temperatureC,
-          spo2: spo2,
-          prognosis: prognosis,
-          rawTranscript: _rawTranscript ?? '',
-          status: asDraft ? NoteStatus.draft : NoteStatus.draft,
-          medicamentosRecetados: const [],
-          estudiosIndicados: const [],
-          proximaCita: null,
-          attachments: _attachments,
-          tags: const [],
-          isFavorite: false,
-        );
-
-        await ref
-            .read(medicalNotesControllerProvider.notifier)
-            .createMedicalNote(note);
-      }
+      await (asDraft ? _formNotifier.saveDraft() : _formNotifier.saveFinal());
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1759,32 +1228,29 @@ class _ClinicalHistoryWizardPageState
             content: Text(
               asDraft
                   ? 'Borrador guardado exitosamente'
-                  : (isEditing
+                  : (widget.isEditMode
                         ? 'Nota medica actualizada exitosamente'
                         : 'Nota medica creada exitosamente'),
             ),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
           ),
         );
 
-        Navigator.of(context).pop(true); // Return true to indicate note created
+        Navigator.of(context).pop(true);
       }
     } catch (e) {
+      // Do not pop on error
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al guardar la nota: ${e.toString()}'),
+            content: Text('Error al guardar: ${e.toString()}'),
             backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
+            duration: const Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
           ),
         );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSaving = false;
-        });
       }
     }
   }
@@ -1796,47 +1262,6 @@ class _ClinicalHistoryWizardPageState
         backgroundColor: Colors.orange,
         duration: const Duration(seconds: 2),
       ),
-    );
-  }
-
-  /// Builds the AI state chip based on current wizard state.
-  Widget? _buildAIStateChip() {
-    // No dictation → don't show
-    if (!_hasDictation) return null;
-
-    // Generating AI → Chip with CircularProgressIndicator
-    if (_isGeneratingSuggestions) {
-      return Chip(
-        avatar: const SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-        label: const Text('Procesando...'),
-        backgroundColor: Theme.of(
-          context,
-        ).colorScheme.primaryContainer.withOpacity(0.5),
-      );
-    }
-
-    // Suggestions available → "✨ Sugerencias listas"
-    if (_suggestionsGenerated) {
-      return Chip(
-        avatar: const Text('✨', style: TextStyle(fontSize: 14)),
-        label: const Text('Sugerencias listas'),
-        backgroundColor: Theme.of(
-          context,
-        ).colorScheme.tertiaryContainer.withOpacity(0.7),
-      );
-    }
-
-    // Dictation detected → "🧠 Dictado listo"
-    return Chip(
-      avatar: const Text('🧠', style: TextStyle(fontSize: 14)),
-      label: const Text('Dictado listo'),
-      backgroundColor: Theme.of(
-        context,
-      ).colorScheme.secondaryContainer.withOpacity(0.7),
     );
   }
 
@@ -1966,7 +1391,7 @@ class _ClinicalHistoryWizardPageState
                         lastDate: DateTime.now(),
                       );
                       if (picked != null) {
-                        setState(() => _noteDate = picked);
+                        _formNotifier.setNoteDate(picked);
                       }
                     },
               child: Container(
@@ -2014,303 +1439,293 @@ class _ClinicalHistoryWizardPageState
 
   @override
   Widget build(BuildContext context) {
-    final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+    // Keyboard detection moved to body Builder to ensure accuracy
 
-    return PopScope(
-      // Bootstrap guard: block pops until wizard is fully initialized
-      // This prevents auto-close during data load/prefill
-      canPop: _isWizardReady && !_hasUnsavedChanges,
-      onPopInvoked: (didPop) async {
-        // If pop already happened (wizard ready + no changes), do nothing
-        if (didPop) return;
+    return OverlayPortal(
+      controller: _overlayController,
+      overlayChildBuilder: (context) => _buildSideNavigationOverlay(context),
+      child: PopScope(
+        // Bootstrap guard: block pops until wizard is fully initialized
+        // This prevents auto-close during data load/prefill
+        canPop: _isWizardReady && _allowPop,
+        onPopInvoked: (didPop) async {
+          if (didPop) return;
 
-        // During bootstrap, ignore back presses to prevent flicker/auto-close
-        if (!_isWizardReady) return;
+          if (!_isWizardReady) return;
 
-        // Wizard is ready and has unsaved changes - show confirmation dialog
-        final shouldExit = await DocsoftDialogs.confirmExitWithoutSaving(
-          context,
-        );
+          final hasChanges = _hasUnsavedChanges;
+          bool shouldExit = false;
 
-        // If user confirmed exit and context is still mounted, pop manually
-        if (shouldExit == true && context.mounted) {
-          Navigator.of(context).pop();
-        }
-      },
-      child: Scaffold(
-        backgroundColor: DocsoftColors.background,
-        resizeToAvoidBottomInset: true,
-        // Footer in bottomNavigationBar - takes its own layout space, never overlays
-        bottomNavigationBar: AnimatedPadding(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOut,
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: WizardNavigationButtons(
-                currentStep: _currentStep,
-                totalSteps: _totalSteps,
-                onBack: _previousStep,
-                onNext: _nextStep,
-                onSave: () => _saveNote(),
-                isSaving: _isSaving,
-                canSaveAsDraft: true,
-                onSaveAsDraft: () => _saveNote(asDraft: true),
-                compact: keyboardOpen,
-              ),
-            ),
-          ),
-        ),
-        body: Stack(
-          children: [
-            SafeArea(
-              bottom: false,
-              child: Column(
-                children: [
-                  // Custom Header (replaces AppBar)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      DocsoftSpacing.screenPadding,
-                      DocsoftSpacing.screenPadding,
-                      DocsoftSpacing.screenPadding,
-                      DocsoftSpacing.sm,
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
-                          children: [
-                            DocsoftBackButton(
-                              onTap: () => Navigator.of(context).maybePop(),
-                              backgroundColor: DocsoftColors.primaryMuted,
-                              iconColor: DocsoftColors.primary,
-                            ),
-                            const SizedBox(width: DocsoftSpacing.sm),
-                            Expanded(
-                              child: Text(
-                                widget.isEditMode
-                                    ? 'Editar historia clínica'
-                                    : 'Nueva historia clínica',
-                                style: DocsoftTextStyles.appBarTitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            // Show static icon only if NO suggestions are active and NO AI chip possible
-                            if (!_showAiChip)
-                              Padding(
-                                padding: const EdgeInsets.only(
-                                  left: DocsoftSpacing.sm,
-                                ),
-                                child: Icon(
-                                  Icons.auto_awesome_outlined,
-                                  color: DocsoftColors.textTertiary,
-                                  size: 20,
-                                ),
-                              ),
-                          ],
-                        ),
-                        // Second Row for Chip + Advanced Analysis Badge
-                        if (_showAiChip || _showAdvancedBadge) ...[
-                          const SizedBox(height: DocsoftSpacing.xs),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              _buildAdvancedBadge(),
-                              if (_showAiChip) ...[
-                                const SizedBox(width: DocsoftSpacing.xs),
-                                _buildAIChip(),
-                              ],
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
+          if (hasChanges) {
+            shouldExit =
+                await DocsoftDialogs.confirmExitWithoutSaving(context) ?? false;
+          } else {
+            shouldExit = true;
+          }
 
-                  if (_isLoadingPatient)
-                    const Expanded(
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else
-                    Expanded(
-                      child: Column(
+          if (shouldExit && context.mounted) {
+            setState(() => _allowPop = true);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) Navigator.of(context).pop();
+            });
+          }
+        },
+        child: Scaffold(
+          backgroundColor: DocsoftColors.background,
+          resizeToAvoidBottomInset:
+              false, // Prevent body resize (arrows stay fixed)
+          extendBody:
+              true, // Allow body to go behind bottom bar (for visual continuity)
+          // Note: AppBar is removed and reconstructed in body for better control
+          body: Builder(
+            builder: (context) {
+              // Fix: Use View.of(context) to get raw window insets, bypassing Scaffold's consumption.
+              final view = View.of(context);
+              final bottomInset =
+                  view.viewInsets.bottom / view.devicePixelRatio;
+              final keyboardOpen = bottomInset > 0;
+
+              Log.info(
+                '[WIZARD] bottomInset=$bottomInset keyboardOpen=$keyboardOpen',
+              );
+
+              return SafeArea(
+                bottom: false,
+                child: Column(
+                  children: [
+                    // --- CUSTOM TOP BAR ---
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        DocsoftSpacing.screenPadding,
+                        DocsoftSpacing.lg, // Extra top padding
+                        DocsoftSpacing.screenPadding,
+                        DocsoftSpacing.sm,
+                      ),
+                      child: Row(
                         children: [
-                          // Patient header - collapses when keyboard is open
-                          ClipRect(
-                            child: AnimatedSize(
-                              duration: const Duration(milliseconds: 180),
-                              curve: Curves.easeOut,
-                              child: keyboardOpen
-                                  ? const SizedBox.shrink()
-                                  : Padding(
-                                      padding: const EdgeInsets.fromLTRB(
-                                        16,
-                                        8,
-                                        16,
-                                        0,
-                                      ),
-                                      child: _buildPatientInfo(),
-                                    ),
-                            ),
+                          DocsoftBackButton(
+                            onTap: () => Navigator.of(context).maybePop(),
+                            backgroundColor: DocsoftColors.primaryMuted,
+                            iconColor: DocsoftColors.primary,
                           ),
-
-                          // Progress indicator - Stitch style
-                          if (!keyboardOpen)
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                DocsoftSpacing.md,
-                                DocsoftSpacing.sm,
-                                DocsoftSpacing.md,
-                                0,
-                              ),
-                              child: DocsoftWizardProgress(
-                                currentStep: _currentStep,
-                                totalSteps: _totalSteps,
-                              ),
-                            )
-                          else
-                            CompactStepIndicator(
-                              currentStep: _currentStep,
-                              totalSteps: _totalSteps,
-                              stepTitle: _stepTitles[_currentStep],
-                            ),
-
-                          // CONTRACT STATUS BANNER
-                          // Shows backend contract warnings (drift/warnings)
-                          if (!keyboardOpen && _structuredFieldsV1 != null)
-                            Builder(
-                              builder: (context) {
-                                final metadata =
-                                    _structuredFieldsV1!['metadata']
-                                        as Map<String, dynamic>?;
-                                // If metadata is null, nothing to show
-                                if (metadata == null)
-                                  return const SizedBox.shrink();
-
-                                return Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    DocsoftSpacing.md,
-                                    DocsoftSpacing.sm, // reduced top padding
-                                    DocsoftSpacing.md,
-                                    0,
-                                  ),
-                                  child: ContractStatusBanner(
-                                    status:
-                                        metadata['contractStatus'] as String?,
-                                    warnings:
-                                        (metadata['contractWarnings'] as List?)
-                                            ?.cast<String>(),
-                                  ),
-                                );
-                              },
-                            ),
-
-                          // AI Fallback Banner
-                          // Shows when MedGemma fails and standard engine (OpenAI) is used
-                          if (!keyboardOpen &&
-                              _structuredFieldsV1?['source'] == 'fallback' &&
-                              !_fallbackBannerDismissed)
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                DocsoftSpacing.md,
-                                DocsoftSpacing.md,
-                                DocsoftSpacing.md,
-                                0,
-                              ),
-                              child: DocsoftAiFallbackBanner(
-                                fallbackReason:
-                                    _structuredFieldsV1?['fallbackReason']
-                                        as String? ??
-                                    'No disponible',
-                                onDismiss: () {
-                                  setState(() {
-                                    _fallbackBannerDismissed = true;
-                                  });
-                                },
-                                onShowDetails: _showFallbackDetailsSheet,
-                              ),
-                            ),
-
-                          // AI dictation banner - Stitch style with states
-                          if (!keyboardOpen &&
-                              _dictationStatus == DictationStatus.available &&
-                              !_bannerDismissed &&
-                              // Only show if fallback banner is NOT active/visible
-                              !(_structuredFieldsV1?['source'] == 'fallback' &&
-                                  !_fallbackBannerDismissed))
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                DocsoftSpacing.md,
-                                DocsoftSpacing.md,
-                                DocsoftSpacing.md,
-                                0,
-                              ),
-                              child: DocsoftDictationBanner(
-                                status: _dictationStatus,
-                                isGenerating: _isGeneratingSuggestions,
-                                onGenerate: _generateAISuggestions,
-                                onDismiss: () {
-                                  setState(() {
-                                    _bannerDismissed = true;
-                                    _dictationStatus = DictationStatus.none;
-                                  });
-                                },
-                              ),
-                            ),
-
-                          // Step content (PageView inside Expanded)
+                          const SizedBox(width: DocsoftSpacing.sm),
                           Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: DocsoftSpacing.screenPadding,
-                              ),
-                              child: Form(
-                                key: _formKey,
-                                child: PageView(
-                                  controller: _pageController,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  onPageChanged: (page) {
-                                    ScaffoldMessenger.of(
-                                      context,
-                                    ).clearSnackBars();
-                                    setState(() {
-                                      _currentStep = page;
-                                    });
-                                  },
-                                  children: [
-                                    _buildStep0MotivoConsulta(),
-                                    _buildStep1AntecedentesHeredofamiliares(),
-                                    _buildStep2AntecedentesNoPatologicos(),
-                                    _buildStep3AntecedentesPatologicos(),
-                                    _buildStep4PadecimientoActual(),
-                                    _buildStep5ExploracionOrl(),
-                                    _buildStep6Attachments(),
-                                    _buildStep7DiagnosticoPlan(),
-                                  ],
-                                ),
-                              ),
+                            child: Text(
+                              widget.isEditMode
+                                  ? 'Editar historia clínica'
+                                  : 'Nueva historia clínica',
+                              style: DocsoftTextStyles.appBarTitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          if (_currentStep != _totalSteps - 1 && !_isSaving)
+                            IconButton(
+                              icon: const Icon(Icons.save_outlined),
+                              tooltip: 'Guardar borrador',
+                              color: _canSaveDraft
+                                  ? DocsoftColors.primary
+                                  : DocsoftColors.disabledForeground,
+                              onPressed: _canSaveDraft
+                                  ? () => _saveNote(asDraft: true)
+                                  : null,
+                            ),
+                          if (!_showAiChip)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                left: DocsoftSpacing.sm,
+                              ),
+                              child: Icon(
+                                Icons.auto_awesome_outlined,
+                                color: DocsoftColors.textTertiary,
+                                size: 20,
+                              ),
+                            ),
                         ],
                       ),
                     ),
-                ],
+
+                    // --- AI BADGE & CHIP ---
+                    if (_showAiChip || _showAdvancedBadge)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: DocsoftSpacing.md,
+                        ),
+                        child: Column(
+                          children: [
+                            const SizedBox(height: DocsoftSpacing.xs),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                _buildAdvancedBadge(),
+                                if (_showAiChip) ...[
+                                  const SizedBox(width: DocsoftSpacing.xs),
+                                  _buildAIChip(),
+                                ],
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    // --- DICTATION BANNER ---
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: DocsoftSpacing.md,
+                      ),
+                      child: DocsoftDictationBanner(
+                        status: _dictationStatus,
+                        isGenerating: _isGeneratingSuggestions,
+                        onGenerate: _generateAISuggestions,
+                        onDismiss: () {
+                          setState(() {
+                            _dictationStatus = DictationStatus.none;
+                          });
+                        },
+                      ),
+                    ),
+
+                    // --- HEADER (Patient Info) ---
+                    _buildHeader(keyboardOpen: keyboardOpen),
+
+                    // --- CONTRACT STATUS BANNER ---
+                    if (!keyboardOpen && _structuredFieldsV1 != null)
+                      Builder(
+                        builder: (context) {
+                          final metadata =
+                              _structuredFieldsV1!['metadata']
+                                  as Map<String, dynamic>?;
+                          if (metadata == null) return const SizedBox.shrink();
+
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                              DocsoftSpacing.md,
+                              DocsoftSpacing.sm, // reduced top padding
+                              DocsoftSpacing.md,
+                              0,
+                            ),
+                            child: ContractStatusBanner(
+                              status: metadata['contractStatus'] as String?,
+                              warnings: (metadata['contractWarnings'] as List?)
+                                  ?.cast<String>(),
+                            ),
+                          );
+                        },
+                      ),
+
+                    // --- WIZARD CONTENT ---
+                    if (_isLoadingPatient)
+                      const Expanded(
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else
+                      Expanded(
+                        child: _buildWizardContent(keyboardOpen: keyboardOpen),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+          bottomNavigationBar: null,
+          floatingActionButton: null,
+        ),
+      ),
+    );
+  }
+
+  /// Builds the persistent side navigation arrows in an Overlay.
+  /// This ensures they stay anchored to the screen and don't jitter with keyboard/safearea changes.
+  Widget _buildSideNavigationOverlay(BuildContext context) {
+    final view = View.of(context);
+
+    // Keyboard state
+    final bottomInset = view.viewInsets.bottom / view.devicePixelRatio;
+    final keyboardOpen = bottomInset > 0;
+
+    // Use screen height that does NOT shrink with keyboard
+    final screenHeight = view.physicalSize.height / view.devicePixelRatio;
+    final topCenter = (screenHeight / 2) - 30;
+
+    Widget wrapArrow({required Widget child}) {
+      // Prevent arrow from stealing focus
+      return Focus(
+        canRequestFocus: false,
+        descendantsAreFocusable: false,
+        child: child,
+      );
+    }
+
+    return Stack(
+      children: [
+        if (_currentStep > 0)
+          Positioned(
+            left: 0,
+            top: topCenter,
+            width: 60,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Opacity(
+                  opacity: keyboardOpen ? 0.35 : 1.0,
+                  child: wrapArrow(
+                    child: _SideNavArrow(
+                      icon: Icons.chevron_left_rounded,
+                      onTap: () {
+                        // Capture intent BEFORE any focus changes
+                        _setPendingFocus(_currentStep - 1);
+                        _previousStep();
+                      },
+                    ),
+                  ),
+                ),
               ),
             ),
-            DocsoftAiGeneratingOverlay(
-              visible: _isGeneratingSuggestions,
-              allowInteraction: false,
+          ),
+
+        Positioned(
+          right: 0,
+          top: topCenter,
+          width: 60,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: _isSaving
+                  ? const SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: Padding(
+                        padding: EdgeInsets.all(8.0),
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : Opacity(
+                      opacity: keyboardOpen ? 0.35 : 1.0,
+                      child: wrapArrow(
+                        child: _SideNavArrow(
+                          icon: _currentStep == _totalSteps - 1
+                              ? Icons.check_rounded
+                              : Icons.chevron_right_rounded,
+                          variant: _currentStep == _totalSteps - 1
+                              ? _SideNavArrowVariant.primary
+                              : _SideNavArrowVariant.surface,
+                          onTap: () {
+                            if (_currentStep == _totalSteps - 1) {
+                              _saveNote(asDraft: true);
+                            } else {
+                              // Capture intent BEFORE focus changes
+                              _setPendingFocus(_currentStep + 1);
+                              _nextStep();
+                            }
+                          },
+                        ),
+                      ),
+                    ),
             ),
-          ],
+          ),
         ),
-      ), // Scaffold
-    ); // PopScope
+      ],
+    );
   }
 
   bool get _hasActiveSuggestions =>
@@ -2344,6 +1759,68 @@ class _ClinicalHistoryWizardPageState
     return AdvancedAnalysisBadge(pipelineMetadata: _pipelineMetadata);
   }
 
+  Widget _buildHeader({required bool keyboardOpen}) {
+    // Patient Card ALWAYS visible.
+    // Progress bar hidden when keyboard is open to save space.
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Patient Info Card
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: _buildPatientInfo(),
+        ),
+
+        // Wizard Progress (Standard) - Hidden on keyboard open
+        if (!keyboardOpen)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: DocsoftWizardProgress(
+              currentStep: _currentStep,
+              totalSteps: _totalSteps,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildWizardContent({required bool keyboardOpen}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: DocsoftSpacing.screenPadding,
+      ),
+      child: Form(
+        key: _formKey,
+        child: PageView(
+          controller: _pageController,
+          physics: const NeverScrollableScrollPhysics(),
+          onPageChanged: (page) {
+            ScaffoldMessenger.of(context).clearSnackBars();
+
+            setState(() {
+              _currentStep = page;
+            });
+
+            // Handle pending focus restoration after page change
+            _handlePendingFocusOnPageChange(page);
+          },
+          children: [
+            _buildStep0MotivoConsulta(keyboardOpen),
+            _buildStep1AntecedentesHeredofamiliares(keyboardOpen),
+            _buildStep2AntecedentesNoPatologicos(keyboardOpen),
+            _buildStep3AntecedentesPatologicos(keyboardOpen),
+            _buildStep4PadecimientoActual(keyboardOpen),
+            _buildStep5ExploracionOrl(keyboardOpen),
+            _buildStep6Attachments(keyboardOpen),
+            _buildStep7DiagnosticoPlan(keyboardOpen),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildAIChip() {
     // 1. Sugerencias listas (Prioridad: alta)
     if (_hasActiveSuggestions) {
@@ -2358,16 +1835,7 @@ class _ClinicalHistoryWizardPageState
       );
     }
 
-    // 2. Dictado disponible / Usar IA (Prioridad: media)
-    if (_canUseAiChip) {
-      return DocsoftStatusChip(
-        label: 'Usar IA',
-        icon: Icons.auto_awesome_outlined,
-        variant: DocsoftStatusChipVariant.subtle,
-        onTap: _generateAISuggestions,
-      );
-    }
-
+    // 2. Dictado disponible (el resto ya no aplica o está en el header)
     return const SizedBox.shrink();
   }
 
@@ -2386,10 +1854,7 @@ class _ClinicalHistoryWizardPageState
               .toList(growable: false);
 
     final legacy = LegacyFieldsAdapter.toLegacy(_structuredFieldsV1!);
-
     _lastSuggestionSections = rebuilt;
-    _lastLegacySuggestions = legacy;
-
     _showSuggestionsSheet(rebuilt, legacy);
   }
 
@@ -2400,13 +1865,42 @@ class _ClinicalHistoryWizardPageState
   /// Scrollable wrapper for wizard steps.
   ///
   /// Simple scroll wrapper with uniform padding.
-  /// No footer compensation needed - footer is in bottomNavigationBar.
-  Widget _buildScrollableStep({required Widget child}) {
+  /// Compensates for bottom navigation bar + keyboard to prevent obfuscation.
+  Widget _buildScrollableStep({
+    required int stepIndex,
+    required Widget child,
+    required bool keyboardOpen,
+  }) {
+    // Focus logic is now handled in _handlePendingFocusOnPageChange (called from onPageChanged)
+    // to ensure correct timing - focus is requested AFTER page transition completes.
+
     return LayoutBuilder(
       builder: (context, constraints) {
+        final viewPadding = MediaQuery.paddingOf(context);
+        final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+        // Use keyboard inset or safe area padding, plus margin
+        final effectiveBottom =
+            (bottomInset > viewPadding.bottom
+                ? bottomInset
+                : viewPadding.bottom) +
+            16.0;
+
         return SingleChildScrollView(
+          controller: _stepScrollControllers[stepIndex],
+
+          // Must bounce for better UX
+          physics: const BouncingScrollPhysics(),
+
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.symmetric(vertical: 16),
+
+          // Normal horizontal padding, no lanes.
+          padding: EdgeInsets.only(
+            top: 16,
+            bottom: effectiveBottom,
+            left: DocsoftSpacing.md, // 16
+            right: DocsoftSpacing.md, // 16
+          ),
+
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: constraints.maxHeight),
             child: child,
@@ -2416,61 +1910,18 @@ class _ClinicalHistoryWizardPageState
     );
   }
 
-  String _currentValueForSectionId(String sectionId) {
-    switch (sectionId) {
-      case 'motivoConsulta':
-        return _motivoController.text;
-      case 'heredofamiliares':
-        return _antecedentesHeredofamiliaresController.text;
-      case 'noPatologicos':
-        return _antecedentesNoPatologicosController.text;
-      case 'patologicos':
-        return _antecedentesPatologicosController.text;
-      case 'padecimientoActual':
-        return _padecimientoActualController.text;
-      case 'otoscopia':
-        return _orlControllers['otoscopia']?.text ?? '';
-      case 'otomicroscopia':
-        return _orlControllers['otomicroscopia']?.text ?? '';
-      case 'rinoscopia':
-        return _orlControllers['rinoscopia']?.text ?? '';
-      case 'endoscopiaNasal':
-        return _orlControllers['endoscopiaNasal']?.text ?? '';
-      case 'orofaringe':
-        return _orlControllers['orofaringe']?.text ?? '';
-      case 'cuello':
-        return _orlControllers['cuello']?.text ?? '';
-      case 'laringoscopia':
-        return _orlControllers['laringoscopia']?.text ?? '';
-      case 'pronostico':
-        return _prognosisController.text;
-      case 'diagnostico':
-        return _diagnosticoController.text;
-      case 'planTratamiento':
-        return _planController.text;
-      default:
-        return '';
-    }
-  }
-
-  bool _isEffectivelyEmptyNow(String sectionId) {
-    final txt = _currentValueForSectionId(sectionId).trim();
-    if (txt.isEmpty) return true;
-    // Si quieres respetar placeholders como “Niega DM”, usa tu misma lógica
-    // (puedes extraerla a un util compartido o duplicar la regla aquí)
-    if (txt.length > 25) return false;
-    return AISuggestionSection.isPlaceholderContent(txt.toLowerCase());
-  }
-
   // Step 0: Motivo de consulta
-  Widget _buildStep0MotivoConsulta() {
+  Widget _buildStep0MotivoConsulta(bool keyboardOpen) {
     return _buildScrollableStep(
+      stepIndex: 0,
+      keyboardOpen: keyboardOpen,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
           GuidedTextArea(
             controller: _motivoController,
+            focusNode: _motivoFocus,
             label: 'Motivo de consulta',
             hintText:
                 'Ej: Dolor de oido derecho persistente desde hace 3 dias...',
@@ -2502,14 +1953,17 @@ class _ClinicalHistoryWizardPageState
   }
 
   // Step 1: Antecedentes heredofamiliares
-  Widget _buildStep1AntecedentesHeredofamiliares() {
+  Widget _buildStep1AntecedentesHeredofamiliares(bool keyboardOpen) {
     return _buildScrollableStep(
+      stepIndex: 1,
+      keyboardOpen: keyboardOpen,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
           GuidedTextArea(
             controller: _antecedentesHeredofamiliaresController,
+            focusNode: _heredoFocus,
             label: 'Antecedentes heredofamiliares',
             guidanceHints: ClinicalHints.familyHistory,
             maxLines: 10,
@@ -2524,14 +1978,17 @@ class _ClinicalHistoryWizardPageState
   }
 
   // Step 2: Antecedentes personales NO patologicos
-  Widget _buildStep2AntecedentesNoPatologicos() {
+  Widget _buildStep2AntecedentesNoPatologicos(bool keyboardOpen) {
     return _buildScrollableStep(
+      stepIndex: 2,
+      keyboardOpen: keyboardOpen,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
           GuidedTextArea(
             controller: _antecedentesNoPatologicosController,
+            focusNode: _noPatologicosFocus,
             label: 'Antecedentes personales NO patologicos',
             guidanceHints: ClinicalHints.nonPathologicalHistory,
             maxLines: 10,
@@ -2546,14 +2003,17 @@ class _ClinicalHistoryWizardPageState
   }
 
   // Step 3: Antecedentes personales patologicos
-  Widget _buildStep3AntecedentesPatologicos() {
+  Widget _buildStep3AntecedentesPatologicos(bool keyboardOpen) {
     return _buildScrollableStep(
+      stepIndex: 3,
+      keyboardOpen: keyboardOpen,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
           GuidedTextArea(
             controller: _antecedentesPatologicosController,
+            focusNode: _patologicosFocus,
             label: 'Antecedentes personales patologicos',
             guidanceHints: ClinicalHints.pathologicalHistory,
             maxLines: 12,
@@ -2568,14 +2028,17 @@ class _ClinicalHistoryWizardPageState
   }
 
   // Step 4: Padecimiento actual
-  Widget _buildStep4PadecimientoActual() {
+  Widget _buildStep4PadecimientoActual(bool keyboardOpen) {
     return _buildScrollableStep(
+      stepIndex: 4,
+      keyboardOpen: keyboardOpen,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
           GuidedTextArea(
             controller: _padecimientoActualController,
+            focusNode: _padecimientoFocus,
             label: 'Padecimiento actual',
             hintText:
                 'Descripcion detallada del padecimiento actual, evolucion, sintomas...',
@@ -2607,7 +2070,9 @@ class _ClinicalHistoryWizardPageState
   }
 
   // Step 5: Exploracion fisica ORL
-  Widget _buildStep5ExploracionOrl() {
+  Widget _buildStep5ExploracionOrl(bool keyboardOpen) {
+    // Check if all ORL fields are empty for CTA
+
     // Check if all ORL fields are empty for CTA
     final allOrlEmpty = _orlControllers.values.every(
       (c) => c.text.trim().isEmpty,
@@ -2615,6 +2080,8 @@ class _ClinicalHistoryWizardPageState
     final showCta = _hasDictation && allOrlEmpty;
 
     return _buildScrollableStep(
+      stepIndex: 5,
+      keyboardOpen: keyboardOpen,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2658,8 +2125,10 @@ class _ClinicalHistoryWizardPageState
   }
 
   // Step 6: Diagnostico y plan
-  Widget _buildStep7DiagnosticoPlan() {
+  Widget _buildStep7DiagnosticoPlan(bool keyboardOpen) {
     return _buildScrollableStep(
+      stepIndex: 7,
+      keyboardOpen: keyboardOpen,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2672,6 +2141,7 @@ class _ClinicalHistoryWizardPageState
             highlighted: true,
             child: GuidedTextArea(
               controller: _diagnosticoController,
+              focusNode: _diagnosticoFocus,
               hintText: 'Ej: Otitis media aguda derecha, Rinitis alergica...',
               maxLines: 4,
               minLines: 2,
@@ -2767,8 +2237,10 @@ class _ClinicalHistoryWizardPageState
   }
 
   // Step 7: Laboratorio y estudios (attachments)
-  Widget _buildStep6Attachments() {
+  Widget _buildStep6Attachments(bool keyboardOpen) {
     return _buildScrollableStep(
+      stepIndex: 6,
+      keyboardOpen: keyboardOpen,
       child: Stack(
         children: [
           AttachmentsStep(
@@ -2804,25 +2276,21 @@ class _ClinicalHistoryWizardPageState
   }
 
   void _addLinkAttachment(String url, String nombre) {
-    setState(() {
-      _attachments.add(
-        AttachmentEntity(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          nombre: nombre,
-          url: url,
-          tipo: AttachmentType.other,
-          size_in_bytes: 0,
-          fechaSubida: DateTime.now(),
-          thumbnail: null,
-        ),
-      );
-    });
+    _formNotifier.addAttachment(
+      AttachmentEntity(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        nombre: nombre,
+        url: url,
+        tipo: AttachmentType.other,
+        size_in_bytes: 0,
+        fechaSubida: DateTime.now(),
+        thumbnail: null,
+      ),
+    );
   }
 
   void _removeAttachment(AttachmentEntity attachment) {
-    setState(() {
-      _attachments.removeWhere((a) => a.id == attachment.id);
-    });
+    _formNotifier.removeAttachment(attachment.id);
   }
 
   Future<void> _pickAndUploadImage() async {
@@ -2837,24 +2305,25 @@ class _ClinicalHistoryWizardPageState
 
       if (pickedFile == null) return;
 
-      setState(() => _isUploading = true);
+      _formNotifier.setUploading(true);
 
       final file = File(pickedFile.path);
+      // Use ref.read to get current state (tempNoteId) without watching
+      final currentState = ref.read(clinicalHistoryFormProvider(_formArgs));
+
       final attachment = await ref
           .read(uploadImageAttachmentUseCaseProvider)
           .call(
             file: file,
             doctorId: widget.doctorId,
             patientId: widget.patientId,
-            noteId: _tempNoteId,
+            noteId: currentState.tempNoteId,
           );
 
-      setState(() {
-        _attachments.add(attachment);
-        _isUploading = false;
-      });
+      _formNotifier.addAttachment(attachment);
+      _formNotifier.setUploading(false);
     } catch (e) {
-      setState(() => _isUploading = false);
+      _formNotifier.setUploading(false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2878,24 +2347,24 @@ class _ClinicalHistoryWizardPageState
       final platformFile = result.files.first;
       if (platformFile.path == null) return;
 
-      setState(() => _isUploading = true);
+      _formNotifier.setUploading(true);
 
       final file = File(platformFile.path!);
+      final currentState = ref.read(clinicalHistoryFormProvider(_formArgs));
+
       final attachment = await ref
           .read(uploadPdfAttachmentUseCaseProvider)
           .call(
             file: file,
             doctorId: widget.doctorId,
             patientId: widget.patientId,
-            noteId: _tempNoteId,
+            noteId: currentState.tempNoteId,
           );
 
-      setState(() {
-        _attachments.add(attachment);
-        _isUploading = false;
-      });
+      _formNotifier.addAttachment(attachment);
+      _formNotifier.setUploading(false);
     } catch (e) {
-      setState(() => _isUploading = false);
+      _formNotifier.setUploading(false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2906,7 +2375,7 @@ class _ClinicalHistoryWizardPageState
       }
     }
   }
-}
+} // End class
 
 /// Section card for wizard steps
 ///
@@ -2978,8 +2447,53 @@ class _WizardSectionCard extends StatelessWidget {
   }
 }
 
-/// Action choices for dictation when field has existing content.
 enum _DictationAction { replace, append, cancel }
 
-/// Action choices for the dictation options sheet (long transcripts).
-enum _DictationOptionsAction { applyToField, generateAI, cancel }
+enum _SideNavArrowVariant { surface, primary }
+
+class _SideNavArrow extends StatelessWidget {
+  const _SideNavArrow({
+    required this.icon,
+    required this.onTap,
+    this.variant = _SideNavArrowVariant.surface,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final _SideNavArrowVariant variant;
+
+  @override
+  Widget build(BuildContext context) {
+    final isPrimary = variant == _SideNavArrowVariant.primary;
+    final bgColor = isPrimary ? DocsoftColors.primary : DocsoftColors.surface;
+    final fgColor = isPrimary ? Colors.white : DocsoftColors.textSecondary;
+    final borderColor = isPrimary ? Colors.transparent : DocsoftColors.border;
+
+    return GestureDetector(
+      onTap: () {
+        FocusScope.of(context).unfocus();
+        onTap();
+      },
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: bgColor.withValues(
+            alpha: isPrimary ? 1.0 : 0.75,
+          ), // Surface opacity
+          shape: BoxShape.circle,
+          border: Border.all(color: borderColor),
+          // Subtle shadow or none
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black12,
+              blurRadius: 4,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Icon(icon, color: fgColor, size: 22),
+      ),
+    );
+  }
+}

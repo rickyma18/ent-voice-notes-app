@@ -1,7 +1,5 @@
 // lib/src/features/medical_notes/presentation/widgets/signature/signing_overlay.dart
 
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../../../../ui/docsoft_ui.dart';
