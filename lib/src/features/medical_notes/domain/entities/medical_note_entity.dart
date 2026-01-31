@@ -41,7 +41,8 @@ class MedicalNoteEntity extends Equatable {
     // Pronóstico (prognosis)
     this.prognosis,
     // Datos de transcripción y IA
-    required this.rawTranscript,
+    required String rawTranscript,
+    this.stepTranscripts = const {},
     this.resumen,
     this.notaAdicional,
     // Metadatos adicionales
@@ -56,7 +57,7 @@ class MedicalNoteEntity extends Equatable {
     this.surgicalData,
     // Signature data (only when status == signed)
     this.signatureData,
-  });
+  }) : _rawTranscriptLegacy = rawTranscript;
 
   // Identificadores
   final String id;
@@ -117,8 +118,28 @@ class MedicalNoteEntity extends Equatable {
   final String? prognosis;
 
   // Datos de transcripción y procesamiento IA
-  /// Transcripción bruta del audio dictado por la doctora (Whisper)
-  final String rawTranscript;
+  /// Backing field for legacy rawTranscript (single transcript).
+  final String _rawTranscriptLegacy;
+
+  /// Per-step transcripts: interview, exam, studies, assessment.
+  /// Empty map for legacy notes or notes without step transcripts.
+  final Map<String, String> stepTranscripts;
+
+  /// Computed rawTranscript for API compatibility.
+  /// If stepTranscripts has content, concatenates in fixed order.
+  /// Otherwise returns the legacy single transcript.
+  String get rawTranscript {
+    if (stepTranscripts.isNotEmpty) {
+      const order = ['interview', 'exam', 'studies', 'assessment'];
+      final parts = <String>[];
+      for (final k in order) {
+        final v = (stepTranscripts[k] ?? '').trim();
+        if (v.isNotEmpty) parts.add(v);
+      }
+      return parts.join('\n\n').trim();
+    }
+    return _rawTranscriptLegacy;
+  }
 
   /// Resumen generado por IA de la consulta completa
   final String? resumen;
@@ -178,6 +199,7 @@ class MedicalNoteEntity extends Equatable {
       diagnostico: '',
       planTratamiento: '',
       rawTranscript: '',
+      stepTranscripts: const {},
       surgicalData: type == MedicalNoteType.surgicalNote
           ? SurgicalNoteDataEntity.empty()
           : null,
@@ -207,6 +229,7 @@ class MedicalNoteEntity extends Equatable {
     int? spo2,
     String? prognosis,
     String? rawTranscript,
+    Map<String, String>? stepTranscripts,
     String? resumen,
     String? notaAdicional,
     NoteStatus? status,
@@ -240,7 +263,8 @@ class MedicalNoteEntity extends Equatable {
       temperatureC: temperatureC ?? this.temperatureC,
       spo2: spo2 ?? this.spo2,
       prognosis: prognosis ?? this.prognosis,
-      rawTranscript: rawTranscript ?? this.rawTranscript,
+      rawTranscript: rawTranscript ?? _rawTranscriptLegacy,
+      stepTranscripts: stepTranscripts ?? this.stepTranscripts,
       resumen: resumen ?? this.resumen,
       notaAdicional: notaAdicional ?? this.notaAdicional,
       status: status ?? this.status,
@@ -342,7 +366,8 @@ class MedicalNoteEntity extends Equatable {
     temperatureC,
     spo2,
     prognosis,
-    rawTranscript,
+    _rawTranscriptLegacy,
+    stepTranscripts,
     resumen,
     notaAdicional,
     status,

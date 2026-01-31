@@ -36,6 +36,7 @@ class MedicalNoteModel extends MedicalNoteEntity {
     super.spo2,
     super.prognosis,
     required super.rawTranscript,
+    super.stepTranscripts,
     super.resumen,
     super.notaAdicional,
     super.status,
@@ -100,6 +101,8 @@ class MedicalNoteModel extends MedicalNoteEntity {
       prognosis: json['prognosis'] as String?,
       // Ensure raw_transcript is always present (fallback to empty string for legacy data)
       rawTranscript: (json['raw_transcript'] as String?) ?? '',
+      // Parse step_transcripts robustly
+      stepTranscripts: _parseStepTranscripts(json['step_transcripts']),
       resumen: json['resumen'] as String?,
       notaAdicional: json['nota_adicional'] as String?,
       status: _parseNoteStatus(json['status'] as String?),
@@ -155,7 +158,9 @@ class MedicalNoteModel extends MedicalNoteEntity {
       'spo2': spo2,
       // Prognosis
       'prognosis': prognosis,
+      // Always write both for backward/forward compatibility
       'raw_transcript': rawTranscript,
+      'step_transcripts': stepTranscripts,
       'resumen': resumen,
       'nota_adicional': notaAdicional,
       'status': _noteStatusToString(status),
@@ -213,6 +218,7 @@ class MedicalNoteModel extends MedicalNoteEntity {
       spo2: entity.spo2,
       prognosis: entity.prognosis,
       rawTranscript: entity.rawTranscript,
+      stepTranscripts: entity.stepTranscripts,
       resumen: entity.resumen,
       notaAdicional: entity.notaAdicional,
       status: entity.status,
@@ -250,6 +256,7 @@ class MedicalNoteModel extends MedicalNoteEntity {
       spo2: spo2,
       prognosis: prognosis,
       rawTranscript: rawTranscript,
+      stepTranscripts: stepTranscripts,
       resumen: resumen,
       notaAdicional: notaAdicional,
       status: status,
@@ -312,6 +319,17 @@ class MedicalNoteModel extends MedicalNoteEntity {
             )
           : null,
     );
+  }
+
+  static Map<String, String> _parseStepTranscripts(dynamic raw) {
+    if (raw is! Map) return const {};
+    final result = <String, String>{};
+    for (final entry in raw.entries) {
+      final k = entry.key?.toString();
+      if (k == null) continue;
+      result[k] = (entry.value ?? '').toString();
+    }
+    return result;
   }
 
   static NoteStatus _parseNoteStatus(String? value) {

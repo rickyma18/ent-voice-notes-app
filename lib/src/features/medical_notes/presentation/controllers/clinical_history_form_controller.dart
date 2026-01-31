@@ -522,6 +522,11 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
       final MedicalNoteEntity note;
 
       if (isEditing && existingNote != null) {
+        // Hardening: don't overwrite existing transcript with empty state
+        final nextTranscript = state.rawTranscript.trim().isNotEmpty
+            ? state.rawTranscript
+            : existingNote.rawTranscript;
+
         note = existingNote.copyWith(
           updatedAt: now,
           type: MedicalNoteType.clinicalHistory,
@@ -539,6 +544,7 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
           temperatureC: temperatureC,
           spo2: spo2,
           prognosis: prognosis,
+          rawTranscript: nextTranscript,
           status: asDraft ? NoteStatus.draft : existingNote.status,
           attachments: state.attachments,
         );
