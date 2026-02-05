@@ -233,6 +233,70 @@ class _ClinicalHistoryWizardPageState
     'Diagnostico y plan',
   ];
 
+  /// Maps backend scope values to the allowed section IDs for each scope.
+  ///
+  /// Used by [_buildSuggestionsFromStructuredV1] to filter suggestions
+  /// when extracting by step (ÉPICA 4).
+  ///
+  /// Scope values: "interview" | "exam" | "studies" | "assessment"
+  static const Map<String, Set<String>> _scopeAllowedSectionIds = {
+    'interview': {
+      'motivoConsulta',
+      'padecimientoActual',
+      'heredofamiliares',
+      'noPatologicos',
+      'patologicos',
+    },
+    'exam': {
+      'otoscopia',
+      'otomicroscopia',
+      'rinoscopia',
+      'endoscopiaNasal',
+      'orofaringe',
+      'cuello',
+      'laringoscopia',
+    },
+    'studies': {
+      'estudiosIndicados',
+    },
+    'assessment': {
+      'diagnostico',
+      'planTratamiento',
+      'pronostico',
+    },
+  };
+
+  /// Maps the current wizard step index to the backend scope value.
+  ///
+  /// Used by [_generateAISuggestions] to determine which scope to use
+  /// for extraction (ÉPICA 4 - extract per step).
+  ///
+  /// Step mapping:
+  /// - Steps 0-4 (motivo, antecedentes, padecimiento) → "interview"
+  /// - Step 5 (exploración ORL) → "exam"
+  /// - Step 6 (laboratorio y estudios) → "studies"
+  /// - Step 7 (diagnóstico y plan) → "assessment"
+  ///
+  /// Returns null for invalid steps (fallback to full extraction).
+  String? _getScopeForCurrentStep() {
+    switch (_currentStep) {
+      case 0:
+      case 1:
+      case 2:
+      case 3:
+      case 4:
+        return 'interview';
+      case 5:
+        return 'exam';
+      case 6:
+        return 'studies';
+      case 7:
+        return 'assessment';
+      default:
+        return null; // Full extraction fallback
+    }
+  }
+
   int get _totalSteps => _stepTitles.length;
 
   String _getInitials(String name) {
@@ -415,15 +479,27 @@ class _ClinicalHistoryWizardPageState
     });
 
     try {
-      // Use the controller's generateAISuggestionsWithFallback method
-      // which respects the useScribeV2ForNoteCreation feature flag
-      // and automatically falls back to legacy if Scribe V2 fails
       final controller = ref.read(medicalNotesControllerProvider.notifier);
 
-      final result = await controller.generateAISuggestionsWithFallback(
-        _rawTranscript!,
-        language: 'es',
-      );
+      // ÉPICA 4: Determine scope based on current wizard step
+      final scopeActual = _getScopeForCurrentStep();
+
+      // Call the appropriate extraction method based on scope
+      final Map<String, dynamic> result;
+      if (scopeActual != null) {
+        // Scoped extraction: only extract fields relevant to current step
+        result = await controller.generateAISuggestionsForScope(
+          _rawTranscript!,
+          scope: scopeActual,
+          language: 'es',
+        );
+      } else {
+        // Full extraction: legacy behavior (no scope filtering)
+        result = await controller.generateAISuggestionsWithFallback(
+          _rawTranscript!,
+          language: 'es',
+        );
+      }
 
       if (!mounted) return;
 
@@ -439,7 +515,7 @@ class _ClinicalHistoryWizardPageState
         _suggestionsGenerated = true;
       });
 
-      // Show notification if fallback was used
+      // Show notification if fallback was used (applies to both scoped and full)
       if (source == 'fallback') {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
@@ -461,7 +537,11 @@ class _ClinicalHistoryWizardPageState
       }
 
       // Build sections for the sheet using structured v1 data
-      final sections = _buildSuggestionsFromStructuredV1(structuredV1);
+      // ÉPICA 4: Pass scope to filter sections for current step
+      final sections = _buildSuggestionsFromStructuredV1(
+        structuredV1,
+        scope: scopeActual,
+      );
 
       if (sections.isEmpty || sections.every((s) => !s.hasContent)) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -503,12 +583,22 @@ class _ClinicalHistoryWizardPageState
   ///
   /// This method maps v1 schema fields directly to UI sections,
   /// bypassing the regex parsing that was error-prone.
+  ///
+  /// If [scope] is provided, only returns sections allowed for that scope
+  /// (see [_scopeAllowedSectionIds]). This enables step-by-step extraction
+  /// where each wizard step only shows relevant suggestions (ÉPICA 4).
+  ///
+  /// Scope values: "interview" | "exam" | "studies" | "assessment"
+  /// If scope is null, returns ALL sections (full extraction behavior).
   List<AISuggestionSection> _buildSuggestionsFromStructuredV1(
-    Map<String, dynamic> v1Data,
-  ) {
+    Map<String, dynamic> v1Data, {
+    String? scope,
+  }) {
     final structured = StructuredFieldsV1(v1Data);
 
-    return [
+    // Build all sections first
+    final allSections = [
+      // Interview scope sections
       AISuggestionSection(
         id: 'motivoConsulta',
         label: 'Motivo de consulta',
@@ -539,7 +629,7 @@ class _ClinicalHistoryWizardPageState
         suggestion: structured.padecimientoActual ?? '',
         currentValue: _padecimientoActualController.text,
       ),
-      // Exploracion fisica sections - direct mapping
+      // Exam scope sections - Exploracion fisica ORL
       AISuggestionSection(
         id: 'otoscopia',
         label: 'Otoscopia',
@@ -588,6 +678,14 @@ class _ClinicalHistoryWizardPageState
         suggestion: structured.laringoscopia ?? '',
         currentValue: _orlControllers['laringoscopia']?.text ?? '',
       ),
+      // Studies scope sections
+      AISuggestionSection(
+        id: 'estudiosIndicados',
+        label: 'Estudios indicados',
+        suggestion: structured.estudiosIndicados.join('\n'),
+        currentValue: '', // No editable controller for this field currently
+      ),
+      // Assessment scope sections
       AISuggestionSection(
         id: 'diagnostico',
         label: 'Diagnostico',
@@ -607,6 +705,22 @@ class _ClinicalHistoryWizardPageState
         currentValue: _prognosisController.text,
       ),
     ];
+
+    // If no scope specified, return all sections (full extraction)
+    if (scope == null) {
+      return allSections;
+    }
+
+    // Filter by scope: only return sections allowed for the given scope
+    final allowedIds = _scopeAllowedSectionIds[scope];
+    if (allowedIds == null || allowedIds.isEmpty) {
+      // Unknown scope - return all sections as fallback
+      return allSections;
+    }
+
+    return allSections
+        .where((section) => allowedIds.contains(section.id))
+        .toList();
   }
 
   /// Returns patologicos string from structured data.

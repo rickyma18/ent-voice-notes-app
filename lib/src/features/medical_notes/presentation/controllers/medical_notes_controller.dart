@@ -554,6 +554,103 @@ class MedicalNotesController extends _$MedicalNotesController {
     };
   }
 
+  /// Generates AI suggestions for a specific wizard step (scope).
+  ///
+  /// This method is used by the clinical history wizard to extract only
+  /// the relevant fields for each step (interview, exam, studies, assessment).
+  ///
+  /// Uses the same priority/fallback logic as [generateAISuggestionsWithFallback]:
+  /// 1. Backend Pipeline (MedGemma V1) with context.scope
+  /// 2. Legacy Pipeline (fallback) - without scope (full extraction)
+  ///
+  /// The backend applies POST-LLM mask based on scope:
+  /// - "interview": motivo_consulta, padecimiento_actual, antecedentes
+  /// - "exam": exploracion_orl
+  /// - "studies": estudios_indicados
+  /// - "assessment": diagnostico, plan_tratamiento
+  ///
+  /// Returns: {'suggestions': Map, 'source': String}
+  /// - source: 'medgemma_v1' | 'fallback'
+  ///
+  /// PHI-safe: Logs scope but never transcript content.
+  Future<Map<String, dynamic>> generateAISuggestionsForScope(
+    String transcript, {
+    required String scope,
+    String? language,
+  }) async {
+    final flags = ref.read(pipelineFlagsProvider);
+    final medGemmaClient = ref.read(medGemmaClientProvider);
+
+    Log.info('[AI-SCOPE] Generating suggestions for scope=$scope');
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Priority 1: Backend Pipeline with scope (ÉPICA 19 + Wizard)
+    // ─────────────────────────────────────────────────────────────────────────
+    if (flags.pipelineEnabled && medGemmaClient != null) {
+      Log.info(
+        '[AI-SCOPE] Using Backend Pipeline with scope=$scope',
+      );
+
+      try {
+        final suggestions = await _extractWithMedGemmaV1(
+          medGemmaClient,
+          transcript,
+          language: language,
+          scope: scope,
+        );
+
+        if (suggestions != null) {
+          // Add pipeline metadata
+          final meta = Map<String, dynamic>.from(
+            suggestions['metadata'] as Map? ?? {},
+          );
+          meta['pipelineUsed'] = 'backend_v1';
+          meta['scope'] = scope;
+          meta['fallbackUsed'] = false;
+
+          suggestions['metadata'] = meta;
+
+          Log.info('[AI-SCOPE] Backend extraction succeeded for scope=$scope');
+          return {'suggestions': suggestions, 'source': kSourceMedGemmaV1};
+        }
+
+        Log.warning(
+          '[AI-SCOPE] Backend returned null for scope=$scope, trying fallback...',
+        );
+      } catch (e) {
+        Log.error('[AI-SCOPE] Backend failed for scope=$scope: $e');
+        // Fallback proceeds below
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Priority 2: Legacy Pipeline (Fallback - no scope support)
+    // ─────────────────────────────────────────────────────────────────────────
+    Log.warning(
+      '[AI-SCOPE] Fallback to legacy for scope=$scope (no scope filtering)',
+    );
+
+    final suggestions = await ref
+        .read(noteAIServiceProvider)
+        .suggestStructuredFieldsV3(transcript);
+
+    // Ensure metadata reflects fallback
+    final meta = Map<String, dynamic>.from(
+      suggestions['metadata'] as Map? ?? {},
+    );
+    meta['pipelineUsed'] = 'legacy_fallback';
+    meta['scope'] = scope;
+    meta['fallbackUsed'] = true;
+    meta['scopeNotApplied'] = true; // Legacy doesn't support scope filtering
+    suggestions['metadata'] = meta;
+
+    return {
+      'suggestions': suggestions,
+      'source': 'fallback',
+      'fallbackReason': 'backend_unreachable_or_disabled',
+    };
+  }
+
   /// Runs legacy pipeline in background for A/B comparison (telemetry only).
   ///
   /// PHI-Safe: Logs ONLY numerical metrics, no keys content or transcript.
@@ -597,6 +694,11 @@ class MedicalNotesController extends _$MedicalNotesController {
   /// 2. Call finalize (single LLM call) → finalized V1 with metadata
   /// 3. If finalize disabled/fails → return reduce_draft with warning metadata
   ///
+  /// Scope (optional):
+  /// - "interview" | "exam" | "studies" | "assessment"
+  /// - When provided, backend applies POST-LLM mask to return only relevant fields.
+  /// - Used by wizard step-by-step extraction flow.
+  ///
   /// PHI-safe: Only logs metadata, never transcript or clinical content.
   ///
   /// Returns Flutter-format Map (snake_case keys) or null on failure.
@@ -608,12 +710,19 @@ class MedicalNotesController extends _$MedicalNotesController {
     MedGemmaServiceClient client,
     String transcript, {
     String? language,
+    String? scope,
   }) async {
     // Build request body using helper
     final body = _buildStructuredV1BodyFromSpeech(
       transcript,
       language: language ?? 'es',
+      scope: scope,
     );
+
+    // PHI-safe log: scope is OK to log
+    if (scope != null) {
+      Log.info('[MEDGEMMA-V1] Using scoped extraction: scope=$scope');
+    }
 
     // PHI-safe log: only body shape, never content
     final transcriptMap = body['transcript'] as Map<String, dynamic>;
@@ -874,7 +983,7 @@ class MedicalNotesController extends _$MedicalNotesController {
   ///     "language": "es",
   ///     "durationMs": N
   ///   },
-  ///   "context": {"specialty":"otorrinolaringología","encounterType":"consulta"}
+  ///   "context": {"specialty":"otorrinolaringología","encounterType":"consulta","scope":"interview"}
   /// }
   /// ```
   ///
@@ -883,11 +992,17 @@ class MedicalNotesController extends _$MedicalNotesController {
   /// - "patient", "paciente" → "patient"
   /// - Any other (including "unknown", "SPEAKER_00") → "doctor" (default)
   ///
+  /// Scope (optional):
+  /// - "interview" | "exam" | "studies" | "assessment"
+  /// - When provided, backend applies POST-LLM mask to return only relevant fields.
+  /// - When null, omitted from request (full extraction behavior).
+  ///
   /// PHI-safe: Does not log the speech content.
   Map<String, dynamic> _buildStructuredV1BodyFromSpeech(
     String speech, {
     String language = 'es',
     String speaker = 'doctor',
+    String? scope,
   }) {
     // Normalize speaker to backend-accepted enum values
     final normalizedSpeaker = _normalizeSpeaker(speaker);
@@ -898,6 +1013,17 @@ class MedicalNotesController extends _$MedicalNotesController {
       1000,
       600000,
     );
+
+    // Build context map
+    final context = <String, dynamic>{
+      'specialty': 'otorrinolaringología',
+      'encounterType': 'consulta',
+    };
+
+    // Only include scope if provided (backend uses it for POST-LLM mask)
+    if (scope != null) {
+      context['scope'] = scope;
+    }
 
     return {
       'transcript': {
@@ -912,10 +1038,7 @@ class MedicalNotesController extends _$MedicalNotesController {
         'language': language,
         'durationMs': estimatedDurationMs,
       },
-      'context': {
-        'specialty': 'otorrinolaringología',
-        'encounterType': 'consulta',
-      },
+      'context': context,
     };
   }
 
