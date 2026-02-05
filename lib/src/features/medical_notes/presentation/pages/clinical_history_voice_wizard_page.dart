@@ -12,7 +12,9 @@ import '../../../../core/base/result.dart';
 import '../../../../core/logger/log.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 import '../../../patients/patients_providers.dart';
+import '../../application/scribe/finalize_service.dart';
 import '../../application/structured_fields_schema_v1.dart';
+import '../../data/medgemma/providers/medgemma_providers.dart';
 import '../../domain/entities/attachment_entity.dart';
 import '../../domain/entities/medical_note_entity.dart';
 import '../../domain/entities/medical_note_type.dart';
@@ -105,6 +107,7 @@ class _ClinicalHistoryVoiceWizardPageState
 
   int _currentStep = 0;
   bool _isSaving = false;
+  bool _isFinalizing = false;
   bool _isProcessingAI = false;
   bool _isDictationSheetOpen = false;
   PatientEntity? _patient;
@@ -858,6 +861,135 @@ class _ClinicalHistoryVoiceWizardPageState
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Finalize & Review (ÉPICA 6)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// Concatenates all step transcripts into a single string for finalize.
+  String _buildFullTranscript() {
+    final parts = <String>[];
+    for (final scope in _stepScopes) {
+      final t = _stepTranscripts[scope]?.trim() ?? '';
+      if (t.isNotEmpty) parts.add(t);
+    }
+    return parts.join('\n\n');
+  }
+
+  /// Builds camelCase reduce_draft from current form controllers.
+  Map<String, dynamic> _buildReduceDraft() {
+    return <String, dynamic>{
+      'motivoConsulta': _motivoController.text.trim(),
+      'padecimientoActual': _padecimientoActualController.text.trim(),
+      'antecedentes': {
+        'heredofamiliares': _heredofamiliaresController.text.trim(),
+        'noPatologicos': _noPatologicosController.text.trim(),
+        'patologicos': _patologicosController.text.trim(),
+      },
+      'exploracionOrl': {
+        for (final e in _orlControllers.entries)
+          e.key: e.value.text.trim(),
+      },
+      'diagnostico': {
+        'texto': _diagnosticoController.text.trim(),
+      },
+      'planTratamiento': _planController.text.trim(),
+      'pronostico': _prognosisController.text.trim(),
+      'estudiosIndicados': _estudiosIndicadosController.text.trim(),
+    };
+  }
+
+  /// Finalize-and-review flow: calls finalize with consistency check,
+  /// then shows warnings review if applicable, or saves directly.
+  Future<void> _finalizeAndReview() async {
+    final finalizeService = ref.read(finalizeServiceProvider);
+
+    // No finalize service → save directly
+    if (finalizeService == null) {
+      Log.info('[VoiceWizard] FinalizeService disabled - saving directly');
+      await _saveNote(asDraft: false);
+      return;
+    }
+
+    final fullTranscript = _buildFullTranscript();
+
+    // No transcript → save directly
+    if (fullTranscript.trim().isEmpty) {
+      Log.info('[VoiceWizard] No transcript - saving directly');
+      await _saveNote(asDraft: false);
+      return;
+    }
+
+    setState(() => _isFinalizing = true);
+
+    try {
+      final reduceDraft = _buildReduceDraft();
+
+      final result = await finalizeService.finalize(
+        transcript: fullTranscript,
+        reduceDraft: reduceDraft,
+        checkConsistency: true,
+      );
+
+      if (!mounted) return;
+
+      final warnings = result.metadata.contractWarnings;
+      final contractStatus = result.metadata.contractStatus;
+
+      Log.info(
+        '[VoiceWizard] Finalize complete. '
+        'contractStatus=$contractStatus warnings=$warnings',
+      );
+
+      // If warnings exist → show review sheet
+      if (warnings.isNotEmpty && contractStatus != 'ok') {
+        setState(() => _isFinalizing = false);
+        _showWarningsReviewSheet(warnings, result);
+      } else {
+        // No warnings → save directly
+        setState(() => _isFinalizing = false);
+        await _saveNote(asDraft: false);
+      }
+    } catch (e) {
+      Log.error('[VoiceWizard] Finalize failed: $e');
+      if (mounted) {
+        setState(() => _isFinalizing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No se pudo verificar consistencia. Guardando nota…',
+            ),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+        // Fallback: save normally
+        await _saveNote(asDraft: false);
+      }
+    }
+  }
+
+  /// Shows a review bottom sheet with consistency warnings from finalize.
+  void _showWarningsReviewSheet(
+    List<String> warnings,
+    FinalizeResult result,
+  ) {
+    showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ConsistencyWarningsSheet(
+        warnings: warnings,
+        confidence: result.metadata.confidenceOverall,
+      ),
+    ).then((continueAndSave) {
+      if (!mounted) return;
+      if (continueAndSave == true) {
+        _saveNote(asDraft: false);
+      }
+      // else: user chose "Volver a editar" → stays on wizard
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Save
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -1460,10 +1592,10 @@ class _ClinicalHistoryVoiceWizardPageState
                   Expanded(
                     child: isLastStep
                         ? DocsoftPrimaryButton(
-                            label: 'Finalizar',
+                            label: 'Finalizar y revisar',
                             icon: Icons.check,
-                            isLoading: _isSaving,
-                            onPressed: () => _saveNote(asDraft: false),
+                            isLoading: _isSaving || _isFinalizing,
+                            onPressed: _finalizeAndReview,
                           )
                         : DocsoftOutlinedButton(
                             label: 'Siguiente',
@@ -1558,18 +1690,19 @@ class _ClinicalHistoryVoiceWizardPageState
     if (isLastStep) {
       // Finalize — filled style matching theme
       final themedStyle = Theme.of(context).elevatedButtonTheme.style;
+      final busy = _isSaving || _isFinalizing;
       return Tooltip(
-        message: 'Finalizar',
+        message: 'Finalizar y revisar',
         child: SizedBox(
           width: 48,
           height: 48,
           child: ElevatedButton(
-            onPressed: _isSaving ? null : () => _saveNote(asDraft: false),
+            onPressed: busy ? null : _finalizeAndReview,
             style: themedStyle?.copyWith(
               padding: const WidgetStatePropertyAll(EdgeInsets.zero),
             ),
             child: Center(
-              child: _isSaving
+              child: busy
                   ? const SizedBox(
                       width: 20,
                       height: 20,
@@ -1809,5 +1942,241 @@ class _ClinicalHistoryVoiceWizardPageState
         ],
       ),
     );
+  }
+}
+
+// =============================================================================
+// Consistency Warnings Review Sheet (ÉPICA 6)
+// =============================================================================
+
+/// Bottom sheet that displays finalize consistency warnings.
+///
+/// Returns `true` via [Navigator.pop] to continue saving,
+/// or `null`/`false` to go back and edit.
+class _ConsistencyWarningsSheet extends StatelessWidget {
+  const _ConsistencyWarningsSheet({
+    required this.warnings,
+    required this.confidence,
+  });
+
+  final List<String> warnings;
+  final String confidence;
+
+  @override
+  Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.sizeOf(context).height;
+
+    return Container(
+      constraints: BoxConstraints(maxHeight: screenHeight * 0.7),
+      decoration: const BoxDecoration(
+        color: DocsoftColors.background,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle
+          const SizedBox(height: 12),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: DocsoftColors.textTertiary.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+            child: Column(
+              children: [
+                const Icon(
+                  Icons.warning_amber_rounded,
+                  size: 40,
+                  color: Colors.orange,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Revisión de consistencia',
+                  style: DocsoftTextStyles.title.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Se encontraron observaciones que podrías revisar antes de guardar.',
+                  style: DocsoftTextStyles.caption.copyWith(
+                    color: DocsoftColors.textSecondary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Warnings list
+          Flexible(
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              itemCount: warnings.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (_, i) => _WarningTile(warning: warnings[i]),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Confidence badge
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'Confianza: ',
+                  style: DocsoftTextStyles.caption.copyWith(
+                    color: DocsoftColors.textSecondary,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _confidenceColor(confidence).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(DocsoftRadii.full),
+                  ),
+                  child: Text(
+                    confidence.toUpperCase(),
+                    style: DocsoftTextStyles.caption.copyWith(
+                      color: _confidenceColor(confidence),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Action buttons
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: DocsoftOutlinedButton(
+                      label: 'Volver a editar',
+                      icon: Icons.edit,
+                      onPressed: () => Navigator.pop(context, false),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: DocsoftPrimaryButton(
+                      label: 'Continuar y guardar',
+                      icon: Icons.check,
+                      onPressed: () => Navigator.pop(context, true),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _confidenceColor(String confidence) {
+    switch (confidence) {
+      case 'alta':
+        return DocsoftColors.success;
+      case 'media':
+        return Colors.orange;
+      default:
+        return DocsoftColors.error;
+    }
+  }
+}
+
+/// Individual warning tile with human-readable label.
+class _WarningTile extends StatelessWidget {
+  const _WarningTile({required this.warning});
+
+  final String warning;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: DocsoftColors.errorSoft,
+        borderRadius: BorderRadius.circular(DocsoftRadii.sm),
+        border: Border.all(
+          color: DocsoftColors.error.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.info_outline,
+            size: 18,
+            color: Colors.orange,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _humanize(warning),
+              style: DocsoftTextStyles.caption.copyWith(
+                color: DocsoftColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Converts canonical warning codes to human-readable Spanish labels.
+  String _humanize(String code) {
+    if (code.startsWith('unresolved_conflict:')) {
+      final topic = code.substring('unresolved_conflict:'.length);
+      return 'Conflicto sin resolver en: $topic';
+    }
+    if (code.startsWith('resolved_contradiction:')) {
+      final topic = code.substring('resolved_contradiction:'.length);
+      return 'Contradicción resuelta en: $topic';
+    }
+    if (code.startsWith('missing_field:')) {
+      final field = code.substring('missing_field:'.length);
+      return 'Campo faltante: $field';
+    }
+    if (code.startsWith('missing_evidence:')) {
+      final field = code.substring('missing_evidence:'.length);
+      return 'Sin evidencia en dictado para: $field';
+    }
+    switch (code) {
+      case 'empty_transcript':
+        return 'Transcripción vacía';
+      case 'timeout:finalize_did_not_complete':
+        return 'El proceso de finalización tardó demasiado';
+      case 'error:finalize_failed':
+        return 'Error al finalizar';
+      case 'invalid_json:finalize_response':
+        return 'Respuesta del servidor inválida';
+      case 'invalid_reduce_draft':
+        return 'Borrador de campos inválido';
+      default:
+        return code;
+    }
   }
 }

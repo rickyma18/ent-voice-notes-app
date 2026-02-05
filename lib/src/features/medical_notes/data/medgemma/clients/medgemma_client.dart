@@ -591,6 +591,8 @@ class MedGemmaServiceClient {
     bool refine = false,
     bool useLegacyFormat = false,
     Duration? timeoutOverride,
+    String? transcript,
+    bool checkConsistency = false,
   }) async {
     final stopwatch = Stopwatch()..start();
     final effectiveTimeout = timeoutOverride ?? _defaultFinalizeTimeout;
@@ -617,6 +619,12 @@ class MedGemmaServiceClient {
       requestBody = {'structuredV1': structuredFields};
     } else {
       requestBody = {'structuredFields': structuredFields, 'refine': refine};
+      if (transcript != null && transcript.isNotEmpty) {
+        requestBody['transcript'] = transcript;
+      }
+      if (checkConsistency) {
+        requestBody['checkConsistency'] = true;
+      }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

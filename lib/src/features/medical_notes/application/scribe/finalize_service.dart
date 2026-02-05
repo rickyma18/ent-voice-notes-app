@@ -96,6 +96,7 @@ class FinalizeService {
     required String transcript,
     required Map<String, dynamic> reduceDraft,
     bool refine = false,
+    bool checkConsistency = false,
   }) async {
     final fieldsCount = reduceDraft.keys.length;
     final transcriptLen = transcript.length;
@@ -141,6 +142,8 @@ class FinalizeService {
         structuredFields: reduceDraft,
         refine: effectiveRefine,
         timeoutOverride: _timeoutOverride,
+        transcript: transcript,
+        checkConsistency: checkConsistency,
       );
 
       // Handle client-level error response
