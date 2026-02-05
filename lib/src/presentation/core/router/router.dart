@@ -6,6 +6,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../../core/di/dependency_injection.dart';
 import '../../../core/logger/log.dart';
 import '../../../features/medical_notes/domain/entities/medical_note_entity.dart';
+import '../../../features/medical_notes/presentation/pages/clinical_history_voice_wizard_page.dart';
 import '../../../features/medical_notes/presentation/pages/clinical_history_wizard_page.dart';
 import '../../../features/medical_notes/presentation/pages/create_medical_note_page.dart';
 import '../../../features/medical_notes/presentation/pages/dictation_assist_page.dart';

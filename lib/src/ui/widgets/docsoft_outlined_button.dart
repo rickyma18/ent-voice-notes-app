@@ -49,51 +49,82 @@ class DocsoftOutlinedButton extends StatelessWidget {
         ? DocsoftColors.disabledForeground
         : (textColor ?? DocsoftColors.primary);
 
-    final content = isLoading
-        ? SizedBox(
+    final buttonBase = fullWidth ? double.infinity : null;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 72;
+
+        final Widget content;
+        final EdgeInsetsGeometry padding;
+
+        if (isLoading) {
+          content = SizedBox(
             width: 20,
             height: 20,
             child: CircularProgressIndicator(
               strokeWidth: 2,
               color: effectiveTextColor,
             ),
-          )
-        : Row(
-            mainAxisSize: MainAxisSize.min,
+          );
+          padding = narrow
+              ? EdgeInsets.zero
+              : const EdgeInsets.symmetric(
+                  horizontal: DocsoftSpacing.lg,
+                  vertical: DocsoftSpacing.md,
+                );
+        } else if (narrow && icon != null) {
+          // Icon-only: not enough room for label
+          content = Icon(icon, size: 20, color: effectiveTextColor);
+          padding = EdgeInsets.zero;
+        } else {
+          content = Row(
+            mainAxisSize: MainAxisSize.max,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               if (icon != null) ...[
                 Icon(icon, size: 20, color: effectiveTextColor),
                 const SizedBox(width: DocsoftSpacing.sm),
               ],
-              Text(
-                label,
-                style: DocsoftTextStyles.button.copyWith(
-                  color: effectiveTextColor,
+              Flexible(
+                child: Text(
+                  label,
+                  style: DocsoftTextStyles.button.copyWith(
+                    color: effectiveTextColor,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
               ),
             ],
           );
+          padding = const EdgeInsets.symmetric(
+            horizontal: DocsoftSpacing.lg,
+            vertical: DocsoftSpacing.md,
+          );
+        }
 
-    final button = OutlinedButton(
-      onPressed: isLoading ? null : onPressed,
-      style: OutlinedButton.styleFrom(
-        // Force colors manually because styleFrom with fixed values overrides disabled state logic usually
-        side: BorderSide(color: effectiveBorderColor, width: 2),
-        foregroundColor: effectiveTextColor,
-        disabledForegroundColor: DocsoftColors.disabledForeground,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(DocsoftRadii.buttonRadiusValue),
-        ),
-        padding: const EdgeInsets.symmetric(
-          horizontal: DocsoftSpacing.lg,
-          vertical: DocsoftSpacing.md,
-        ),
-        backgroundColor: Colors.transparent,
-      ),
-      child: content,
+        final button = OutlinedButton(
+          onPressed: isLoading ? null : onPressed,
+          style: OutlinedButton.styleFrom(
+            side: BorderSide(color: effectiveBorderColor, width: 2),
+            foregroundColor: effectiveTextColor,
+            disabledForegroundColor: DocsoftColors.disabledForeground,
+            shape: RoundedRectangleBorder(
+              borderRadius:
+                  BorderRadius.circular(DocsoftRadii.buttonRadiusValue),
+            ),
+            padding: padding,
+            backgroundColor: Colors.transparent,
+          ),
+          child: content,
+        );
+
+        if (buttonBase != null) {
+          return SizedBox(width: buttonBase, child: button);
+        }
+        return button;
+      },
     );
-
-    return fullWidth ? SizedBox(width: double.infinity, child: button) : button;
   }
 }

@@ -145,6 +145,59 @@ List<RouteBase> _medicalNotesRoutes(ref) {
             );
           },
         ),
+        // Clinical History Voice Wizard route (4-step voice-first wizard)
+        GoRoute(
+          path: Routes.clinicalHistoryVoiceWizard,
+          name: RouteNames.clinicalHistoryVoiceWizard,
+          pageBuilder: (context, state) {
+            // Accept patient and optional existing note for editing
+            final extra = state.extra;
+            PatientEntity? patient;
+            MedicalNoteEntity? existingNote;
+
+            if (extra is PatientEntity) {
+              patient = extra;
+            } else if (extra is Map<String, dynamic>) {
+              patient = extra['patient'] as PatientEntity?;
+              existingNote = extra['note'] as MedicalNoteEntity?;
+            }
+
+            if (patient == null) {
+              return MaterialPage(
+                child: Scaffold(
+                  appBar: AppBar(title: const Text('Error')),
+                  body: const Center(
+                    child: Text('Error: No se proporcionó un paciente.'),
+                  ),
+                ),
+              );
+            }
+
+            // Get the current doctor ID from the provider
+            final doctorId = ref.read(currentDoctorIdProvider);
+
+            if (doctorId == null) {
+              return MaterialPage(
+                child: Scaffold(
+                  appBar: AppBar(title: const Text('Error')),
+                  body: const Center(
+                    child: Text(
+                      'Error: No doctor ID found. Please log in again.',
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            return MaterialPage(
+              child: ClinicalHistoryVoiceWizardPage(
+                patientId: patient.id,
+                doctorId: doctorId,
+                existingNote: existingNote,
+              ),
+            );
+          },
+        ),
         // Surgical Note Wizard route
         GoRoute(
           path: Routes.surgicalNoteWizard,

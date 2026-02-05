@@ -24,6 +24,7 @@ class Routes {
   static const String createMedicalNote = 'create';
   static const String detailMedicalNote = 'detail';
   static const String clinicalHistoryWizard = 'clinical-history-wizard';
+  static const String clinicalHistoryVoiceWizard = 'clinical-history-voice-wizard';
   static const String surgicalNoteWizard = 'surgical-note-wizard';
   static const String dictationAssist = 'dictation-assist';
 

@@ -80,18 +80,18 @@ class _NoteTypeSelectorContent extends StatelessWidget {
               ),
               const SizedBox(height: DocsoftSpacing.xl),
 
-              // Option 1: Voice-assisted (Recommended)
+              // Option 1: Voice-assisted (Recommended) - New 4-step voice wizard
               DocsoftActionTile(
                 icon: Icons.mic_rounded,
                 title: 'Nota médica asistida por voz',
                 description:
-                    'Recomendado. Graba la consulta y revisa/edita la nota al final.',
+                    'Recomendado. Dicta paso a paso y procesa con IA.',
                 isHighlighted: true,
                 semanticLabel:
                     'Nota médica asistida por voz, opción recomendada',
                 onTap: () async {
                   final created = await context.pushNamed<bool>(
-                    RouteNames.dictationAssist,
+                    RouteNames.clinicalHistoryVoiceWizard,
                     extra: patient,
                   );
                   if (context.mounted) {

@@ -21,36 +21,66 @@ class DocsoftPrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final content = isLoading
-        ? const SizedBox(
+    final themedStyle = Theme.of(context).elevatedButtonTheme.style;
+    final buttonBase = fullWidth ? double.infinity : null;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 72;
+
+        final Widget content;
+        ButtonStyle? styleOverride;
+
+        if (isLoading) {
+          content = const SizedBox(
             width: 20,
             height: 20,
             child: CircularProgressIndicator(
               strokeWidth: 2,
               color: Colors.white,
             ),
-          )
-        : Row(
-            mainAxisSize: MainAxisSize.min,
+          );
+          if (narrow) {
+            styleOverride = themedStyle?.copyWith(
+              padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+            );
+          }
+        } else if (narrow && icon != null) {
+          content = Icon(icon, size: 20);
+          styleOverride = themedStyle?.copyWith(
+            padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+          );
+        } else {
+          content = Row(
+            mainAxisSize: MainAxisSize.max,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               if (icon != null) ...[
                 Icon(icon, size: 20),
                 const SizedBox(width: 8),
               ],
-              Text(label),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
             ],
           );
+        }
 
-    // 🔒 Force the app theme style (prevents unexpected defaults anywhere)
-    final themedStyle = Theme.of(context).elevatedButtonTheme.style;
+        final button = ElevatedButton(
+          onPressed: isLoading ? null : onPressed,
+          style: styleOverride ?? themedStyle,
+          child: content,
+        );
 
-    final button = ElevatedButton(
-      onPressed: isLoading ? null : onPressed,
-      style: themedStyle,
-      child: content,
+        if (buttonBase != null) {
+          return SizedBox(width: buttonBase, child: button);
+        }
+        return button;
+      },
     );
-
-    return fullWidth ? SizedBox(width: double.infinity, child: button) : button;
   }
 }
