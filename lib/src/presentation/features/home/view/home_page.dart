@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:medical_notes_app/src/ui/widgets/docsoft_snackbar.dart';
 
 import '../../../../ui/docsoft_ui.dart';
 import '../../../../features/doctors/domain/entities/doctor_entity.dart';
@@ -44,11 +45,10 @@ class HomePage extends ConsumerWidget {
       if (next case AsyncData(value: true)) {
         context.goNamed(RouteNames.login);
       } else if (next case AsyncError(:final error)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(error.toString()),
-            backgroundColor: DocsoftColors.error,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: error.toString(),
+          type: SnackBarType.error,
         );
       }
     });

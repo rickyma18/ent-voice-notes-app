@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../ui/widgets/docsoft_snackbar.dart';
 import '../../medical_notes_providers.dart';
 import '../../domain/entities/ai_engine.dart';
 
@@ -23,11 +24,11 @@ class AiEngineSelector extends ConsumerWidget {
         ),
         onSelected: (engine) {
           ref.read(currentAiEngineProvider.notifier).setEngine(engine);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Switched to ${engine.displayName}'),
-              duration: const Duration(seconds: 1),
-            ),
+          DocsoftSnackBar.show(
+            context,
+            message: 'Switched to ${engine.displayName}',
+            type: SnackBarType.info,
+            duration: const Duration(seconds: 1),
           );
         },
         itemBuilder: (context) {

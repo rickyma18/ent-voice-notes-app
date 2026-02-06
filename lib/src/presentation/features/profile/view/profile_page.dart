@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:medical_notes_app/src/ui/widgets/docsoft_snackbar.dart';
 
 import '../../../../core/extensions/app_localization.dart';
 import '../../../core/application_state/logout_provider/logout_provider.dart';
@@ -30,11 +31,10 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         case AsyncData(:final value) when value == true:
           context.pushReplacementNamed(RouteNames.login);
         case AsyncError(:final error):
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(error.toString()),
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
+          DocsoftSnackBar.show(
+            context,
+            message: error.toString(),
+            type: SnackBarType.error,
           );
       }
     });

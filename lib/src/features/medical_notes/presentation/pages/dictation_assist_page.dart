@@ -106,21 +106,22 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
       await audioService.startRecording();
     } on AudioRecordingException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: DocsoftColors.error,
-            action:
-                e.reason == RecordingFailureReason.permissionPermanentlyDenied
-                ? SnackBarAction(
-                    label: 'Configuracion',
-                    textColor: DocsoftColors.onError,
-                    onPressed: () {
-                      // Could open app settings here
-                    },
-                  )
-                : null,
-          ),
+        final SnackBarAction? action =
+            e.reason == RecordingFailureReason.permissionPermanentlyDenied
+            ? SnackBarAction(
+                label: 'Configuracion',
+                textColor: DocsoftColors.onError,
+                onPressed: () {
+                  // Could open app settings here
+                },
+              )
+            : null;
+
+        DocsoftSnackBar.show(
+          context,
+          message: e.message,
+          type: SnackBarType.error,
+          action: action,
         );
         setState(() {
           _status = DictationStatus.idle;
@@ -128,11 +129,10 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error inesperado: $e'),
-            backgroundColor: DocsoftColors.error,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Error inesperado: $e',
+          type: SnackBarType.error,
         );
         setState(() {
           _status = DictationStatus.idle;
@@ -159,14 +159,12 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
         final remaining = _cooldownSeconds - elapsed;
         debugPrint('⚠️ STT: Cooldown activo, faltan $remaining segundos');
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
+          DocsoftSnackBar.show(
+            context,
+            message:
                 'Espera $remaining segundos antes de transcribir de nuevo...',
-              ),
-              backgroundColor: DocsoftColors.warning,
-              duration: const Duration(seconds: 2),
-            ),
+            type: SnackBarType.warning,
+            duration: const Duration(seconds: 2),
           );
         }
         return;
@@ -189,13 +187,10 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
 
       if (audioFilePath == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                'Error: No se pudo obtener el archivo de audio',
-              ),
-              backgroundColor: DocsoftColors.error,
-            ),
+          DocsoftSnackBar.show(
+            context,
+            message: 'Error: No se pudo obtener el archivo de audio',
+            type: SnackBarType.error,
           );
           setState(() {
             _status = DictationStatus.idle;
@@ -250,15 +245,13 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
               '💳 STT: Error de cuota/billing detectado - NO reintentar',
             );
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text(
+              DocsoftSnackBar.show(
+                context,
+                message:
                     'Cuota agotada o problema de billing. Revisa el plan de tu proyecto OpenAI.',
-                  ),
-                  backgroundColor: DocsoftColors.warning,
-                  duration: const Duration(seconds: 6),
-                  showCloseIcon: true,
-                ),
+                type: SnackBarType.warning,
+                duration: const Duration(seconds: 6),
+                showCloseIcon: true,
               );
               setState(() {
                 _status = DictationStatus.idle;
@@ -275,14 +268,12 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
             );
 
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
+              DocsoftSnackBar.show(
+                context,
+                message:
                     'Limite de solicitudes. Reintentando en $delay segundos...',
-                  ),
-                  backgroundColor: DocsoftColors.warning,
-                  duration: Duration(seconds: delay),
-                ),
+                type: SnackBarType.warning,
+                duration: Duration(seconds: delay),
               );
             }
 
@@ -317,19 +308,14 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
           '❌ STT: Todos los intentos fallaron. Ultimo error: $lastError',
         );
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isRateLimit
-                  ? 'Limite de solicitudes alcanzado. Espera 10-20 segundos y vuelve a intentar.'
-                  : 'Error al transcribir el audio: ${lastError.toString().split('\n').first}',
-            ),
-            backgroundColor: isRateLimit
-                ? DocsoftColors.warning
-                : DocsoftColors.error,
-            duration: const Duration(seconds: 5),
-            showCloseIcon: true,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: isRateLimit
+              ? 'Limite de solicitudes alcanzado. Espera 10-20 segundos y vuelve a intentar.'
+              : 'Error al transcribir el audio: ${lastError.toString().split('\n').first}',
+          type: isRateLimit ? SnackBarType.warning : SnackBarType.error,
+          duration: const Duration(seconds: 5),
+          showCloseIcon: true,
         );
 
         setState(() {
@@ -342,15 +328,12 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
       debugPrint('🧵 STACK: $st');
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Error inesperado: ${e.toString().split('\n').first}',
-            ),
-            backgroundColor: DocsoftColors.error,
-            duration: const Duration(seconds: 4),
-            showCloseIcon: true,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Error inesperado: ${e.toString().split('\n').first}',
+          type: SnackBarType.error,
+          duration: const Duration(seconds: 4),
+          showCloseIcon: true,
         );
 
         setState(() {
@@ -377,11 +360,10 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
       }
     } on AudioRecordingException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: DocsoftColors.error,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: e.message,
+          type: SnackBarType.error,
         );
       }
     }
@@ -399,11 +381,10 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
       }
     } on AudioRecordingException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: DocsoftColors.error,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: e.message,
+          type: SnackBarType.error,
         );
       }
     }
@@ -418,12 +399,11 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
 
   void _copyTranscript() {
     Clipboard.setData(ClipboardData(text: _rawTranscript));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Transcripción copiada al portapapeles'),
-        backgroundColor: DocsoftColors.primary,
-        duration: const Duration(seconds: 2),
-      ),
+    DocsoftSnackBar.show(
+      context,
+      message: 'Transcripción copiada al portapapeles',
+      type: SnackBarType.info,
+      duration: const Duration(seconds: 2),
     );
   }
 
@@ -1204,11 +1184,10 @@ class _DictationAssistPageState extends ConsumerState<DictationAssistPage> {
       } catch (e) {
         debugPrint('[Scribe][Debug] Generation failed: $e');
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error generating trace: $e'),
-              backgroundColor: Colors.red,
-            ),
+          DocsoftSnackBar.show(
+            context,
+            message: 'Error generating trace: $e',
+            type: SnackBarType.error,
           );
         }
       } finally {

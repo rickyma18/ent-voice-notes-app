@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:medical_notes_app/src/ui/widgets/docsoft_snackbar.dart';
 
 import '../../../../../core/extensions/app_localization.dart';
 import '../../../../../core/extensions/go_router_extension.dart';
@@ -32,9 +33,11 @@ class _RegistrationPageState extends ConsumerState<RegistrationPage> {
         case AsyncData(:final value) when value != null:
           context.pushReplacementNamed(RouteNames.home);
         case AsyncError(:final error):
-          ScaffoldMessenger.of(
+          DocsoftSnackBar.show(
             context,
-          ).showSnackBar(SnackBar(content: Text(error.toString())));
+            message: error.toString(),
+            type: SnackBarType.error,
+          );
       }
     });
   }

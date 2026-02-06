@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:medical_notes_app/src/ui/widgets/docsoft_snackbar.dart';
 
 import '../../../../ui/docsoft_ui.dart';
 import '../../../../core/base/result.dart';
@@ -55,15 +56,19 @@ class _ProfilePageWrapperState extends ConsumerState<ProfilePageWrapper> {
 
   void _showErrorSnackbar(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: DocsoftColors.error),
+    DocsoftSnackBar.show(
+      context,
+      message: message,
+      type: SnackBarType.error,
     );
   }
 
   void _showSuccessSnackbar(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: DocsoftColors.primary),
+    DocsoftSnackBar.show(
+      context,
+      message: message,
+      type: SnackBarType.success,
     );
   }
 

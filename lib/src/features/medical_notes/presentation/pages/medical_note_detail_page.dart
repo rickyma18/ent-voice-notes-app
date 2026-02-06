@@ -267,12 +267,11 @@ class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
 
       // Show success message
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$sectionName actualizado'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: '$sectionName actualizado',
+          type: SnackBarType.success,
+          duration: const Duration(seconds: 2),
         );
       }
 
@@ -283,11 +282,10 @@ class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al guardar: $e'),
-            backgroundColor: Colors.red,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Error al guardar: $e',
+          type: SnackBarType.error,
         );
       }
 
@@ -450,11 +448,10 @@ class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
       return (bytes.toList(), fileName);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al generar PDF: $e'),
-            backgroundColor: Colors.red,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Error al generar PDF: $e',
+          type: SnackBarType.error,
         );
       }
       return null;
@@ -492,12 +489,11 @@ class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('PDF generado correctamente'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
+      DocsoftSnackBar.show(
+        context,
+        message: 'PDF generado correctamente',
+        type: SnackBarType.success,
+        duration: const Duration(seconds: 2),
       );
     }
   }
@@ -715,17 +711,13 @@ class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
   /// Show success snackbar
   void _showSuccessSnackbar(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: DocsoftColors.success),
-    );
+    DocsoftSnackBar.show(context, message: message, type: SnackBarType.success);
   }
 
   /// Show error snackbar
   void _showErrorSnackbar(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: DocsoftColors.error),
-    );
+    DocsoftSnackBar.show(context, message: message, type: SnackBarType.error);
   }
 
   // ============================================================================
@@ -2487,9 +2479,11 @@ Future<void> _downloadAttachment(
   final uri = Uri.tryParse(attachment.url);
   if (uri == null) {
     if (context.mounted) {
-      ScaffoldMessenger.of(
+      DocsoftSnackBar.show(
         context,
-      ).showSnackBar(const SnackBar(content: Text('URL inválida')));
+        message: 'URL inválida',
+        type: SnackBarType.info,
+      );
     }
     return;
   }
@@ -2498,9 +2492,11 @@ Future<void> _downloadAttachment(
     await launchUrl(uri, webOnlyWindowName: '_blank');
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(
+      DocsoftSnackBar.show(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error al descargar: $e')));
+        message: 'Error al descargar: $e',
+        type: SnackBarType.error,
+      );
     }
   }
 }
@@ -2523,9 +2519,11 @@ Future<void> _openAttachment(
   final uri = Uri.tryParse(attachment.url);
   if (uri == null) {
     if (context.mounted) {
-      ScaffoldMessenger.of(
+      DocsoftSnackBar.show(
         context,
-      ).showSnackBar(const SnackBar(content: Text('URL inválida')));
+        message: 'URL inválida',
+        type: SnackBarType.info,
+      );
     }
     return;
   }
@@ -2535,16 +2533,20 @@ Future<void> _openAttachment(
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se puede abrir el archivo')),
+        DocsoftSnackBar.show(
+          context,
+          message: 'No se puede abrir el archivo',
+          type: SnackBarType.info,
         );
       }
     }
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(
+      DocsoftSnackBar.show(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+        message: 'Error: $e',
+        type: SnackBarType.error,
+      );
     }
   }
 }

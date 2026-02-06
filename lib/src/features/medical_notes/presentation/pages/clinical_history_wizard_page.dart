@@ -8,7 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/base/result.dart';
@@ -39,7 +38,6 @@ import '../widgets/clinical_history_wizard/dictation_quick_sheet.dart';
 import '../widgets/clinical_history_wizard/vitals_card.dart';
 import '../../../../ui/docsoft_ui.dart';
 import '../../../../ui/widgets/advanced_analysis_badge.dart';
-import '../../../../ui/widgets/docsoft_wizard_progress.dart';
 
 /// Multi-step wizard page for creating/editing clinical history notes.
 ///
@@ -257,14 +255,8 @@ class _ClinicalHistoryWizardPageState
       'cuello',
       'laringoscopia',
     },
-    'studies': {
-      'estudiosIndicados',
-    },
-    'assessment': {
-      'diagnostico',
-      'planTratamiento',
-      'pronostico',
-    },
+    'studies': {'estudiosIndicados'},
+    'assessment': {'diagnostico', 'planTratamiento', 'pronostico'},
   };
 
   /// Maps the current wizard step index to the backend scope value.
@@ -382,18 +374,12 @@ class _ClinicalHistoryWizardPageState
             Log.error('[JobQueue] Error listener: $err');
 
             if (mounted) {
-              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
+              DocsoftSnackBar.show(
+                context,
+                message:
                     'No se pudo conectar al backend. Continuando con motor estándar.',
-                    style: DocsoftTextStyles.caption.copyWith(
-                      color: DocsoftColors.onWarning,
-                    ),
-                  ),
-                  backgroundColor: DocsoftColors.warning,
-                  duration: const Duration(seconds: 4),
-                ),
+                type: SnackBarType.warning,
+                duration: const Duration(seconds: 4),
               );
             }
           },
@@ -520,18 +506,11 @@ class _ClinicalHistoryWizardPageState
       if (source == 'fallback') {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Backend no disponible. Se usó OpenAI (Direct).',
-                  style: DocsoftTextStyles.caption.copyWith(
-                    color: DocsoftColors.onWarning,
-                  ),
-                ),
-                backgroundColor: DocsoftColors.warning,
-                duration: const Duration(seconds: 4),
-              ),
+            DocsoftSnackBar.show(
+              context,
+              message: 'Backend no disponible. Se usó OpenAI (Direct).',
+              type: SnackBarType.warning,
+              duration: const Duration(seconds: 4),
             );
           }
         });
@@ -545,13 +524,11 @@ class _ClinicalHistoryWizardPageState
       );
 
       if (sections.isEmpty || sections.every((s) => !s.hasContent)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
+        DocsoftSnackBar.show(
+          context,
+          message:
               'No se encontraron hallazgos clinicos claros en el dictado para sugerir campos.',
-            ),
-            backgroundColor: Colors.orange,
-          ),
+          type: SnackBarType.warning,
         );
         return;
       }
@@ -570,11 +547,10 @@ class _ClinicalHistoryWizardPageState
         setState(() {
           _isGeneratingSuggestions = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al generar sugerencias: $e'),
-            backgroundColor: Colors.red,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Error al generar sugerencias: $e',
+          type: SnackBarType.error,
         );
       }
     }
@@ -857,24 +833,20 @@ class _ClinicalHistoryWizardPageState
 
   /// Shows a short SnackBar for a single field suggestion applied.
   ///
-  /// Uses _activeMessenger to show SnackBar ABOVE the BottomSheet if open.
+  /// Uses messengerOverride to show SnackBar ABOVE the BottomSheet if open.
   void _showSingleFieldSnackBar(String fieldLabel) {
-    _activeMessenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('Aplicado: $fieldLabel'),
-          backgroundColor: Colors.green,
-          duration: const Duration(milliseconds: 1000),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    DocsoftSnackBar.show(
+      context,
+      message: 'Aplicado: $fieldLabel',
+      type: SnackBarType.success,
+      duration: const Duration(milliseconds: 1000),
+      messengerOverride: _activeMessenger,
+    );
   }
-
 
   /// Shows a short SnackBar after applying all suggestions.
   ///
-  /// Uses _activeMessenger to show SnackBar ABOVE the BottomSheet if open.
+  /// Uses messengerOverride to show SnackBar ABOVE the BottomSheet if open.
   ///
   /// Messages:
   /// - appliedCount == 0: "No hubo cambios"
@@ -883,35 +855,32 @@ class _ClinicalHistoryWizardPageState
   /// ÉPICA 7: Updated to handle ApplyResult with conflicts info.
   void _showApplySnackBar(ApplyResult result, ApplyMode mode) {
     final String message;
-    final Color bgColor;
+    final SnackBarType type;
 
     if (result.applied.isEmpty && result.conflicts.isEmpty) {
       message = 'No hubo cambios';
-      bgColor = Colors.orange;
+      type = SnackBarType.warning;
     } else if (result.hasConflicts) {
       final conflictCount = result.conflicts.length;
       message = result.hasApplied
           ? '${result.applied.length} aplicados, $conflictCount requieren confirmación'
           : '$conflictCount campos requieren confirmación';
-      bgColor = Colors.orange;
+      type = SnackBarType.warning;
     } else if (mode == ApplyMode.replace) {
       message = 'Sugerencias aplicadas';
-      bgColor = Colors.green;
+      type = SnackBarType.success;
     } else {
       message = 'Sugerencias aplicadas a campos vacíos';
-      bgColor = Colors.green;
+      type = SnackBarType.success;
     }
 
-    _activeMessenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: bgColor,
-          duration: const Duration(milliseconds: 1500),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    DocsoftSnackBar.show(
+      context,
+      message: message,
+      type: type,
+      duration: const Duration(milliseconds: 1500),
+      messengerOverride: _activeMessenger,
+    );
   }
 
   /// ÉPICA 7: Shows dialog for touched-field conflicts.
@@ -932,31 +901,33 @@ class _ClinicalHistoryWizardPageState
                 '¿Deseas sobrescribirlos con las sugerencias de IA?',
               ),
               const SizedBox(height: 16),
-              ...conflicts.map((c) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '• ${c.label ?? c.fieldId}',
-                          style: const TextStyle(fontWeight: FontWeight.w500),
-                        ),
-                        if (c.rationale != null)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 12, top: 4),
-                            child: Text(
-                              c.rationale!,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontStyle: FontStyle.italic,
-                                color: Colors.grey[600],
-                              ),
+              ...conflicts.map(
+                (c) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '• ${c.label ?? c.fieldId}',
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                      if (c.rationale != null)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 12, top: 4),
+                          child: Text(
+                            c.rationale!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontStyle: FontStyle.italic,
+                              color: Colors.grey[600],
                             ),
                           ),
-                      ],
-                    ),
-                  )),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -976,13 +947,12 @@ class _ClinicalHistoryWizardPageState
     if (confirmed == true) {
       _formNotifier.applyConflicts(conflicts);
       setState(() {});
-      _activeMessenger.showSnackBar(
-        SnackBar(
-          content: Text('${conflicts.length} campo(s) sobrescrito(s)'),
-          backgroundColor: Colors.green,
-          duration: const Duration(milliseconds: 1000),
-          behavior: SnackBarBehavior.floating,
-        ),
+      DocsoftSnackBar.show(
+        context,
+        message: '${conflicts.length} campo(s) sobrescrito(s)',
+        type: SnackBarType.success,
+        duration: const Duration(milliseconds: 1000),
+        messengerOverride: _activeMessenger,
       );
     }
   }
@@ -1045,11 +1015,10 @@ class _ClinicalHistoryWizardPageState
 
     // Validate context
     if (diagnostico.isEmpty && motivo.isEmpty && padecimiento.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Ingresa diagnóstico, motivo o padecimiento primero'),
-          backgroundColor: Colors.orange,
-        ),
+      DocsoftSnackBar.show(
+        context,
+        message: 'Ingresa diagnóstico, motivo o padecimiento primero',
+        type: SnackBarType.warning,
       );
       return;
     }
@@ -1071,11 +1040,10 @@ class _ClinicalHistoryWizardPageState
       if (!mounted) return;
 
       if (planSuggestion.trim().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No se pudo generar un plan con el contexto actual'),
-            backgroundColor: Colors.orange,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'No se pudo generar un plan con el contexto actual',
+          type: SnackBarType.warning,
         );
         return;
       }
@@ -1094,11 +1062,10 @@ class _ClinicalHistoryWizardPageState
       _showPlanAutocompleteSheet(sections);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
+      DocsoftSnackBar.show(
+        context,
+        message: 'Error: ${e.toString()}',
+        type: SnackBarType.error,
       );
     } finally {
       if (mounted) {
@@ -1437,12 +1404,11 @@ class _ClinicalHistoryWizardPageState
       // Draft specific validation: avoid saving empty drafts
       if (!_formNotifier.canSaveDraft()) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Escribe algo para guardar un borrador.'),
-              backgroundColor: Colors.orange,
-              behavior: SnackBarBehavior.floating,
-            ),
+          DocsoftSnackBar.show(
+            context,
+            message: 'Escribe algo para guardar un borrador.',
+            type: SnackBarType.warning,
+            behavior: SnackBarBehavior.floating,
           );
         }
         return;
@@ -1461,19 +1427,17 @@ class _ClinicalHistoryWizardPageState
       await (asDraft ? _formNotifier.saveDraft() : _formNotifier.saveFinal());
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              asDraft
-                  ? 'Borrador guardado exitosamente'
-                  : (widget.isEditMode
-                        ? 'Nota medica actualizada exitosamente'
-                        : 'Nota medica creada exitosamente'),
-            ),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-          ),
+        final message = asDraft
+            ? 'Borrador guardado exitosamente'
+            : (widget.isEditMode
+                  ? 'Nota medica actualizada exitosamente'
+                  : 'Nota medica creada exitosamente');
+        DocsoftSnackBar.show(
+          context,
+          message: message,
+          type: SnackBarType.success,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
         );
 
         Navigator.of(context).pop(true);
@@ -1481,25 +1445,23 @@ class _ClinicalHistoryWizardPageState
     } catch (e) {
       // Do not pop on error
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al guardar: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-            behavior: SnackBarBehavior.floating,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Error al guardar: ${e.toString()}',
+          type: SnackBarType.error,
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
         );
       }
     }
   }
 
   void _showValidationError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.orange,
-        duration: const Duration(seconds: 2),
-      ),
+    DocsoftSnackBar.show(
+      context,
+      message: message,
+      type: SnackBarType.warning,
+      duration: const Duration(seconds: 2),
     );
   }
 
@@ -2567,11 +2529,10 @@ class _ClinicalHistoryWizardPageState
     } catch (e) {
       _formNotifier.setUploading(false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al subir imagen: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Error al subir imagen: ${e.toString()}',
+          type: SnackBarType.error,
         );
       }
     }
@@ -2608,11 +2569,10 @@ class _ClinicalHistoryWizardPageState
     } catch (e) {
       _formNotifier.setUploading(false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al subir PDF: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Error al subir PDF: ${e.toString()}',
+          type: SnackBarType.error,
         );
       }
     }

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:medical_notes_app/src/ui/docsoft_ui.dart';
+import 'package:medical_notes_app/src/ui/widgets/docsoft_snackbar.dart';
 
 import '../../../../core/base/result.dart';
 import '../../../../features/doctors/doctors_providers.dart';
@@ -217,15 +218,19 @@ class _EditProfilePageWrapperState
 
   void _showErrorSnackbar(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: DocsoftColors.error),
+    DocsoftSnackBar.show(
+      context,
+      message: message,
+      type: SnackBarType.error,
     );
   }
 
   void _showSuccessSnackbar(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: DocsoftColors.success),
+    DocsoftSnackBar.show(
+      context,
+      message: message,
+      type: SnackBarType.success,
     );
   }
 

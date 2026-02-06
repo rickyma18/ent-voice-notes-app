@@ -303,12 +303,11 @@ class _ClinicalHistoryVoiceWizardPageState
 
         Log.info('[VoiceWizard] Dictation saved for scope=$_currentScope');
 
-        _messenger.showSnackBar(
-          SnackBar(
-            content: Text('Dictado guardado para ${_stepTitles[_currentStep]}'),
-            backgroundColor: DocsoftColors.success,
-            duration: const Duration(seconds: 2),
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Dictado guardado para ${_stepTitles[_currentStep]}',
+          type: SnackBarType.success,
+          duration: const Duration(seconds: 2),
         );
       }
     } finally {
@@ -324,11 +323,10 @@ class _ClinicalHistoryVoiceWizardPageState
 
   Future<void> _processWithAI() async {
     if (!_hasTranscriptForCurrentStep) {
-      _messenger.showSnackBar(
-        const SnackBar(
-          content: Text('No hay dictado para procesar en este paso.'),
-          backgroundColor: Colors.orange,
-        ),
+      DocsoftSnackBar.show(
+        context,
+        message: 'No hay dictado para procesar en este paso.',
+        type: SnackBarType.warning,
       );
       return;
     }
@@ -351,16 +349,16 @@ class _ClinicalHistoryVoiceWizardPageState
 
       // Show fallback notification if needed
       if (source == 'fallback') {
-        _messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              'Backend no disponible. Se usó OpenAI (Direct).',
-              style: DocsoftTextStyles.caption.copyWith(
-                color: DocsoftColors.onWarning,
-              ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Backend no disponible. Se usó OpenAI (Direct).',
+          type: SnackBarType.warning,
+          duration: const Duration(seconds: 3),
+          content: Text(
+            'Backend no disponible. Se usó OpenAI (Direct).',
+            style: DocsoftTextStyles.caption.copyWith(
+              color: DocsoftColors.onWarning,
             ),
-            backgroundColor: DocsoftColors.warning,
-            duration: const Duration(seconds: 3),
           ),
         );
       }
@@ -369,11 +367,10 @@ class _ClinicalHistoryVoiceWizardPageState
       final sections = _buildSuggestionsForScope(structuredV1, _currentScope);
 
       if (sections.isEmpty || sections.every((s) => !s.hasContent)) {
-        _messenger.showSnackBar(
-          const SnackBar(
-            content: Text('No se encontraron hallazgos para este paso.'),
-            backgroundColor: Colors.orange,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'No se encontraron hallazgos para este paso.',
+          type: SnackBarType.warning,
         );
         return;
       }
@@ -383,11 +380,10 @@ class _ClinicalHistoryVoiceWizardPageState
     } catch (e) {
       Log.error('[VoiceWizard] AI processing failed: $e');
       if (mounted) {
-        _messenger.showSnackBar(
-          SnackBar(
-            content: Text('Error al procesar: $e'),
-            backgroundColor: Colors.red,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Error al procesar: $e',
+          type: SnackBarType.error,
         );
       }
     } finally {
@@ -550,12 +546,11 @@ class _ClinicalHistoryVoiceWizardPageState
 
     setState(() {});
 
-    _messenger.showSnackBar(
-      SnackBar(
-        content: Text('$count sugerencia(s) aplicada(s)'),
-        backgroundColor: DocsoftColors.success,
-        duration: const Duration(seconds: 2),
-      ),
+    DocsoftSnackBar.show(
+      context,
+      message: '$count sugerencia(s) aplicada(s)',
+      type: SnackBarType.success,
+      duration: const Duration(seconds: 2),
     );
   }
 
@@ -571,12 +566,11 @@ class _ClinicalHistoryVoiceWizardPageState
       _aiAppliedByScope[_currentScope] = true;
       setState(() {});
 
-      _messenger.showSnackBar(
-        SnackBar(
-          content: Text('${section.label} aplicado'),
-          backgroundColor: DocsoftColors.success,
-          duration: const Duration(seconds: 1),
-        ),
+      DocsoftSnackBar.show(
+        context,
+        message: '${section.label} aplicado',
+        type: SnackBarType.success,
+        duration: const Duration(seconds: 1),
       );
     }
   }
@@ -693,9 +687,11 @@ class _ClinicalHistoryVoiceWizardPageState
     } catch (e) {
       setState(() => _isUploading = false);
       if (mounted) {
-        ScaffoldMessenger.of(
+        DocsoftSnackBar.show(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error al subir imagen: $e')));
+          message: 'Error al subir imagen: $e',
+          type: SnackBarType.error,
+        );
       }
     }
   }
@@ -729,9 +725,11 @@ class _ClinicalHistoryVoiceWizardPageState
     } catch (e) {
       setState(() => _isUploading = false);
       if (mounted) {
-        ScaffoldMessenger.of(
+        DocsoftSnackBar.show(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error al subir PDF: $e')));
+          message: 'Error al subir PDF: $e',
+          type: SnackBarType.error,
+        );
       }
     }
   }
@@ -851,12 +849,11 @@ class _ClinicalHistoryVoiceWizardPageState
       Log.error('[VoiceWizard] Finalize failed: $e');
       if (mounted) {
         setState(() => _isFinalizing = false);
-        _messenger.showSnackBar(
-          const SnackBar(
-            content: Text('No se pudo verificar consistencia. Guardando nota…'),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 3),
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'No se pudo verificar consistencia. Guardando nota…',
+          type: SnackBarType.warning,
+          duration: const Duration(seconds: 3),
         );
         // Fallback: save normally
         await _saveNote(asDraft: false);
@@ -992,22 +989,21 @@ class _ClinicalHistoryVoiceWizardPageState
       }
 
       if (mounted) {
-        _messenger.showSnackBar(
-          SnackBar(
-            content: Text(asDraft ? 'Borrador guardado' : 'Nota finalizada'),
-            backgroundColor: DocsoftColors.success,
-          ),
+        final message = asDraft ? 'Borrador guardado' : 'Nota finalizada';
+        DocsoftSnackBar.show(
+          context,
+          message: message,
+          type: SnackBarType.success,
         );
         Navigator.of(context).pop(true);
       }
     } catch (e) {
       Log.error('[VoiceWizard] Save failed: $e');
       if (mounted) {
-        _messenger.showSnackBar(
-          SnackBar(
-            content: Text('Error al guardar: $e'),
-            backgroundColor: Colors.red,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Error al guardar: $e',
+          type: SnackBarType.error,
         );
       }
     } finally {

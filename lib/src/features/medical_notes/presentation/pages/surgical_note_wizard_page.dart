@@ -287,13 +287,12 @@ class _SurgicalNoteWizardPageState
       final sections = _buildSuggestionsForSheet(suggestions);
 
       if (sections.isEmpty || sections.every((s) => !s.hasContent)) {
-        _activeMessenger.showSnackBar(
-          const SnackBar(
-            content: Text(
+        DocsoftSnackBar.show(
+          context,
+          message:
               'No se encontraron datos clínicos claros para sugerir campos.',
-            ),
-            backgroundColor: Colors.orange,
-          ),
+          type: SnackBarType.warning,
+          messengerOverride: _activeMessenger,
         );
         return;
       }
@@ -311,11 +310,11 @@ class _SurgicalNoteWizardPageState
         setState(() {
           _isGeneratingSuggestions = false;
         });
-        _activeMessenger.showSnackBar(
-          SnackBar(
-            content: Text('Error al generar sugerencias: $e'),
-            backgroundColor: Colors.red,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Error al generar sugerencias: $e',
+          type: SnackBarType.error,
+          messengerOverride: _activeMessenger,
         );
       }
     }
@@ -447,16 +446,13 @@ class _SurgicalNoteWizardPageState
 
   /// Shows a short SnackBar for a single field suggestion applied.
   void _showSingleFieldSnackBar(String fieldLabel) {
-    _activeMessenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('Aplicado: $fieldLabel'),
-          backgroundColor: Colors.green,
-          duration: const Duration(milliseconds: 1000),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    DocsoftSnackBar.show(
+      context,
+      message: 'Aplicado: $fieldLabel',
+      type: SnackBarType.success,
+      duration: const Duration(milliseconds: 1000),
+      messengerOverride: _activeMessenger,
+    );
   }
 
   /// Sets a controller value by section ID.
@@ -491,29 +487,26 @@ class _SurgicalNoteWizardPageState
   /// Shows a short SnackBar after applying all suggestions.
   void _showApplySnackBar(int appliedCount, ApplyMode mode) {
     final String message;
-    final Color bgColor;
+    final SnackBarType type;
 
     if (appliedCount == 0) {
       message = 'No hubo cambios';
-      bgColor = Colors.orange;
+      type = SnackBarType.warning;
     } else if (mode == ApplyMode.replace) {
       message = 'Sugerencias aplicadas';
-      bgColor = Colors.green;
+      type = SnackBarType.success;
     } else {
       message = 'Sugerencias aplicadas a campos vacios';
-      bgColor = Colors.green;
+      type = SnackBarType.success;
     }
 
-    _activeMessenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: bgColor,
-          duration: const Duration(milliseconds: 1000),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    DocsoftSnackBar.show(
+      context,
+      message: message,
+      type: type,
+      duration: const Duration(milliseconds: 1000),
+      messengerOverride: _activeMessenger,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -907,30 +900,26 @@ class _SurgicalNoteWizardPageState
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              asDraft
-                  ? 'Borrador guardado exitosamente'
-                  : (isEditing
-                        ? 'Nota quirurgica actualizada exitosamente'
-                        : 'Nota quirurgica creada exitosamente'),
-            ),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: asDraft
+              ? 'Borrador guardado exitosamente'
+              : (isEditing
+                    ? 'Nota quirurgica actualizada exitosamente'
+                    : 'Nota quirurgica creada exitosamente'),
+          type: SnackBarType.success,
+          duration: const Duration(seconds: 2),
         );
 
         Navigator.of(context).pop(true); // Return true to indicate note created
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al guardar la nota: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Error al guardar la nota: ${e.toString()}',
+          type: SnackBarType.error,
+          duration: const Duration(seconds: 3),
         );
       }
     } finally {
@@ -943,12 +932,11 @@ class _SurgicalNoteWizardPageState
   }
 
   void _showValidationError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.orange,
-        duration: const Duration(seconds: 2),
-      ),
+    DocsoftSnackBar.show(
+      context,
+      message: message,
+      type: SnackBarType.warning,
+      duration: const Duration(seconds: 2),
     );
   }
 
@@ -1685,11 +1673,10 @@ class _SurgicalNoteWizardPageState
     } catch (e) {
       setState(() => _isUploading = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al subir imagen: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Error al subir imagen: ${e.toString()}',
+          type: SnackBarType.error,
         );
       }
     }
@@ -1726,11 +1713,10 @@ class _SurgicalNoteWizardPageState
     } catch (e) {
       setState(() => _isUploading = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al subir PDF: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Error al subir PDF: ${e.toString()}',
+          type: SnackBarType.error,
         );
       }
     }

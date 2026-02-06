@@ -4,77 +4,106 @@ import '../theme/radii.dart';
 import '../theme/text_styles.dart';
 
 /// Docsoft SnackBar Utility
+///
+/// Design goals:
+/// - High contrast against the light teal Docsoft UI
+/// - Dark solid backgrounds for success/info (stands out from cards & chips)
+/// - Semantic solid colors for warning/error (urgency)
+/// - Floating, elevated, impossible to miss
+///
+/// Advanced usage:
+/// - [showCloseIcon]: Adds a close button to the SnackBar (default: null/false)
+/// - [messengerOverride]: Use a custom ScaffoldMessengerState instead of
+///   ScaffoldMessenger.of(context). Useful for showing SnackBars above
+///   BottomSheets or other overlays.
 class DocsoftSnackBar {
+  // ──────────────────────────────────────────────────────────────────────────
+  // Dark-neutral palette (contrasts with the light/teal Docsoft surface)
+  // ──────────────────────────────────────────────────────────────────────────
+  static const Color _darkSlate = Color(0xFF1E293B); // slate-800
+  static const Color _white = Color(0xFFFFFFFF);
+
+  // Semantic solids (slightly rounded to feel softer)
+  static const Color _successGreen = Color(0xFF16A34A); // green-600
+  static const Color _warningAmber = Color(0xFFF59E0B); // amber-500
+  static const Color _errorRed = Color(0xFFDC2626); // red-600
+  static const Color _infoPrimary = Color(0xFF1FA39A); // primaryDark
+
   static void show(
     BuildContext context, {
     required String message,
     required SnackBarType type,
+
+    /// Optional overrides
+    Duration? duration,
+    SnackBarBehavior? behavior,
+    SnackBarAction? action,
+
+    /// If provided, replaces the default message Text.
+    /// The widget will still be wrapped with the Docsoft icon + spacing.
+    Widget? content,
+
+    /// Defaults to true to avoid stacking / spam.
+    bool clearExisting = true,
+
+    /// Show a close icon button on the SnackBar.
+    bool? showCloseIcon,
+
+    /// Use a custom ScaffoldMessengerState instead of
+    /// ScaffoldMessenger.of(context). Useful for BottomSheet overlays.
+    ScaffoldMessengerState? messengerOverride,
   }) {
-    final Color backgroundColor;
-    final IconData icon;
-    Color textColor = Colors.white;
+    final messenger = messengerOverride ?? ScaffoldMessenger.of(context);
 
-    switch (type) {
-      case SnackBarType.success:
-        backgroundColor = DocsoftColors.success;
-        icon = Icons.check_circle_outline;
-        break;
-
-      case SnackBarType.warning:
-        backgroundColor = DocsoftColors.warning;
-        icon = Icons.warning_amber_rounded;
-        textColor = DocsoftColors.textPrimary;
-        break;
-
-      case SnackBarType.error:
-        backgroundColor = DocsoftColors.error;
-        icon = Icons.error_outline;
-        break;
-
-      case SnackBarType.info:
-        // ✅ Evitar usar un color de "texto" como fondo.
-        // Preferencia: primaryMuted o surfaceAlt. Fallback final a textSecondary.
-        backgroundColor = _resolveInfoBackground();
-        icon = Icons.info_outline;
-
-        // Si el background es claro, usa textPrimary; si es oscuro, usa blanco.
-        // Aquí asumimos que primaryMuted/surfaceAlt son claros.
-        textColor = DocsoftColors.textPrimary;
-        break;
+    if (clearExisting) {
+      messenger.clearSnackBars();
     }
 
-    final messenger = ScaffoldMessenger.of(context);
-
-    // ✅ Evita stacking / spam visual
-    messenger.clearSnackBars();
-
     final bottomInset = MediaQuery.of(context).padding.bottom;
+    final style = _styleFor(type);
 
     messenger.showSnackBar(
       SnackBar(
         content: Row(
           children: [
-            Icon(icon, color: textColor),
+            // Icon with a subtle circular background for emphasis
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: style.iconBackground,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(style.icon, color: style.iconColor, size: 20),
+            ),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(
-                message,
-                style: DocsoftTextStyles.body.copyWith(
-                  color: textColor,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              child:
+                  content ??
+                  Text(
+                    message,
+                    style: DocsoftTextStyles.body.copyWith(
+                      color: style.foreground,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
             ),
           ],
         ),
-        backgroundColor: backgroundColor,
-        behavior: SnackBarBehavior.floating,
-        shape: const RoundedRectangleBorder(borderRadius: DocsoftRadii.button),
-        elevation: 4,
-        // ✅ Respeta safe area inferior para no chocar con gesture bar
+        backgroundColor: style.background,
+        behavior: behavior ?? SnackBarBehavior.floating,
+        elevation: 8,
+        shape: RoundedRectangleBorder(borderRadius: DocsoftRadii.button),
         margin: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
-        // ✅ Más tiempo para warning/error
-        duration: _durationFor(type),
+        duration: duration ?? _durationFor(type),
+        action: action != null
+            ? SnackBarAction(
+                label: action.label,
+                textColor: style.actionColor,
+                onPressed: action.onPressed,
+              )
+            : null,
+        showCloseIcon: showCloseIcon ?? false,
+        closeIconColor: style.foreground.withOpacity(0.7),
       ),
     );
   }
@@ -83,31 +112,79 @@ class DocsoftSnackBar {
     switch (type) {
       case SnackBarType.error:
       case SnackBarType.warning:
-        return const Duration(seconds: 3);
+        return const Duration(seconds: 4);
       case SnackBarType.success:
+        return const Duration(seconds: 2);
       case SnackBarType.info:
-        return const Duration(milliseconds: 1500);
+        return const Duration(seconds: 3);
     }
   }
 
-  static Color _resolveInfoBackground() {
-    // Si existen en tu kit, se usan. Si no, fallback.
-    // ignore: unnecessary_cast
-    try {
-      // Si tienes primaryMuted
-      // ignore: undefined_identifier
-      return DocsoftColors.primaryMuted;
-    } catch (_) {}
+  static _SnackStyle _styleFor(SnackBarType type) {
+    switch (type) {
+      // ── Success: dark slate with green accent icon ──────────────────────
+      case SnackBarType.success:
+        return _SnackStyle(
+          background: _darkSlate,
+          foreground: _white,
+          icon: Icons.check_circle_rounded,
+          iconColor: _successGreen,
+          iconBackground: _successGreen.withOpacity(0.15),
+          actionColor: DocsoftColors.primary,
+        );
 
-    try {
-      // Si tienes surfaceAlt
-      // ignore: undefined_identifier
-      return DocsoftColors.surfaceAlt;
-    } catch (_) {}
+      // ── Warning: solid amber with dark text ────────────────────────────
+      case SnackBarType.warning:
+        return _SnackStyle(
+          background: _warningAmber,
+          foreground: const Color(0xFF1E293B),
+          icon: Icons.warning_rounded,
+          iconColor: const Color(0xFF92400E), // amber-800
+          iconBackground: const Color(0x33FFFFFF), // 20% white
+          actionColor: const Color(0xFF78350F),
+        );
 
-    // Último recurso (no ideal, pero evita romper compile)
-    return DocsoftColors.textSecondary;
+      // ── Error: solid red with white text ───────────────────────────────
+      case SnackBarType.error:
+        return _SnackStyle(
+          background: _errorRed,
+          foreground: _white,
+          icon: Icons.error_rounded,
+          iconColor: _white,
+          iconBackground: const Color(0x33FFFFFF), // 20% white
+          actionColor: const Color(0xFFFFE4E6), // rose-100
+        );
+
+      // ── Info: dark slate with teal accent icon ─────────────────────────
+      case SnackBarType.info:
+        return _SnackStyle(
+          background: _darkSlate,
+          foreground: _white,
+          icon: Icons.info_rounded,
+          iconColor: _infoPrimary,
+          iconBackground: _infoPrimary.withOpacity(0.15),
+          actionColor: DocsoftColors.primary,
+        );
+    }
   }
+}
+
+class _SnackStyle {
+  final Color background;
+  final Color foreground;
+  final IconData icon;
+  final Color iconColor;
+  final Color iconBackground;
+  final Color actionColor;
+
+  const _SnackStyle({
+    required this.background,
+    required this.foreground,
+    required this.icon,
+    required this.iconColor,
+    required this.iconBackground,
+    required this.actionColor,
+  });
 }
 
 enum SnackBarType { success, warning, error, info }

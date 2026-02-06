@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:medical_notes_app/src/ui/widgets/docsoft_snackbar.dart';
 
 import '../../../../core/base/result.dart';
 import '../../../../presentation/core/application_state/current_doctor_provider/current_doctor_provider.dart';
@@ -199,15 +200,19 @@ class _NewPatientPageWrapperState extends ConsumerState<NewPatientPageWrapper> {
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: DocsoftColors.error),
+    DocsoftSnackBar.show(
+      context,
+      message: message,
+      type: SnackBarType.error,
     );
   }
 
   void _showSuccessSnackbar(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: DocsoftColors.success),
+    DocsoftSnackBar.show(
+      context,
+      message: message,
+      type: SnackBarType.success,
     );
   }
 

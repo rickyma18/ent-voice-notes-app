@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medical_notes_app/src/ui/widgets/docsoft_snackbar.dart';
 
 import '../../domain/entities/medical_note_entity.dart';
 import '../../domain/entities/medical_note_type.dart';
@@ -211,16 +212,14 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
 
       if (mounted) {
         // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isEditing
-                  ? 'Nota médica actualizada exitosamente'
-                  : 'Nota médica creada exitosamente',
-            ),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
-          ),
+        final message = isEditing
+            ? 'Nota médica actualizada exitosamente'
+            : 'Nota médica creada exitosamente';
+        DocsoftSnackBar.show(
+          context,
+          message: message,
+          type: SnackBarType.success,
+          duration: const Duration(seconds: 2),
         );
 
         // Navigate back to the list
@@ -229,12 +228,11 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
     } catch (e) {
       // Handle errors
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al guardar la nota: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Error al guardar la nota: ${e.toString()}',
+          type: SnackBarType.error,
+          duration: const Duration(seconds: 3),
         );
       }
     } finally {
@@ -399,10 +397,10 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
 
     if (raw.isEmpty) {
       // Si no hay transcripción, no tiene caso llamar a la IA
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Primero ingresa o genera una transcripción.'),
-        ),
+      DocsoftSnackBar.show(
+        context,
+        message: 'Primero ingresa o genera una transcripción.',
+        type: SnackBarType.info,
       );
       return;
     }
@@ -424,8 +422,10 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
         // No overwrites, apply all suggestions
         _applySuggestions(suggestions);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Campos sugeridos por IA aplicados.')),
+          DocsoftSnackBar.show(
+            context,
+            message: 'Campos sugeridos por IA aplicados.',
+            type: SnackBarType.success,
           );
         }
       } else {
@@ -440,17 +440,19 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
           if (choice == 'empty') {
             _applySuggestions(suggestions, onlyEmpty: true);
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('IA aplicada a campos vacíos.')),
+              DocsoftSnackBar.show(
+                context,
+                message: 'IA aplicada a campos vacíos.',
+                type: SnackBarType.success,
               );
             }
           } else if (choice == 'all') {
             _applySuggestions(suggestions);
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Todos los campos reemplazados con IA.'),
-                ),
+              DocsoftSnackBar.show(
+                context,
+                message: 'Todos los campos reemplazados con IA.',
+                type: SnackBarType.success,
               );
             }
           }
@@ -460,9 +462,11 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        DocsoftSnackBar.show(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error al generar con IA: $e')));
+          message: 'Error al generar con IA: $e',
+          type: SnackBarType.error,
+        );
       }
     } finally {
       if (mounted) {
@@ -490,10 +494,10 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
 
         if (audioFilePath == null) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Error: No se pudo obtener el archivo de audio'),
-              ),
+            DocsoftSnackBar.show(
+              context,
+              message: 'Error: No se pudo obtener el archivo de audio',
+              type: SnackBarType.error,
             );
           }
           return;
@@ -520,11 +524,11 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
           // No overwrites, apply all suggestions
           _applySuggestions(suggestions);
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('✅ Nota médica generada desde audio'),
-                duration: Duration(seconds: 2),
-              ),
+            DocsoftSnackBar.show(
+              context,
+              message: '✅ Nota médica generada desde audio',
+              type: SnackBarType.info,
+              duration: const Duration(seconds: 2),
             );
           }
         } else {
@@ -539,33 +543,31 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
             if (choice == 'empty') {
               _applySuggestions(suggestions, onlyEmpty: true);
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('✅ IA aplicada a campos vacíos'),
-                    duration: Duration(seconds: 2),
-                  ),
+                DocsoftSnackBar.show(
+                  context,
+                  message: '✅ IA aplicada a campos vacíos',
+                  type: SnackBarType.info,
+                  duration: const Duration(seconds: 2),
                 );
               }
             } else if (choice == 'all') {
               _applySuggestions(suggestions);
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('✅ Todos los campos reemplazados'),
-                    duration: Duration(seconds: 2),
-                  ),
+                DocsoftSnackBar.show(
+                  context,
+                  message: '✅ Todos los campos reemplazados',
+                  type: SnackBarType.info,
+                  duration: const Duration(seconds: 2),
                 );
               }
             } else {
               // User cancelled, but transcript was already updated
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Transcripción guardada. Campos no modificados.',
-                    ),
-                    duration: Duration(seconds: 2),
-                  ),
+                DocsoftSnackBar.show(
+                  context,
+                  message: 'Transcripción guardada. Campos no modificados.',
+                  type: SnackBarType.info,
+                  duration: const Duration(seconds: 2),
                 );
               }
             }
@@ -573,8 +575,10 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error al procesar audio: $e')),
+          DocsoftSnackBar.show(
+            context,
+            message: 'Error al procesar audio: $e',
+            type: SnackBarType.error,
           );
         }
       } finally {
@@ -597,10 +601,10 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
 
         if (!started) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Error: No se pudo iniciar la grabación'),
-              ),
+            DocsoftSnackBar.show(
+              context,
+              message: 'Error: No se pudo iniciar la grabación',
+              type: SnackBarType.error,
             );
             setState(() {
               _isRecording = false;
@@ -609,8 +613,10 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error al iniciar grabación: $e')),
+          DocsoftSnackBar.show(
+            context,
+            message: 'Error al iniciar grabación: $e',
+            type: SnackBarType.error,
           );
           setState(() {
             _isRecording = false;
@@ -641,11 +647,10 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
 
         if (audioFilePath == null) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Error: No se pudo obtener el archivo de audio'),
-                backgroundColor: Colors.red,
-              ),
+            DocsoftSnackBar.show(
+              context,
+              message: 'Error: No se pudo obtener el archivo de audio',
+              type: SnackBarType.error,
             );
           }
           return;
@@ -658,21 +663,19 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
         _rawTranscriptController.text = transcript;
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Audio transcrito correctamente'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
-            ),
+          DocsoftSnackBar.show(
+            context,
+            message: '✅ Audio transcrito correctamente',
+            type: SnackBarType.success,
+            duration: const Duration(seconds: 2),
           );
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error al transcribir audio: $e'),
-              backgroundColor: Colors.red,
-            ),
+          DocsoftSnackBar.show(
+            context,
+            message: 'Error al transcribir audio: $e',
+            type: SnackBarType.error,
           );
         }
       } finally {
@@ -699,11 +702,10 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
 
         if (!started) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Error: No se pudo iniciar la grabación'),
-                backgroundColor: Colors.red,
-              ),
+            DocsoftSnackBar.show(
+              context,
+              message: 'Error: No se pudo iniciar la grabación',
+              type: SnackBarType.error,
             );
             setState(() {
               _isRecording = false;
@@ -711,21 +713,20 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
           }
         } else {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('🎤 Grabando... Toca nuevamente para detener'),
-                duration: Duration(seconds: 2),
-              ),
+            DocsoftSnackBar.show(
+              context,
+              message: '🎤 Grabando... Toca nuevamente para detener',
+              type: SnackBarType.info,
+              duration: const Duration(seconds: 2),
             );
           }
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error al iniciar grabación: $e'),
-              backgroundColor: Colors.red,
-            ),
+          DocsoftSnackBar.show(
+            context,
+            message: 'Error al iniciar grabación: $e',
+            type: SnackBarType.error,
           );
           setState(() {
             _isRecording = false;
@@ -757,10 +758,10 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
 
         if (audioFilePath == null) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Error: No se pudo obtener el archivo de audio'),
-              ),
+            DocsoftSnackBar.show(
+              context,
+              message: 'Error: No se pudo obtener el archivo de audio',
+              type: SnackBarType.error,
             );
           }
           return;
@@ -777,17 +778,19 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
         }
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Texto dictado agregado'),
-              duration: Duration(seconds: 2),
-            ),
+          DocsoftSnackBar.show(
+            context,
+            message: '✅ Texto dictado agregado',
+            type: SnackBarType.info,
+            duration: const Duration(seconds: 2),
           );
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error al procesar audio: $e')),
+          DocsoftSnackBar.show(
+            context,
+            message: 'Error al procesar audio: $e',
+            type: SnackBarType.error,
           );
         }
       } finally {
@@ -818,10 +821,10 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
 
       if (!started) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Error: No se pudo iniciar la grabación'),
-            ),
+          DocsoftSnackBar.show(
+            context,
+            message: 'Error: No se pudo iniciar la grabación',
+            type: SnackBarType.error,
           );
           setState(() {
             _isRecording = false;
@@ -831,8 +834,10 @@ class _CreateMedicalNotePageState extends ConsumerState<CreateMedicalNotePage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al iniciar grabación: $e')),
+        DocsoftSnackBar.show(
+          context,
+          message: 'Error al iniciar grabación: $e',
+          type: SnackBarType.error,
         );
         setState(() {
           _isRecording = false;
