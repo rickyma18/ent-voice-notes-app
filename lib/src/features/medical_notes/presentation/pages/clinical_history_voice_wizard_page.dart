@@ -19,9 +19,9 @@ import '../../domain/entities/attachment_entity.dart';
 import '../../domain/entities/medical_note_entity.dart';
 import '../../domain/entities/medical_note_type.dart';
 import '../../domain/entities/note_status.dart';
+import '../../domain/entities/study_entity.dart';
 import '../controllers/medical_notes_controller.dart';
-import '../../medical_notes_providers.dart';
-import '../../../../presentation/core/application_state/current_doctor_provider/current_doctor_provider.dart';
+import '../controllers/clinical_history_form_controller.dart';
 import '../widgets/clinical_history_wizard/ai_suggestions_sheet.dart';
 import '../widgets/clinical_history_wizard/attachments_step.dart';
 import '../widgets/clinical_history_wizard/voice_dictation_sheet.dart';
@@ -112,7 +112,7 @@ class _ClinicalHistoryVoiceWizardPageState
   bool _isFinalizing = false;
   bool _isProcessingAI = false;
   bool _isDictationSheetOpen = false;
-  bool _didRequestPrefill = false;
+  bool _isUploading = false;
   PatientEntity? _patient;
 
   late final PageController _pageController;
@@ -121,46 +121,79 @@ class _ClinicalHistoryVoiceWizardPageState
   late ScaffoldMessengerState _messenger;
 
   /// Per-step transcripts: interview, exam, studies, assessment.
+  /// Kept local for voice-specific per-step tracking.
   late Map<String, String> _stepTranscripts;
 
   /// Tracks whether AI suggestions were applied per scope.
   final Map<String, bool> _aiAppliedByScope = {};
 
-  /// Attachments for studies step
+  /// Voice-specific attachments (separate from provider for custom handling).
   List<AttachmentEntity> _attachments = [];
-  bool _isUploading = false;
+
+  /// Unique session ID to ensure a fresh provider state for each wizard open.
+  final String _sessionId = const Uuid().v4();
+
+  /// Voice-specific: estudiosIndicados as text (not in shared form state).
+  late final TextEditingController _estudiosIndicadosController;
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Text Controllers (clinical fields)
+  // Provider Integration (shared with manual wizard)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  ClinicalHistoryFormArgs get _formArgs => ClinicalHistoryFormArgs(
+    patientId: widget.patientId,
+    doctorId: widget.doctorId,
+    existingNote: widget.existingNote,
+    initialRawTranscript: null, // Voice wizard uses stepTranscripts instead
+    sessionId: _sessionId,
+  );
+
+  ClinicalHistoryFormState get _formState =>
+      ref.watch(clinicalHistoryFormProvider(_formArgs));
+
+  ClinicalHistoryForm get _formNotifier =>
+      ref.read(clinicalHistoryFormProvider(_formArgs).notifier);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Controller Getters (from provider)
   // ─────────────────────────────────────────────────────────────────────────
 
   // Interview scope
-  late final TextEditingController _motivoController;
-  late final TextEditingController _heredofamiliaresController;
-  late final TextEditingController _noPatologicosController;
-  late final TextEditingController _patologicosController;
-  late final TextEditingController _padecimientoActualController;
+  TextEditingController get _motivoController => _formState.motivoController;
+  TextEditingController get _heredofamiliaresController =>
+      _formState.antecedentesHeredofamiliaresController;
+  TextEditingController get _noPatologicosController =>
+      _formState.antecedentesNoPatologicosController;
+  TextEditingController get _patologicosController =>
+      _formState.antecedentesPatologicosController;
+  TextEditingController get _padecimientoActualController =>
+      _formState.padecimientoActualController;
 
   // Exam scope (ORL)
-  late final Map<String, TextEditingController> _orlControllers;
+  Map<String, TextEditingController> get _orlControllers =>
+      _formState.orlControllers;
 
   // Vitals
-  late final TextEditingController _weightController;
-  late final TextEditingController _heightController;
-  late final TextEditingController _bpSystolicController;
-  late final TextEditingController _bpDiastolicController;
-  late final TextEditingController _heartRateController;
-  late final TextEditingController _respiratoryRateController;
-  late final TextEditingController _temperatureController;
-  late final TextEditingController _spo2Controller;
-
-  // Studies scope
-  late final TextEditingController _estudiosIndicadosController;
+  TextEditingController get _weightController => _formState.weightController;
+  TextEditingController get _heightController => _formState.heightController;
+  TextEditingController get _bpSystolicController =>
+      _formState.bpSystolicController;
+  TextEditingController get _bpDiastolicController =>
+      _formState.bpDiastolicController;
+  TextEditingController get _heartRateController =>
+      _formState.heartRateController;
+  TextEditingController get _respiratoryRateController =>
+      _formState.respiratoryRateController;
+  TextEditingController get _temperatureController =>
+      _formState.temperatureController;
+  TextEditingController get _spo2Controller => _formState.spo2Controller;
 
   // Assessment scope
-  late final TextEditingController _diagnosticoController;
-  late final TextEditingController _planController;
-  late final TextEditingController _prognosisController;
+  TextEditingController get _diagnosticoController =>
+      _formState.diagnosticoController;
+  TextEditingController get _planController => _formState.planController;
+  TextEditingController get _prognosisController =>
+      _formState.prognosisController;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Lifecycle
@@ -172,165 +205,34 @@ class _ClinicalHistoryVoiceWizardPageState
 
     _pageController = PageController();
 
-    // Initialize stepTranscripts from existing note or empty
+    // Initialize stepTranscripts from existing note or empty (voice-specific)
     _stepTranscripts = Map<String, String>.from(
       widget.existingNote?.stepTranscripts ?? {},
     );
 
-    // Initialize attachments from existing note
-    _attachments = List.from(widget.existingNote?.attachments ?? []);
+    // Voice-specific: estudiosIndicados as text field
+    _estudiosIndicadosController = TextEditingController(
+      text:
+          widget.existingNote?.estudiosIndicados
+              .map((s) => s.descripcion)
+              .join('\n') ??
+          '',
+    );
 
-    // Initialize controllers
-    _initializeControllers();
+    // Initialize attachments from existing note (voice-specific handling)
+    _attachments = List.from(widget.existingNote?.attachments ?? []);
 
     // Load patient data
     _loadPatient();
 
-    // Prefill antecedentes from previous notes (NEW notes only)
-    // Post-frame to ensure widget is fully initialized
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _fetchAndApplyPatientPrefill();
-    });
+    // NOTE: Prefill is handled by the provider (clinicalHistoryFormProvider)
+    // which already calls _fetchAndApplyPatientPrefill for new notes.
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _messenger = ScaffoldMessenger.of(context);
-  }
-
-  void _initializeControllers() {
-    final note = widget.existingNote;
-
-    // Interview controllers
-    _motivoController = TextEditingController(text: note?.motivoConsulta ?? '');
-    _heredofamiliaresController = TextEditingController();
-    _noPatologicosController = TextEditingController();
-    _patologicosController = TextEditingController();
-    _padecimientoActualController = TextEditingController();
-
-    // Parse existing antecedentes if editing
-    if (note != null && note.antecedentes.isNotEmpty) {
-      _parseAntecedentes(note.antecedentes);
-    }
-
-    // ORL controllers
-    _orlControllers = {
-      'otoscopia': TextEditingController(),
-      'otomicroscopia': TextEditingController(),
-      'rinoscopia': TextEditingController(),
-      'endoscopiaNasal': TextEditingController(),
-      'orofaringe': TextEditingController(),
-      'cuello': TextEditingController(),
-      'laringoscopia': TextEditingController(),
-    };
-
-    // Parse existing ORL if editing
-    if (note != null && note.exploracionFisicaOrl.isNotEmpty) {
-      _parseExploracionOrl(note.exploracionFisicaOrl);
-    }
-
-    // Vitals controllers
-    _weightController = TextEditingController(
-      text: note?.weightKg?.toString() ?? '',
-    );
-    _heightController = TextEditingController(
-      text: note?.heightCm?.toString() ?? '',
-    );
-    _bpSystolicController = TextEditingController(
-      text: note?.bpSystolic?.toString() ?? '',
-    );
-    _bpDiastolicController = TextEditingController(
-      text: note?.bpDiastolic?.toString() ?? '',
-    );
-    _heartRateController = TextEditingController(
-      text: note?.heartRate?.toString() ?? '',
-    );
-    _respiratoryRateController = TextEditingController(
-      text: note?.respiratoryRate?.toString() ?? '',
-    );
-    _temperatureController = TextEditingController(
-      text: note?.temperatureC?.toString() ?? '',
-    );
-    _spo2Controller = TextEditingController(text: note?.spo2?.toString() ?? '');
-
-    // Studies controller (text representation of estudios indicados)
-    _estudiosIndicadosController = TextEditingController(
-      text: note?.estudiosIndicados.map((s) => s.descripcion).join('\n') ?? '',
-    );
-
-    // Assessment controllers
-    _diagnosticoController = TextEditingController(
-      text: note?.diagnostico ?? '',
-    );
-    _planController = TextEditingController(text: note?.planTratamiento ?? '');
-    _prognosisController = TextEditingController(text: note?.prognosis ?? '');
-  }
-
-  void _parseAntecedentes(String antecedentes) {
-    // Simple parsing of structured antecedentes
-    final lines = antecedentes.split('\n');
-    String? currentSection;
-    final sectionContent = <String, StringBuffer>{};
-
-    for (final line in lines) {
-      if (line.startsWith('HEREDOFAMILIARES:')) {
-        currentSection = 'heredo';
-        sectionContent[currentSection] = StringBuffer();
-      } else if (line.startsWith('NO PATOLOGICOS:')) {
-        currentSection = 'noPato';
-        sectionContent[currentSection] = StringBuffer();
-      } else if (line.startsWith('PATOLOGICOS:')) {
-        currentSection = 'pato';
-        sectionContent[currentSection] = StringBuffer();
-      } else if (line.startsWith('PADECIMIENTO ACTUAL:')) {
-        currentSection = 'padecimiento';
-        sectionContent[currentSection] = StringBuffer();
-      } else if (currentSection != null && line.trim().isNotEmpty) {
-        sectionContent[currentSection]!.writeln(line);
-      }
-    }
-
-    _heredofamiliaresController.text =
-        sectionContent['heredo']?.toString().trim() ?? '';
-    _noPatologicosController.text =
-        sectionContent['noPato']?.toString().trim() ?? '';
-    _patologicosController.text =
-        sectionContent['pato']?.toString().trim() ?? '';
-    _padecimientoActualController.text =
-        sectionContent['padecimiento']?.toString().trim() ?? '';
-  }
-
-  void _parseExploracionOrl(String exploracion) {
-    // Simple parsing of structured ORL
-    final sections = [
-      ('OTOSCOPIA:', 'otoscopia'),
-      ('OTOMICROSCOPIA:', 'otomicroscopia'),
-      ('RINOSCOPIA:', 'rinoscopia'),
-      ('ENDOSCOPIA NASAL:', 'endoscopiaNasal'),
-      ('OROFARINGE:', 'orofaringe'),
-      ('CUELLO:', 'cuello'),
-      ('LARINGOSCOPIA:', 'laringoscopia'),
-    ];
-
-    for (final section in sections) {
-      final idx = exploracion.indexOf(section.$1);
-      if (idx != -1) {
-        var endIdx = exploracion.length;
-        for (final other in sections) {
-          if (other.$1 != section.$1) {
-            final otherIdx = exploracion.indexOf(other.$1);
-            if (otherIdx > idx && otherIdx < endIdx) {
-              endIdx = otherIdx;
-            }
-          }
-        }
-        final content = exploracion
-            .substring(idx + section.$1.length, endIdx)
-            .trim();
-        _orlControllers[section.$2]?.text = content;
-      }
-    }
   }
 
   Future<void> _loadPatient() async {
@@ -346,201 +248,11 @@ class _ClinicalHistoryVoiceWizardPageState
     }
   }
 
-  /// Checks if a text controller value is effectively empty (empty or placeholder).
-  ///
-  /// Uses exact same logic as manual wizard (AISuggestionSection.isPlaceholderContent).
-  bool _isEffectivelyEmpty(String text) {
-    final trimmed = text.trim();
-    if (trimmed.isEmpty) return true;
-    if (trimmed.length > 25) return false;
-    return AISuggestionSection.isPlaceholderContent(trimmed.toLowerCase());
-  }
-
-  /// Fetches patient prefill from previous notes and applies to empty fields.
-  /// Fire-and-forget. Only for NEW notes (not edit mode).
-  void _fetchAndApplyPatientPrefill() {
-    assert(() {
-      final currentDoc = ref.read(currentDoctorIdProvider);
-      debugPrint('[Prefill][Voice] CHECK: '
-          'isEditMode=${widget.isEditMode} '
-          'patientId="${widget.patientId}" '
-          'doctorIdWidget="${widget.doctorId}" '
-          'currentDoctorId="$currentDoc" '
-          'didRequest=$_didRequestPrefill');
-      return true;
-    }());
-
-    // Guard: only for new notes, not edit mode
-    if (widget.isEditMode) {
-      assert(() {
-        debugPrint('[Prefill][Voice] SKIP: editMode');
-        return true;
-      }());
-      return;
-    }
-
-    // Guard: only run once per instance
-    if (_didRequestPrefill) {
-      assert(() {
-        debugPrint('[Prefill][Voice] SKIP: already requested');
-        return true;
-      }());
-      return;
-    }
-
-    // Guard: need patientId
-    if (widget.patientId.isEmpty) {
-      assert(() {
-        debugPrint('[Prefill][Voice] SKIP: patientId empty');
-        return true;
-      }());
-      return;
-    }
-
-    // Resolve doctorId: prefer widget, fallback to provider
-    final doctorId = widget.doctorId.isNotEmpty
-        ? widget.doctorId
-        : ref.read(currentDoctorIdProvider);
-
-    // Guard: need doctorId
-    if (doctorId == null || doctorId.isEmpty) {
-      assert(() {
-        debugPrint('[Prefill][Voice] SKIP: doctorId null/empty');
-        return true;
-      }());
-      return;
-    }
-
-    // Set guard BEFORE async to prevent rebuilds triggering again
-    _didRequestPrefill = true;
-
-    assert(() {
-      debugPrint('[Prefill][Voice] TRIGGERED: '
-          'patientId="${widget.patientId}" doctorId="$doctorId"');
-      return true;
-    }());
-
-    // Fire-and-forget
-    ref
-        .read(getPatientPrefillUseCaseProvider)
-        .call(patientId: widget.patientId, doctorId: doctorId)
-        .then((result) {
-      if (!mounted) return;
-
-      switch (result) {
-        case Success(:final data):
-          final prefill = data;
-
-          assert(() {
-            debugPrint('[Prefill][Voice] SUCCESS: '
-                'prefill=${prefill != null} '
-                'hasData=${prefill?.hasData} '
-                'sourceNoteId="${prefill?.sourceNoteId}" '
-                'sourceNoteDate=${prefill?.sourceNoteDate} '
-                'heredo.len=${prefill?.heredofamiliares.length ?? 0} '
-                'noPato.len=${prefill?.noPatologicos.length ?? 0} '
-                'pato.len=${prefill?.patologicos.length ?? 0}');
-            return true;
-          }());
-
-          if (prefill == null || !prefill.hasData) {
-            assert(() {
-              debugPrint('[Prefill][Voice] SKIP: no prefill data');
-              return true;
-            }());
-            return;
-          }
-
-          // Apply only to effectively empty fields
-          assert(() {
-            final heredoVal = _heredofamiliaresController.text;
-            debugPrint('[Prefill][Voice] BEFORE heredo: '
-                'current="${heredoVal.length > 50 ? '${heredoVal.substring(0, 50)}...' : heredoVal}" '
-                'empty=${_isEffectivelyEmpty(heredoVal)}');
-            return true;
-          }());
-          if (prefill.heredofamiliares.isNotEmpty &&
-              _isEffectivelyEmpty(_heredofamiliaresController.text)) {
-            _heredofamiliaresController.text = prefill.heredofamiliares;
-            assert(() {
-              debugPrint('[Prefill][Voice] APPLIED heredo');
-              return true;
-            }());
-          }
-
-          assert(() {
-            final noPatoVal = _noPatologicosController.text;
-            debugPrint('[Prefill][Voice] BEFORE noPato: '
-                'current="${noPatoVal.length > 50 ? '${noPatoVal.substring(0, 50)}...' : noPatoVal}" '
-                'empty=${_isEffectivelyEmpty(noPatoVal)}');
-            return true;
-          }());
-          if (prefill.noPatologicos.isNotEmpty &&
-              _isEffectivelyEmpty(_noPatologicosController.text)) {
-            _noPatologicosController.text = prefill.noPatologicos;
-            assert(() {
-              debugPrint('[Prefill][Voice] APPLIED noPato');
-              return true;
-            }());
-          }
-
-          assert(() {
-            final patoVal = _patologicosController.text;
-            debugPrint('[Prefill][Voice] BEFORE pato: '
-                'current="${patoVal.length > 50 ? '${patoVal.substring(0, 50)}...' : patoVal}" '
-                'empty=${_isEffectivelyEmpty(patoVal)}');
-            return true;
-          }());
-          if (prefill.patologicos.isNotEmpty &&
-              _isEffectivelyEmpty(_patologicosController.text)) {
-            _patologicosController.text = prefill.patologicos;
-            assert(() {
-              debugPrint('[Prefill][Voice] APPLIED pato');
-              return true;
-            }());
-          }
-
-          assert(() {
-            debugPrint('[Prefill][Voice] DONE from note ${prefill.sourceNoteId}');
-            return true;
-          }());
-
-        case Error(:final error):
-          // Log the error for debugging
-          assert(() {
-            debugPrint('[Prefill][Voice] ERROR: $error');
-            return true;
-          }());
-          // Also print in release for diagnostics (temporary)
-          debugPrint('[Prefill][Voice] ERROR: $error');
-          break;
-      }
-    });
-  }
-
   @override
   void dispose() {
     _pageController.dispose();
-    _motivoController.dispose();
-    _heredofamiliaresController.dispose();
-    _noPatologicosController.dispose();
-    _patologicosController.dispose();
-    _padecimientoActualController.dispose();
-    for (final c in _orlControllers.values) {
-      c.dispose();
-    }
-    _weightController.dispose();
-    _heightController.dispose();
-    _bpSystolicController.dispose();
-    _bpDiastolicController.dispose();
-    _heartRateController.dispose();
-    _respiratoryRateController.dispose();
-    _temperatureController.dispose();
-    _spo2Controller.dispose();
+    // Only dispose local controller; provider controllers are managed by provider
     _estudiosIndicadosController.dispose();
-    _diagnosticoController.dispose();
-    _planController.dispose();
-    _prognosisController.dispose();
     super.dispose();
   }
 
@@ -1195,6 +907,13 @@ class _ClinicalHistoryVoiceWizardPageState
           ? null
           : _prognosisController.text.trim();
 
+      final estudiosList = _estudiosIndicadosController.text
+          .trim()
+          .split('\n')
+          .where((s) => s.trim().isNotEmpty)
+          .map((s) => StudyEntity(tipo: 'General', descripcion: s.trim()))
+          .toList();
+
       final MedicalNoteEntity note;
 
       if (widget.isEditMode && widget.existingNote != null) {
@@ -1232,6 +951,7 @@ class _ClinicalHistoryVoiceWizardPageState
           rawTranscript: '', // Computed from stepTranscripts
           status: editStatus,
           attachments: _attachments,
+          estudiosIndicados: estudiosList,
         );
 
         await ref
@@ -1263,6 +983,7 @@ class _ClinicalHistoryVoiceWizardPageState
           rawTranscript: '', // Computed from stepTranscripts
           status: asDraft ? NoteStatus.draft : NoteStatus.signed,
           attachments: _attachments,
+          estudiosIndicados: estudiosList,
         );
 
         await ref
