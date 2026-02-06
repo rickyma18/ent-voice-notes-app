@@ -102,7 +102,7 @@ class DocsoftSnackBar {
                 onPressed: action.onPressed,
               )
             : null,
-        showCloseIcon: showCloseIcon ?? false,
+        showCloseIcon: showCloseIcon,
         closeIconColor: style.foreground.withOpacity(0.7),
       ),
     );
