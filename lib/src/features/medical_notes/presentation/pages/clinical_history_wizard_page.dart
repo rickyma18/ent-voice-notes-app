@@ -1224,6 +1224,28 @@ class _ClinicalHistoryWizardPageState
     }
   }
 
+  /// Handles dictation for physical exam, appending to rawTranscript.
+  ///
+  /// The scope is determined by [_getScopeForCurrentStep] when AI suggestions
+  /// are generated, NOT by text parsing. Backend receives explicit scope.
+  Future<void> _handleExamDictation() async {
+    final transcript = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => const DictationQuickSheet(),
+    );
+
+    if (!mounted || transcript == null || transcript.trim().isEmpty) return;
+
+    final trimmedTranscript = transcript.trim();
+    final currentRaw = _rawTranscript ?? '';
+    final separator = currentRaw.isEmpty ? '' : '\n\n';
+    final newRaw = '$currentRaw$separator$trimmedTranscript';
+
+    _formNotifier.updateRawTranscript(newRaw);
+  }
+
   /// Applies a transcript to a controller, showing a dialog if the field has content.
   Future<void> _applyTranscriptToController(
     TextEditingController controller,
@@ -2287,14 +2309,6 @@ class _ClinicalHistoryWizardPageState
 
   // Step 5: Exploracion fisica ORL
   Widget _buildStep5ExploracionOrl(bool keyboardOpen) {
-    // Check if all ORL fields are empty for CTA
-
-    // Check if all ORL fields are empty for CTA
-    final allOrlEmpty = _orlControllers.values.every(
-      (c) => c.text.trim().isEmpty,
-    );
-    final showCta = _hasDictation && allOrlEmpty;
-
     return _buildScrollableStep(
       stepIndex: 5,
       keyboardOpen: keyboardOpen,
@@ -2302,18 +2316,30 @@ class _ClinicalHistoryWizardPageState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
-          if (showCta)
-            // Vital signs card (compact)
-            VitalsCard(
-              weightController: _weightController,
-              heightController: _heightController,
-              bpSystolicController: _bpSystolicController,
-              bpDiastolicController: _bpDiastolicController,
-              heartRateController: _heartRateController,
-              respiratoryRateController: _respiratoryRateController,
-              temperatureController: _temperatureController,
-              spo2Controller: _spo2Controller,
+
+          // Vital signs card (always shown)
+          VitalsCard(
+            weightController: _weightController,
+            heightController: _heightController,
+            bpSystolicController: _bpSystolicController,
+            bpDiastolicController: _bpDiastolicController,
+            heartRateController: _heartRateController,
+            respiratoryRateController: _respiratoryRateController,
+            temperatureController: _temperatureController,
+            spo2Controller: _spo2Controller,
+          ),
+
+          const SizedBox(height: 16),
+
+          // Dictation button for physical exam
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _handleExamDictation,
+              icon: const Icon(Icons.mic),
+              label: const Text('Dictar exploración'),
             ),
+          ),
 
           const SizedBox(height: 24),
 
