@@ -933,10 +933,28 @@ class _ClinicalHistoryWizardPageState
               ),
               const SizedBox(height: 16),
               ...conflicts.map((c) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      '• ${c.label ?? c.fieldId}',
-                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '• ${c.label ?? c.fieldId}',
+                          style: const TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                        if (c.rationale != null)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 12, top: 4),
+                            child: Text(
+                              c.rationale!,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontStyle: FontStyle.italic,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   )),
             ],

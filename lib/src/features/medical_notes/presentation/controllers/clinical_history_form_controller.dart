@@ -891,6 +891,51 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
     return AISuggestionSection.isPlaceholderContent(txt.toLowerCase());
   }
 
+  // ---------------------------------------------------------------------------
+  // ÉPICA 7: Conflict Rationale Generation
+  // ---------------------------------------------------------------------------
+
+  /// Generates a brief clinical rationale explaining why a suggestion differs.
+  ///
+  /// CONSERVATIVE: Only shows rationale if there's verifiable evidence in
+  /// rawTranscript. Uses neutral phrasing - never invents or assumes data.
+  /// Returns null if no evidence found or cannot be verified.
+  String? _generateConflictRationale({
+    required String fieldId,
+    required String currentValue,
+    required String suggestedValue,
+  }) {
+    try {
+      final current = currentValue.trim();
+      final suggested = suggestedValue.trim();
+
+      if (current.isEmpty || suggested.isEmpty) return null;
+      if (current == suggested) return null;
+
+      // Check if we have transcript evidence
+      final transcript = state.rawTranscript.toLowerCase();
+      if (transcript.isEmpty) return null;
+
+      // Extract significant words from suggestion (min 4 chars to avoid noise)
+      final suggestedWords = suggested
+          .toLowerCase()
+          .split(RegExp(r'\s+'))
+          .where((w) => w.length >= 4)
+          .toSet();
+
+      // Check if ANY significant word from suggestion appears in transcript
+      final hasEvidence = suggestedWords.any((word) => transcript.contains(word));
+
+      if (!hasEvidence) return null;
+
+      // Neutral rationale - only shown when evidence verified
+      return 'La sugerencia difiere de lo editado.';
+    } catch (_) {
+      // Never break the flow - return null on any error
+      return null;
+    }
+  }
+
   /// Applies AI suggestions to the form fields with touched-field awareness.
   ///
   /// [sections] - List of AI suggestion sections to apply.
@@ -935,11 +980,17 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
         } else {
           // Non-empty AND touched by user: conflict, needs confirmation
           // Use actual controller value (may differ from section.currentValue)
+          final currentVal = currentValueForSectionId(fieldId);
           conflicts.add(ConflictItem(
             fieldId: fieldId,
-            currentValue: currentValueForSectionId(fieldId),
+            currentValue: currentVal,
             suggestedValue: section.suggestion,
             label: section.label,
+            rationale: _generateConflictRationale(
+              fieldId: fieldId,
+              currentValue: currentVal,
+              suggestedValue: section.suggestion,
+            ),
           ));
         }
       }

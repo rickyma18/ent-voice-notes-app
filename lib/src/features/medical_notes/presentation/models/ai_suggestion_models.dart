@@ -115,12 +115,26 @@ class ConflictItem {
     required this.currentValue,
     required this.suggestedValue,
     this.label,
+    this.rationale,
   });
 
   final String fieldId;
   final String currentValue;
   final String suggestedValue;
   final String? label;
+
+  /// ÉPICA 7: Brief clinical explanation for why this suggestion is made.
+  /// Based on transcript evidence. Null if generation failed or not available.
+  final String? rationale;
+
+  /// Creates a copy with optional rationale.
+  ConflictItem withRationale(String? rationale) => ConflictItem(
+        fieldId: fieldId,
+        currentValue: currentValue,
+        suggestedValue: suggestedValue,
+        label: label,
+        rationale: rationale,
+      );
 
   @override
   String toString() =>
