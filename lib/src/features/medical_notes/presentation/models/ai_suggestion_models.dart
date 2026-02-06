@@ -108,6 +108,56 @@ class AISuggestionSection {
 /// Apply mode for suggestions.
 enum ApplyMode { onlyEmpty, replace }
 
+/// Represents a conflict when AI suggestion would overwrite user-touched field.
+class ConflictItem {
+  const ConflictItem({
+    required this.fieldId,
+    required this.currentValue,
+    required this.suggestedValue,
+    this.label,
+  });
+
+  final String fieldId;
+  final String currentValue;
+  final String suggestedValue;
+  final String? label;
+
+  @override
+  String toString() =>
+      'ConflictItem($fieldId: "$currentValue" -> "$suggestedValue")';
+}
+
+/// Result of applying AI suggestions with touched-field tracking.
+class ApplyResult {
+  const ApplyResult({
+    this.applied = const [],
+    this.skipped = const [],
+    this.conflicts = const [],
+  });
+
+  /// Field IDs that were successfully updated.
+  final List<String> applied;
+
+  /// Field IDs skipped because mode=onlyEmpty and field wasn't empty.
+  final List<String> skipped;
+
+  /// Conflicts: AI wants to overwrite user-touched fields (needs confirmation).
+  final List<ConflictItem> conflicts;
+
+  /// Whether any suggestions were applied.
+  bool get hasApplied => applied.isNotEmpty;
+
+  /// Whether there are conflicts needing user confirmation.
+  bool get hasConflicts => conflicts.isNotEmpty;
+
+  /// Total suggestions processed.
+  int get total => applied.length + skipped.length + conflicts.length;
+
+  @override
+  String toString() =>
+      'ApplyResult(applied: ${applied.length}, skipped: ${skipped.length}, conflicts: ${conflicts.length})';
+}
+
 /// Result of validation for final save.
 ///
 /// Contains the error message and the step index to navigate to.

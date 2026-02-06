@@ -87,6 +87,9 @@ class ClinicalHistoryFormState {
   // Raw transcript for the note
   final String rawTranscript;
 
+  // ÉPICA 7: Track fields manually edited by user (not by AI)
+  final Set<String> touchedFieldIds;
+
   ClinicalHistoryFormState({
     required this.motivoController,
     required this.antecedentesHeredofamiliaresController,
@@ -112,7 +115,8 @@ class ClinicalHistoryFormState {
     required this.noteDate,
     this.initialSignature,
     this.rawTranscript = '',
-  });
+    Set<String>? touchedFieldIds,
+  }) : touchedFieldIds = touchedFieldIds ?? <String>{};
 
   ClinicalHistoryFormState copyWith({
     List<AttachmentEntity>? attachments,
@@ -121,6 +125,7 @@ class ClinicalHistoryFormState {
     String? initialSignature,
     String? rawTranscript,
     DateTime? noteDate,
+    Set<String>? touchedFieldIds,
   }) {
     return ClinicalHistoryFormState(
       motivoController: motivoController,
@@ -148,12 +153,16 @@ class ClinicalHistoryFormState {
       noteDate: noteDate ?? this.noteDate,
       initialSignature: initialSignature ?? this.initialSignature,
       rawTranscript: rawTranscript ?? this.rawTranscript,
+      touchedFieldIds: touchedFieldIds ?? this.touchedFieldIds,
     );
   }
 }
 
 @riverpod
 class ClinicalHistoryForm extends _$ClinicalHistoryForm {
+  // ÉPICA 7: Flag to distinguish AI writes from user edits
+  bool _isProgrammaticUpdate = false;
+
   @override
   ClinicalHistoryFormState build(ClinicalHistoryFormArgs args) {
     // Initialize controllers
@@ -236,20 +245,84 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
       rawTranscript: rawTranscript,
     );
 
-    // Prefill if editing
+    // Prefill BEFORE setting up touch listeners to avoid marking as touched
     if (args.existingNote != null) {
       _prefillFromExistingNote(initialState, args.existingNote!);
     } else if (args.initialRawTranscript != null &&
         args.initialRawTranscript!.isNotEmpty) {
       // Parse vitals if new note with transcript
-      // Defer to post-frame or just run it synchronously since controllers are just created
       _parseAndApplyVitalSigns(initialState, args.initialRawTranscript!);
     }
+
+    // ÉPICA 7: Setup touch listeners AFTER prefill so prefill doesn't mark touched
+    _setupTouchListeners(initialState);
 
     // Compute initial signature after prefill
     return initialState.copyWith(
       initialSignature: _computeSignature(initialState),
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // ÉPICA 7: Touched fields tracking
+  // ---------------------------------------------------------------------------
+
+  /// Sets up listeners on all text controllers to detect user edits.
+  /// Only marks as touched when NOT a programmatic update.
+  void _setupTouchListeners(ClinicalHistoryFormState s) {
+    // Map of controllers to their section IDs
+    final controllerMap = <TextEditingController, String>{
+      s.motivoController: 'motivoConsulta',
+      s.antecedentesHeredofamiliaresController: 'heredofamiliares',
+      s.antecedentesNoPatologicosController: 'noPatologicos',
+      s.antecedentesPatologicosController: 'patologicos',
+      s.padecimientoActualController: 'padecimientoActual',
+      s.diagnosticoController: 'diagnostico',
+      s.planController: 'planTratamiento',
+      s.prognosisController: 'pronostico',
+    };
+
+    // Add ORL controllers
+    for (final entry in s.orlControllers.entries) {
+      controllerMap[entry.value] = entry.key;
+    }
+
+    // Setup listener for each controller
+    for (final entry in controllerMap.entries) {
+      entry.key.addListener(() => _onControllerChanged(entry.value));
+    }
+  }
+
+  /// Called when any controller text changes.
+  /// Marks field as touched only if it's a user edit (not programmatic).
+  void _onControllerChanged(String sectionId) {
+    if (_isProgrammaticUpdate) return;
+    _markAsTouched(sectionId);
+  }
+
+  /// Marks a field as touched by user.
+  void _markAsTouched(String sectionId) {
+    if (state.touchedFieldIds.contains(sectionId)) return;
+    state = state.copyWith(
+      touchedFieldIds: {...state.touchedFieldIds, sectionId},
+    );
+  }
+
+  /// Returns true if field was manually edited by user.
+  bool isFieldTouched(String sectionId) =>
+      state.touchedFieldIds.contains(sectionId);
+
+  /// Clears touched status for a field (e.g., after user confirms overwrite).
+  void clearTouched(String sectionId) {
+    if (!state.touchedFieldIds.contains(sectionId)) return;
+    final newSet = Set<String>.from(state.touchedFieldIds)..remove(sectionId);
+    state = state.copyWith(touchedFieldIds: newSet);
+  }
+
+  /// Clears all touched tracking (e.g., on form reset).
+  void clearAllTouched() {
+    if (state.touchedFieldIds.isEmpty) return;
+    state = state.copyWith(touchedFieldIds: <String>{});
   }
 
   void _prefillFromExistingNote(
@@ -730,7 +803,27 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
   }
 
   /// Sets the controller value for a section ID.
+  ///
+  /// NOTE: This will trigger touch detection. For AI/programmatic updates,
+  /// use [setFieldValueFromAI] instead.
   void setControllerValue(String sectionId, String value) {
+    _setControllerValueInternal(sectionId, value);
+  }
+
+  /// Sets field value from AI without marking as touched.
+  ///
+  /// Use this for all AI-generated updates to avoid triggering touch detection.
+  void setFieldValueFromAI(String sectionId, String value) {
+    _isProgrammaticUpdate = true;
+    try {
+      _setControllerValueInternal(sectionId, value);
+    } finally {
+      _isProgrammaticUpdate = false;
+    }
+  }
+
+  /// Internal method to set controller value.
+  void _setControllerValueInternal(String sectionId, String value) {
     final s = state;
     switch (sectionId) {
       case 'motivoConsulta':
@@ -798,28 +891,79 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
     return AISuggestionSection.isPlaceholderContent(txt.toLowerCase());
   }
 
-  /// Applies AI suggestions to the form fields.
+  /// Applies AI suggestions to the form fields with touched-field awareness.
   ///
   /// [sections] - List of AI suggestion sections to apply.
-  /// [mode] - Apply mode: onlyEmpty (only apply to empty/placeholder fields)
-  ///          or replace (apply to all fields).
+  /// [mode] - Apply mode:
+  ///   - onlyEmpty: Apply ONLY to empty/placeholder fields (always safe)
+  ///   - replace: Apply to non-touched fields; touched fields go to conflicts
   ///
-  /// Returns the number of suggestions that were applied.
-  int applySuggestions(List<AISuggestionSection> sections, ApplyMode mode) {
-    int appliedCount = 0;
+  /// Returns [ApplyResult] with:
+  /// - applied: fields that were updated
+  /// - skipped: fields skipped due to onlyEmpty mode
+  /// - conflicts: touched fields that need user confirmation
+  ApplyResult applySuggestions(List<AISuggestionSection> sections, ApplyMode mode) {
+    final applied = <String>[];
+    final skipped = <String>[];
+    final conflicts = <ConflictItem>[];
 
     for (final section in sections) {
       if (!section.hasContent) continue;
 
-      final shouldApply = mode == ApplyMode.replace ||
-          (mode == ApplyMode.onlyEmpty && isEffectivelyEmpty(section.id));
+      final fieldId = section.id;
+      final isEmpty = isEffectivelyEmpty(fieldId);
+      final isTouched = isFieldTouched(fieldId);
 
-      if (shouldApply) {
-        setControllerValue(section.id, section.suggestion);
-        appliedCount++;
+      if (mode == ApplyMode.onlyEmpty) {
+        // onlyEmpty: only apply to empty fields, skip non-empty (no conflicts)
+        if (isEmpty) {
+          setFieldValueFromAI(fieldId, section.suggestion);
+          applied.add(fieldId);
+        } else {
+          skipped.add(fieldId);
+        }
+      } else {
+        // mode == ApplyMode.replace
+        if (isEmpty) {
+          // Empty fields: always safe to apply
+          setFieldValueFromAI(fieldId, section.suggestion);
+          applied.add(fieldId);
+        } else if (!isTouched) {
+          // Non-empty but NOT touched by user: safe to replace
+          setFieldValueFromAI(fieldId, section.suggestion);
+          applied.add(fieldId);
+        } else {
+          // Non-empty AND touched by user: conflict, needs confirmation
+          // Use actual controller value (may differ from section.currentValue)
+          conflicts.add(ConflictItem(
+            fieldId: fieldId,
+            currentValue: currentValueForSectionId(fieldId),
+            suggestedValue: section.suggestion,
+            label: section.label,
+          ));
+        }
       }
     }
 
-    return appliedCount;
+    return ApplyResult(
+      applied: applied,
+      skipped: skipped,
+      conflicts: conflicts,
+    );
+  }
+
+  /// Applies a single conflict after user confirmation.
+  ///
+  /// Clears the touched status and applies the AI suggestion.
+  void applyConflict(ConflictItem conflict) {
+    clearTouched(conflict.fieldId);
+    setFieldValueFromAI(conflict.fieldId, conflict.suggestedValue);
+  }
+
+  /// Applies multiple conflicts after user confirmation.
+  void applyConflicts(List<ConflictItem> conflicts) {
+    for (final conflict in conflicts) {
+      applyConflict(conflict);
+    }
   }
 }

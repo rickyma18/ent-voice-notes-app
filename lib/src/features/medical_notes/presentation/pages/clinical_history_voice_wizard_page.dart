@@ -885,12 +885,9 @@ class _ClinicalHistoryVoiceWizardPageState
         'patologicos': _patologicosController.text.trim(),
       },
       'exploracionOrl': {
-        for (final e in _orlControllers.entries)
-          e.key: e.value.text.trim(),
+        for (final e in _orlControllers.entries) e.key: e.value.text.trim(),
       },
-      'diagnostico': {
-        'texto': _diagnosticoController.text.trim(),
-      },
+      'diagnostico': {'texto': _diagnosticoController.text.trim()},
       'planTratamiento': _planController.text.trim(),
       'pronostico': _prognosisController.text.trim(),
       'estudiosIndicados': _estudiosIndicadosController.text.trim(),
@@ -954,9 +951,7 @@ class _ClinicalHistoryVoiceWizardPageState
         setState(() => _isFinalizing = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-              'No se pudo verificar consistencia. Guardando nota…',
-            ),
+            content: Text('No se pudo verificar consistencia. Guardando nota…'),
             backgroundColor: Colors.orange,
             duration: Duration(seconds: 3),
           ),
@@ -968,10 +963,7 @@ class _ClinicalHistoryVoiceWizardPageState
   }
 
   /// Shows a review bottom sheet with consistency warnings from finalize.
-  void _showWarningsReviewSheet(
-    List<String> warnings,
-    FinalizeResult result,
-  ) {
+  void _showWarningsReviewSheet(List<String> warnings, FinalizeResult result) {
     showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -1727,10 +1719,7 @@ class _ClinicalHistoryVoiceWizardPageState
         child: OutlinedButton(
           onPressed: _nextStep,
           style: OutlinedButton.styleFrom(
-            side: const BorderSide(
-              color: DocsoftColors.primary,
-              width: 2,
-            ),
+            side: const BorderSide(color: DocsoftColors.primary, width: 2),
             foregroundColor: DocsoftColors.primary,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(
@@ -1740,9 +1729,7 @@ class _ClinicalHistoryVoiceWizardPageState
             padding: EdgeInsets.zero,
             backgroundColor: Colors.transparent,
           ),
-          child: const Center(
-            child: Icon(Icons.arrow_forward, size: 20),
-          ),
+          child: const Center(child: Icon(Icons.arrow_forward, size: 20)),
         ),
       ),
     );
@@ -2121,17 +2108,11 @@ class _WarningTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: DocsoftColors.errorSoft,
         borderRadius: BorderRadius.circular(DocsoftRadii.sm),
-        border: Border.all(
-          color: DocsoftColors.error.withValues(alpha: 0.2),
-        ),
+        border: Border.all(color: DocsoftColors.error.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.info_outline,
-            size: 18,
-            color: Colors.orange,
-          ),
+          const Icon(Icons.info_outline, size: 18, color: Colors.orange),
           const SizedBox(width: 10),
           Expanded(
             child: Text(

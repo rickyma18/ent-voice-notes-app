@@ -31,6 +31,7 @@ import '../controllers/medical_notes_controller.dart';
 import '../../data/medgemma/clients/medgemma_client.dart';
 import '../controllers/job_queue_controller.dart';
 import '../controllers/clinical_history_form_controller.dart';
+import '../models/ai_suggestion_models.dart';
 import '../widgets/job_queue_status_modal.dart';
 import '../widgets/clinical_history_wizard/ai_suggestions_sheet.dart';
 import '../widgets/clinical_history_wizard/clinical_history_wizard.dart';
@@ -803,30 +804,51 @@ class _ClinicalHistoryWizardPageState
 
   /// Applies suggestions to controllers based on mode.
   /// Delegates to the form notifier.
+  ///
+  /// ÉPICA 7: Now handles touched-field conflicts.
   void _applySuggestions(List<AISuggestionSection> sections, ApplyMode mode) {
-    final appliedCount = _formNotifier.applySuggestions(sections, mode);
+    final result = _formNotifier.applySuggestions(sections, mode);
     setState(() {});
-    _showApplySnackBar(appliedCount, mode);
+    _showApplySnackBar(result, mode);
+
+    // If there are conflicts, show confirmation dialog
+    if (result.hasConflicts) {
+      _showConflictsDialog(result.conflicts);
+    }
   }
 
   /// Applies a single section suggestion with individual field feedback.
   ///
   /// Shows a short SnackBar indicating which field was updated.
   /// Delegates to the form notifier.
+  ///
+  /// ÉPICA 7: Uses setFieldValueFromAI to avoid marking as touched.
   void _applySingleSectionWithFeedback(
     AISuggestionSection section,
     ApplyMode mode,
   ) {
     if (!section.hasContent) return;
 
-    // Use notifier's isEffectivelyEmpty to include placeholders as "empty"
-    final shouldApply = mode == ApplyMode.replace ||
-        (mode == ApplyMode.onlyEmpty &&
-            _formNotifier.isEffectivelyEmpty(section.id));
+    final fieldId = section.id;
+    final isEmpty = _formNotifier.isEffectivelyEmpty(fieldId);
+    final isTouched = _formNotifier.isFieldTouched(fieldId);
 
-    if (!shouldApply) return;
+    if (mode == ApplyMode.onlyEmpty && !isEmpty) return;
 
-    _formNotifier.setControllerValue(section.id, section.suggestion);
+    // If replace mode and field is touched, show conflict for single field
+    if (mode == ApplyMode.replace && !isEmpty && isTouched) {
+      _showConflictsDialog([
+        ConflictItem(
+          fieldId: fieldId,
+          currentValue: section.currentValue,
+          suggestedValue: section.suggestion,
+          label: section.label,
+        ),
+      ]);
+      return;
+    }
+
+    _formNotifier.setFieldValueFromAI(fieldId, section.suggestion);
     setState(() {});
 
     // Show individual field feedback SnackBar
@@ -858,12 +880,19 @@ class _ClinicalHistoryWizardPageState
   /// - appliedCount == 0: "No hubo cambios"
   /// - ApplyMode.replace: "Sugerencias aplicadas"
   /// - ApplyMode.onlyEmpty: "Sugerencias aplicadas a campos vacíos"
-  void _showApplySnackBar(int appliedCount, ApplyMode mode) {
+  /// ÉPICA 7: Updated to handle ApplyResult with conflicts info.
+  void _showApplySnackBar(ApplyResult result, ApplyMode mode) {
     final String message;
     final Color bgColor;
 
-    if (appliedCount == 0) {
+    if (result.applied.isEmpty && result.conflicts.isEmpty) {
       message = 'No hubo cambios';
+      bgColor = Colors.orange;
+    } else if (result.hasConflicts) {
+      final conflictCount = result.conflicts.length;
+      message = result.hasApplied
+          ? '${result.applied.length} aplicados, $conflictCount requieren confirmación'
+          : '$conflictCount campos requieren confirmación';
       bgColor = Colors.orange;
     } else if (mode == ApplyMode.replace) {
       message = 'Sugerencias aplicadas';
@@ -879,10 +908,65 @@ class _ClinicalHistoryWizardPageState
         SnackBar(
           content: Text(message),
           backgroundColor: bgColor,
+          duration: const Duration(milliseconds: 1500),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
+  /// ÉPICA 7: Shows dialog for touched-field conflicts.
+  Future<void> _showConflictsDialog(List<ConflictItem> conflicts) async {
+    if (conflicts.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Campos editados manualmente'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Los siguientes ${conflicts.length} campo(s) fueron editados manualmente. '
+                '¿Deseas sobrescribirlos con las sugerencias de IA?',
+              ),
+              const SizedBox(height: 16),
+              ...conflicts.map((c) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      '• ${c.label ?? c.fieldId}',
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                  )),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Mantener mis cambios'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sobrescribir'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      _formNotifier.applyConflicts(conflicts);
+      setState(() {});
+      _activeMessenger.showSnackBar(
+        SnackBar(
+          content: Text('${conflicts.length} campo(s) sobrescrito(s)'),
+          backgroundColor: Colors.green,
           duration: const Duration(milliseconds: 1000),
           behavior: SnackBarBehavior.floating,
         ),
       );
+    }
   }
 
   // ---------------------------------------------------------------------------
