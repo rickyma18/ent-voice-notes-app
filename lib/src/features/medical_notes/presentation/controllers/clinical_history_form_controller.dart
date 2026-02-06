@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../../core/base/result.dart';
 import '../../domain/entities/attachment_entity.dart';
 import '../../domain/entities/medical_note_entity.dart';
 import '../../domain/entities/medical_note_type.dart';
 import '../../domain/entities/note_status.dart';
 import '../../presentation/controllers/medical_notes_controller.dart';
 import '../../presentation/models/ai_suggestion_models.dart';
+import '../../medical_notes_providers.dart';
+import '../../../../presentation/core/application_state/current_doctor_provider/current_doctor_provider.dart';
 
 import '../../application/vital_signs_parser.dart';
 
@@ -163,6 +166,9 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
   // ÉPICA 7: Flag to distinguish AI writes from user edits
   bool _isProgrammaticUpdate = false;
 
+  // Guard to prevent multiple prefill requests on rebuilds
+  bool _didRequestPrefill = false;
+
   @override
   ClinicalHistoryFormState build(ClinicalHistoryFormArgs args) {
     // Initialize controllers
@@ -252,6 +258,44 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
         args.initialRawTranscript!.isNotEmpty) {
       // Parse vitals if new note with transcript
       _parseAndApplyVitalSigns(initialState, args.initialRawTranscript!);
+    }
+
+    // Patient antecedentes prefill (fire-and-forget, only for NEW notes)
+    // SKIP if: editing existing note OR patientId is empty OR already requested
+    assert(() {
+      final currentDoc = ref.read(currentDoctorIdProvider);
+      debugPrint('[Prefill][Manual] CHECK: '
+          'existingNote=${args.existingNote != null} '
+          'patientId="${args.patientId}" '
+          'doctorIdArg="${args.doctorId}" '
+          'currentDoctorId="$currentDoc" '
+          'didRequest=$_didRequestPrefill');
+      return true;
+    }());
+    if (args.existingNote == null &&
+        args.patientId.isNotEmpty &&
+        !_didRequestPrefill) {
+      // Resolve doctorId: prefer args, fallback to currentDoctorIdProvider
+      final doctorId = args.doctorId.isNotEmpty
+          ? args.doctorId
+          : ref.read(currentDoctorIdProvider);
+
+      assert(() {
+        debugPrint('[Prefill][Manual] TRIGGERED: '
+            'resolvedDoctorId="$doctorId"');
+        return true;
+      }());
+
+      // Only proceed if we have a valid doctorId
+      if (doctorId != null && doctorId.isNotEmpty) {
+        _didRequestPrefill = true; // Set BEFORE async to guard rebuilds
+        _fetchAndApplyPatientPrefill(args.patientId, doctorId);
+      } else {
+        assert(() {
+          debugPrint('[Prefill][Manual] SKIP: doctorId null/empty');
+          return true;
+        }());
+      }
     }
 
     // ÉPICA 7: Setup touch listeners AFTER prefill so prefill doesn't mark touched
@@ -476,6 +520,113 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
   // Public method to be called from UI when dictation updates
   void parseAndApplyVitalSignsFromTranscript(String transcript) {
     _parseAndApplyVitalSigns(state, transcript);
+  }
+
+  /// Fetches patient prefill from previous notes and applies to empty fields.
+  ///
+  /// Fire-and-forget async operation. Only applies to effectively empty fields
+  /// using [setFieldValueFromAI] to avoid marking as touched.
+  void _fetchAndApplyPatientPrefill(String patientId, String doctorId) {
+    assert(() {
+      debugPrint('[Prefill][Manual] FETCH: patientId="$patientId" '
+          'doctorId="$doctorId"');
+      return true;
+    }());
+
+    // Fire-and-forget: we don't await this
+    ref
+        .read(getPatientPrefillUseCaseProvider)
+        .call(patientId: patientId, doctorId: doctorId)
+        .then((result) {
+      switch (result) {
+        case Success(:final data):
+          final prefill = data;
+
+          assert(() {
+            debugPrint('[Prefill][Manual] SUCCESS: '
+                'prefill=${prefill != null} '
+                'hasData=${prefill?.hasData} '
+                'sourceNoteId="${prefill?.sourceNoteId}" '
+                'sourceNoteDate=${prefill?.sourceNoteDate} '
+                'heredo.len=${prefill?.heredofamiliares.length ?? 0} '
+                'noPato.len=${prefill?.noPatologicos.length ?? 0} '
+                'pato.len=${prefill?.patologicos.length ?? 0}');
+            return true;
+          }());
+
+          if (prefill == null || !prefill.hasData) {
+            assert(() {
+              debugPrint('[Prefill][Manual] SKIP: no prefill data');
+              return true;
+            }());
+            return;
+          }
+
+          // Apply only to effectively empty fields
+          assert(() {
+            final heredoVal = currentValueForSectionId('heredofamiliares');
+            debugPrint('[Prefill][Manual] BEFORE heredo: '
+                'current="${heredoVal.length > 50 ? '${heredoVal.substring(0, 50)}...' : heredoVal}" '
+                'empty=${isEffectivelyEmpty('heredofamiliares')}');
+            return true;
+          }());
+          if (prefill.heredofamiliares.isNotEmpty &&
+              isEffectivelyEmpty('heredofamiliares')) {
+            setFieldValueFromAI('heredofamiliares', prefill.heredofamiliares);
+            assert(() {
+              debugPrint('[Prefill][Manual] APPLIED heredo');
+              return true;
+            }());
+          }
+
+          assert(() {
+            final noPatoVal = currentValueForSectionId('noPatologicos');
+            debugPrint('[Prefill][Manual] BEFORE noPato: '
+                'current="${noPatoVal.length > 50 ? '${noPatoVal.substring(0, 50)}...' : noPatoVal}" '
+                'empty=${isEffectivelyEmpty('noPatologicos')}');
+            return true;
+          }());
+          if (prefill.noPatologicos.isNotEmpty &&
+              isEffectivelyEmpty('noPatologicos')) {
+            setFieldValueFromAI('noPatologicos', prefill.noPatologicos);
+            assert(() {
+              debugPrint('[Prefill][Manual] APPLIED noPato');
+              return true;
+            }());
+          }
+
+          assert(() {
+            final patoVal = currentValueForSectionId('patologicos');
+            debugPrint('[Prefill][Manual] BEFORE pato: '
+                'current="${patoVal.length > 50 ? '${patoVal.substring(0, 50)}...' : patoVal}" '
+                'empty=${isEffectivelyEmpty('patologicos')}');
+            return true;
+          }());
+          if (prefill.patologicos.isNotEmpty &&
+              isEffectivelyEmpty('patologicos')) {
+            setFieldValueFromAI('patologicos', prefill.patologicos);
+            assert(() {
+              debugPrint('[Prefill][Manual] APPLIED pato');
+              return true;
+            }());
+          }
+
+          assert(() {
+            debugPrint('[Prefill][Manual] DONE from note ${prefill.sourceNoteId}');
+            return true;
+          }());
+
+        case Error(:final error):
+          // Log the error for debugging
+          assert(() {
+            debugPrint('[Prefill][Manual] ERROR: $error');
+            return true;
+          }());
+          // Also print in release for diagnostics (temporary)
+          debugPrint('[Prefill][Manual] ERROR: $error');
+          break;
+      }
+    });
   }
 
   String _computeSignature(ClinicalHistoryFormState s) {

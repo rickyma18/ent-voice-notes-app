@@ -257,6 +257,29 @@ final class FakeMedicalNotesRemoteDatasource
     _notesStore.remove(id);
   }
 
+  @override
+  Future<MedicalNoteModel?> getLatestNoteByPatient(
+    String patientId,
+    String doctorId,
+  ) async {
+    // Simulate network delay
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    final notes = _notesStore.values
+        .where(
+          (note) => note.patientId == patientId && note.doctorId == doctorId,
+        )
+        .toList();
+
+    if (notes.isEmpty) {
+      return null;
+    }
+
+    // Sort by createdAt descending and return the first one
+    notes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return notes.first;
+  }
+
   /// Utility method to clear all data (useful for testing)
   static void clearAll() {
     _notesStore.clear();

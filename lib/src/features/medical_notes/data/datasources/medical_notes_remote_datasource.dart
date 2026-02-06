@@ -1,6 +1,7 @@
 // lib/src/features/medical_notes/data/datasources/medical_notes_remote_datasource.dart
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/medical_note_model.dart';
 
@@ -38,6 +39,15 @@ abstract base class MedicalNotesRemoteDatasource {
 
   /// Elimina una nota médica por su ID.
   Future<void> deleteNote(String id);
+
+  /// Gets the most recent note for a patient (for prefill purposes).
+  ///
+  /// Returns null if no notes exist for this patient.
+  /// Orders by created_at desc and limits to 1.
+  Future<MedicalNoteModel?> getLatestNoteByPatient(
+    String patientId,
+    String doctorId,
+  );
 }
 
 final class MedicalNotesRemoteDatasourceImpl
@@ -141,5 +151,66 @@ final class MedicalNotesRemoteDatasourceImpl
   @override
   Future<void> deleteNote(String id) async {
     await _collection.doc(id).delete();
+  }
+
+  @override
+  Future<MedicalNoteModel?> getLatestNoteByPatient(
+    String patientId,
+    String doctorId,
+  ) async {
+    assert(() {
+      debugPrint('[Prefill][Firestore] QUERY: '
+          'patientId="$patientId" doctorId="$doctorId"');
+      return true;
+    }());
+
+    try {
+      final querySnapshot = await _collection
+          .where('doctor_id', isEqualTo: doctorId)
+          .where('patient_id', isEqualTo: patientId)
+          .orderBy('created_at', descending: true)
+          .limit(1)
+          .get();
+
+      assert(() {
+        debugPrint('[Prefill][Firestore] RESULT: '
+            'docsCount=${querySnapshot.docs.length}');
+        return true;
+      }());
+
+      if (querySnapshot.docs.isEmpty) {
+        assert(() {
+          debugPrint('[Prefill][Firestore] NO DOCS found for patient');
+          return true;
+        }());
+        return null;
+      }
+
+      final doc = querySnapshot.docs.first;
+      final data = doc.data();
+      data['id'] ??= doc.id;
+
+      assert(() {
+        final createdAt = data['created_at'];
+        debugPrint('[Prefill][Firestore] DOC: id="${doc.id}" '
+            'created_at=$createdAt '
+            'hasStructuredFields=${data['structured_fields'] != null} '
+            'hasStructuredV1=${data['structured_v1'] != null} '
+            'antecedentes.len=${(data['antecedentes'] as String?)?.length ?? 0}');
+        return true;
+      }());
+
+      return MedicalNoteModel.fromJson(data);
+    } catch (e, st) {
+      // Log exception details (may be index missing or other Firestore error)
+      assert(() {
+        debugPrint('[Prefill][Firestore] EXCEPTION: $e');
+        debugPrint('[Prefill][Firestore] STACK: $st');
+        return true;
+      }());
+      // Also print in release for diagnostics
+      debugPrint('[Prefill][Firestore] EXCEPTION: $e');
+      rethrow;
+    }
   }
 }

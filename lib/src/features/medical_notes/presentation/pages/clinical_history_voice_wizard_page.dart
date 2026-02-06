@@ -20,6 +20,8 @@ import '../../domain/entities/medical_note_entity.dart';
 import '../../domain/entities/medical_note_type.dart';
 import '../../domain/entities/note_status.dart';
 import '../controllers/medical_notes_controller.dart';
+import '../../medical_notes_providers.dart';
+import '../../../../presentation/core/application_state/current_doctor_provider/current_doctor_provider.dart';
 import '../widgets/clinical_history_wizard/ai_suggestions_sheet.dart';
 import '../widgets/clinical_history_wizard/attachments_step.dart';
 import '../widgets/clinical_history_wizard/voice_dictation_sheet.dart';
@@ -110,9 +112,13 @@ class _ClinicalHistoryVoiceWizardPageState
   bool _isFinalizing = false;
   bool _isProcessingAI = false;
   bool _isDictationSheetOpen = false;
+  bool _didRequestPrefill = false;
   PatientEntity? _patient;
 
   late final PageController _pageController;
+
+  /// Cached ScaffoldMessenger to avoid ancestor lookup after async operations.
+  late ScaffoldMessengerState _messenger;
 
   /// Per-step transcripts: interview, exam, studies, assessment.
   late Map<String, String> _stepTranscripts;
@@ -179,6 +185,18 @@ class _ClinicalHistoryVoiceWizardPageState
 
     // Load patient data
     _loadPatient();
+
+    // Prefill antecedentes from previous notes (NEW notes only)
+    // Post-frame to ensure widget is fully initialized
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchAndApplyPatientPrefill();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _messenger = ScaffoldMessenger.of(context);
   }
 
   void _initializeControllers() {
@@ -328,6 +346,178 @@ class _ClinicalHistoryVoiceWizardPageState
     }
   }
 
+  /// Checks if a text controller value is effectively empty (empty or placeholder).
+  ///
+  /// Uses exact same logic as manual wizard (AISuggestionSection.isPlaceholderContent).
+  bool _isEffectivelyEmpty(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return true;
+    if (trimmed.length > 25) return false;
+    return AISuggestionSection.isPlaceholderContent(trimmed.toLowerCase());
+  }
+
+  /// Fetches patient prefill from previous notes and applies to empty fields.
+  /// Fire-and-forget. Only for NEW notes (not edit mode).
+  void _fetchAndApplyPatientPrefill() {
+    assert(() {
+      final currentDoc = ref.read(currentDoctorIdProvider);
+      debugPrint('[Prefill][Voice] CHECK: '
+          'isEditMode=${widget.isEditMode} '
+          'patientId="${widget.patientId}" '
+          'doctorIdWidget="${widget.doctorId}" '
+          'currentDoctorId="$currentDoc" '
+          'didRequest=$_didRequestPrefill');
+      return true;
+    }());
+
+    // Guard: only for new notes, not edit mode
+    if (widget.isEditMode) {
+      assert(() {
+        debugPrint('[Prefill][Voice] SKIP: editMode');
+        return true;
+      }());
+      return;
+    }
+
+    // Guard: only run once per instance
+    if (_didRequestPrefill) {
+      assert(() {
+        debugPrint('[Prefill][Voice] SKIP: already requested');
+        return true;
+      }());
+      return;
+    }
+
+    // Guard: need patientId
+    if (widget.patientId.isEmpty) {
+      assert(() {
+        debugPrint('[Prefill][Voice] SKIP: patientId empty');
+        return true;
+      }());
+      return;
+    }
+
+    // Resolve doctorId: prefer widget, fallback to provider
+    final doctorId = widget.doctorId.isNotEmpty
+        ? widget.doctorId
+        : ref.read(currentDoctorIdProvider);
+
+    // Guard: need doctorId
+    if (doctorId == null || doctorId.isEmpty) {
+      assert(() {
+        debugPrint('[Prefill][Voice] SKIP: doctorId null/empty');
+        return true;
+      }());
+      return;
+    }
+
+    // Set guard BEFORE async to prevent rebuilds triggering again
+    _didRequestPrefill = true;
+
+    assert(() {
+      debugPrint('[Prefill][Voice] TRIGGERED: '
+          'patientId="${widget.patientId}" doctorId="$doctorId"');
+      return true;
+    }());
+
+    // Fire-and-forget
+    ref
+        .read(getPatientPrefillUseCaseProvider)
+        .call(patientId: widget.patientId, doctorId: doctorId)
+        .then((result) {
+      if (!mounted) return;
+
+      switch (result) {
+        case Success(:final data):
+          final prefill = data;
+
+          assert(() {
+            debugPrint('[Prefill][Voice] SUCCESS: '
+                'prefill=${prefill != null} '
+                'hasData=${prefill?.hasData} '
+                'sourceNoteId="${prefill?.sourceNoteId}" '
+                'sourceNoteDate=${prefill?.sourceNoteDate} '
+                'heredo.len=${prefill?.heredofamiliares.length ?? 0} '
+                'noPato.len=${prefill?.noPatologicos.length ?? 0} '
+                'pato.len=${prefill?.patologicos.length ?? 0}');
+            return true;
+          }());
+
+          if (prefill == null || !prefill.hasData) {
+            assert(() {
+              debugPrint('[Prefill][Voice] SKIP: no prefill data');
+              return true;
+            }());
+            return;
+          }
+
+          // Apply only to effectively empty fields
+          assert(() {
+            final heredoVal = _heredofamiliaresController.text;
+            debugPrint('[Prefill][Voice] BEFORE heredo: '
+                'current="${heredoVal.length > 50 ? '${heredoVal.substring(0, 50)}...' : heredoVal}" '
+                'empty=${_isEffectivelyEmpty(heredoVal)}');
+            return true;
+          }());
+          if (prefill.heredofamiliares.isNotEmpty &&
+              _isEffectivelyEmpty(_heredofamiliaresController.text)) {
+            _heredofamiliaresController.text = prefill.heredofamiliares;
+            assert(() {
+              debugPrint('[Prefill][Voice] APPLIED heredo');
+              return true;
+            }());
+          }
+
+          assert(() {
+            final noPatoVal = _noPatologicosController.text;
+            debugPrint('[Prefill][Voice] BEFORE noPato: '
+                'current="${noPatoVal.length > 50 ? '${noPatoVal.substring(0, 50)}...' : noPatoVal}" '
+                'empty=${_isEffectivelyEmpty(noPatoVal)}');
+            return true;
+          }());
+          if (prefill.noPatologicos.isNotEmpty &&
+              _isEffectivelyEmpty(_noPatologicosController.text)) {
+            _noPatologicosController.text = prefill.noPatologicos;
+            assert(() {
+              debugPrint('[Prefill][Voice] APPLIED noPato');
+              return true;
+            }());
+          }
+
+          assert(() {
+            final patoVal = _patologicosController.text;
+            debugPrint('[Prefill][Voice] BEFORE pato: '
+                'current="${patoVal.length > 50 ? '${patoVal.substring(0, 50)}...' : patoVal}" '
+                'empty=${_isEffectivelyEmpty(patoVal)}');
+            return true;
+          }());
+          if (prefill.patologicos.isNotEmpty &&
+              _isEffectivelyEmpty(_patologicosController.text)) {
+            _patologicosController.text = prefill.patologicos;
+            assert(() {
+              debugPrint('[Prefill][Voice] APPLIED pato');
+              return true;
+            }());
+          }
+
+          assert(() {
+            debugPrint('[Prefill][Voice] DONE from note ${prefill.sourceNoteId}');
+            return true;
+          }());
+
+        case Error(:final error):
+          // Log the error for debugging
+          assert(() {
+            debugPrint('[Prefill][Voice] ERROR: $error');
+            return true;
+          }());
+          // Also print in release for diagnostics (temporary)
+          debugPrint('[Prefill][Voice] ERROR: $error');
+          break;
+      }
+    });
+  }
+
   @override
   void dispose() {
     _pageController.dispose();
@@ -401,7 +591,7 @@ class _ClinicalHistoryVoiceWizardPageState
 
         Log.info('[VoiceWizard] Dictation saved for scope=$_currentScope');
 
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messenger.showSnackBar(
           SnackBar(
             content: Text('Dictado guardado para ${_stepTitles[_currentStep]}'),
             backgroundColor: DocsoftColors.success,
@@ -422,7 +612,7 @@ class _ClinicalHistoryVoiceWizardPageState
 
   Future<void> _processWithAI() async {
     if (!_hasTranscriptForCurrentStep) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messenger.showSnackBar(
         const SnackBar(
           content: Text('No hay dictado para procesar en este paso.'),
           backgroundColor: Colors.orange,
@@ -449,7 +639,7 @@ class _ClinicalHistoryVoiceWizardPageState
 
       // Show fallback notification if needed
       if (source == 'fallback') {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messenger.showSnackBar(
           SnackBar(
             content: Text(
               'Backend no disponible. Se usó OpenAI (Direct).',
@@ -467,7 +657,7 @@ class _ClinicalHistoryVoiceWizardPageState
       final sections = _buildSuggestionsForScope(structuredV1, _currentScope);
 
       if (sections.isEmpty || sections.every((s) => !s.hasContent)) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messenger.showSnackBar(
           const SnackBar(
             content: Text('No se encontraron hallazgos para este paso.'),
             backgroundColor: Colors.orange,
@@ -481,7 +671,7 @@ class _ClinicalHistoryVoiceWizardPageState
     } catch (e) {
       Log.error('[VoiceWizard] AI processing failed: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messenger.showSnackBar(
           SnackBar(
             content: Text('Error al procesar: $e'),
             backgroundColor: Colors.red,
@@ -648,7 +838,7 @@ class _ClinicalHistoryVoiceWizardPageState
 
     setState(() {});
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    _messenger.showSnackBar(
       SnackBar(
         content: Text('$count sugerencia(s) aplicada(s)'),
         backgroundColor: DocsoftColors.success,
@@ -669,7 +859,7 @@ class _ClinicalHistoryVoiceWizardPageState
       _aiAppliedByScope[_currentScope] = true;
       setState(() {});
 
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messenger.showSnackBar(
         SnackBar(
           content: Text('${section.label} aplicado'),
           backgroundColor: DocsoftColors.success,
@@ -949,7 +1139,7 @@ class _ClinicalHistoryVoiceWizardPageState
       Log.error('[VoiceWizard] Finalize failed: $e');
       if (mounted) {
         setState(() => _isFinalizing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messenger.showSnackBar(
           const SnackBar(
             content: Text('No se pudo verificar consistencia. Guardando nota…'),
             backgroundColor: Colors.orange,
@@ -1081,7 +1271,7 @@ class _ClinicalHistoryVoiceWizardPageState
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messenger.showSnackBar(
           SnackBar(
             content: Text(asDraft ? 'Borrador guardado' : 'Nota finalizada'),
             backgroundColor: DocsoftColors.success,
@@ -1092,7 +1282,7 @@ class _ClinicalHistoryVoiceWizardPageState
     } catch (e) {
       Log.error('[VoiceWizard] Save failed: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messenger.showSnackBar(
           SnackBar(
             content: Text('Error al guardar: $e'),
             backgroundColor: Colors.red,
@@ -1191,7 +1381,7 @@ class _ClinicalHistoryVoiceWizardPageState
                     controller: _pageController,
                     physics: const NeverScrollableScrollPhysics(),
                     onPageChanged: (page) {
-                      ScaffoldMessenger.of(context).clearSnackBars();
+                      _messenger.clearSnackBars();
                       setState(() => _currentStep = page);
                     },
                     children: [

@@ -48,6 +48,7 @@ import 'domain/usecases/update_medical_note_use_case.dart';
 import 'domain/usecases/get_medical_note_by_id_use_case.dart';
 import 'domain/usecases/add_attachment_to_medical_note_use_case.dart';
 import 'domain/usecases/sign_medical_note_use_case.dart';
+import 'domain/usecases/get_patient_prefill_use_case.dart';
 import 'domain/entities/medical_note_entity.dart';
 import '../../presentation/core/application_state/current_doctor_provider/current_doctor_provider.dart';
 import '../doctors/doctors_providers.dart';
@@ -512,6 +513,13 @@ DeleteMedicalNoteUseCase deleteMedicalNoteUseCase(
   DeleteMedicalNoteUseCaseRef ref,
 ) {
   return DeleteMedicalNoteUseCase(ref.watch(medicalNotesRepositoryProvider));
+}
+
+@riverpod
+GetPatientPrefillUseCase getPatientPrefillUseCase(
+  GetPatientPrefillUseCaseRef ref,
+) {
+  return GetPatientPrefillUseCase(ref.watch(medicalNotesRepositoryProvider));
 }
 
 // =============================================================================

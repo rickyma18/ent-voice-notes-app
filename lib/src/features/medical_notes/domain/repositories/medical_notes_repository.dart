@@ -2,6 +2,7 @@ import '../../../../core/base/failure.dart';
 import '../../../../core/base/repository.dart';
 import '../../../../core/base/result.dart';
 import '../entities/medical_note_entity.dart';
+import '../entities/patient_prefill.dart';
 
 abstract base class MedicalNotesRepository extends Repository {
   /// Obtiene todas las notas médicas de un paciente específico
@@ -28,4 +29,13 @@ abstract base class MedicalNotesRepository extends Repository {
 
   /// Elimina una nota médica por su ID
   Future<Result<void, Failure>> deleteNote(String id);
+
+  /// Gets prefill data (antecedentes) from the patient's most recent note.
+  ///
+  /// Returns null if no previous notes exist for this patient.
+  /// Used when creating a NEW note to prefill heredofamiliares, noPatologicos, patologicos.
+  Future<Result<PatientPrefill?, Failure>> getPatientPrefill(
+    String patientId,
+    String doctorId,
+  );
 }

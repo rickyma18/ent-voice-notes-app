@@ -48,7 +48,18 @@ class MedicalNoteModel extends MedicalNoteEntity {
     super.isFavorite,
     super.surgicalData,
     super.signatureData,
+    // Structured data for prefill (data-layer only, not in entity)
+    this.structuredFields,
+    this.structuredV1,
   });
+
+  /// Structured fields from new format (JSON key: 'structured_fields').
+  /// Used for prefill extraction. Data-layer only.
+  final Map<String, dynamic>? structuredFields;
+
+  /// Structured V1 fields from legacy format (JSON key: 'structured_v1').
+  /// Used for prefill extraction. Data-layer only.
+  final Map<String, dynamic>? structuredV1;
 
   factory MedicalNoteModel.fromJson(Map<String, dynamic> json) {
     // Parse note type (default to clinicalHistory for backward compatibility)
@@ -131,6 +142,9 @@ class MedicalNoteModel extends MedicalNoteEntity {
       surgicalData: surgicalData,
       // Signature data (only for signed notes)
       signatureData: signatureData,
+      // Structured data for prefill extraction (data-layer only)
+      structuredFields: json['structured_fields'] as Map<String, dynamic>?,
+      structuredV1: json['structured_v1'] as Map<String, dynamic>?,
     );
   }
 
@@ -230,6 +244,9 @@ class MedicalNoteModel extends MedicalNoteEntity {
       isFavorite: entity.isFavorite,
       surgicalData: entity.surgicalData,
       signatureData: entity.signatureData,
+      // Structured fields are data-layer only, not in entity
+      structuredFields: null,
+      structuredV1: null,
     );
   }
 
