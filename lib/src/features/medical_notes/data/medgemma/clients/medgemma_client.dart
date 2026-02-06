@@ -1202,6 +1202,140 @@ class MedGemmaServiceClient {
     );
   }
 
+  // ===========================================================================
+  // SUGGEST PLAN ENDPOINT - /v1/suggest_plan
+  // ===========================================================================
+
+  /// Suggests a treatment plan based on clinical context.
+  ///
+  /// Calls POST /v1/suggest_plan with motivo and diagnostico.
+  /// Returns [MedGemmaSuggestPlanResponse] with plan_tratamiento.
+  ///
+  /// PHI-safe: Does NOT log clinical content.
+  ///
+  /// Throws:
+  /// - [MedGemmaUnauthorizedException] if token is null/empty
+  /// - [DioException] for network/timeout errors
+  Future<MedGemmaSuggestPlanResponse> suggestPlan({
+    required String motivoConsulta,
+    required String diagnostico,
+    String style = 'bullets',
+  }) async {
+    final stopwatch = Stopwatch()..start();
+
+    final token = await _tokenProvider.getBearerToken();
+    if (token == null || token.isEmpty) {
+      Log.error('[MEDGEMMA-PLAN] request fail type=auth error=no_token');
+      throw const MedGemmaUnauthorizedException(
+        message: 'No bearer token available',
+      );
+    }
+
+    final requestId = _requestIdGenerator.generate();
+
+    Log.info(
+      '[MEDGEMMA-PLAN] request start url=$_baseUrl/v1/suggest_plan '
+      'requestId=$requestId style=$style',
+    );
+
+    try {
+      final response = await _dio.post<dynamic>(
+        '$_baseUrl/v1/suggest_plan',
+        data: {
+          'motivo_consulta': motivoConsulta,
+          'diagnostico': diagnostico,
+          'style': style,
+        },
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+            'X-Request-ID': requestId,
+          },
+          responseType: ResponseType.json,
+          sendTimeout: _readWriteTimeout,
+          receiveTimeout: _readWriteTimeout,
+        ),
+      );
+
+      stopwatch.stop();
+      final elapsedMs = stopwatch.elapsedMilliseconds;
+
+      final parsedData = _parseResponseData(response.data);
+      if (parsedData == null) {
+        Log.error(
+          '[MEDGEMMA-PLAN] request fail type=response '
+          'status=${response.statusCode} elapsedMs=$elapsedMs '
+          'error=invalid_response_format',
+        );
+        return const MedGemmaSuggestPlanResponse(
+          success: false,
+          error: MedGemmaErrorInfo(
+            code: MedGemmaErrorCodes.invalidResponseFormat,
+            message: 'Invalid or empty response from server',
+          ),
+        );
+      }
+
+      final MedGemmaSuggestPlanResponse result;
+      try {
+        result = MedGemmaSuggestPlanResponse.fromJson(parsedData);
+      } on TypeError catch (e) {
+        Log.error(
+          '[MEDGEMMA-PLAN] request fail type=response_structure_invalid '
+          'status=${response.statusCode} elapsedMs=$elapsedMs typeError=$e',
+        );
+        return const MedGemmaSuggestPlanResponse(
+          success: false,
+          error: MedGemmaErrorInfo(
+            code: MedGemmaErrorCodes.invalidResponseFormat,
+            message: 'Invalid response structure from server',
+          ),
+        );
+      }
+
+      if (result.success) {
+        Log.info(
+          '[MEDGEMMA-PLAN] request ok status=${response.statusCode} '
+          'elapsedMs=$elapsedMs requestId=$requestId',
+        );
+      } else {
+        Log.error(
+          '[MEDGEMMA-PLAN] request fail type=backend '
+          'status=${response.statusCode} elapsedMs=$elapsedMs '
+          'code=${result.error?.code}',
+        );
+      }
+
+      return result;
+    } on DioException catch (e) {
+      stopwatch.stop();
+      final elapsedMs = stopwatch.elapsedMilliseconds;
+      final status = e.response?.statusCode;
+
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout) {
+        Log.error(
+          '[MEDGEMMA-PLAN] request fail type=timeout elapsedMs=$elapsedMs '
+          'timeoutSetting=${_readWriteTimeout.inSeconds}s',
+        );
+      } else if (e.type == DioExceptionType.connectionError) {
+        Log.error(
+          '[MEDGEMMA-PLAN] request fail type=connection_refused '
+          'elapsedMs=$elapsedMs url=$_baseUrl',
+        );
+      } else {
+        Log.error(
+          '[MEDGEMMA-PLAN] request fail type=http status=$status '
+          'elapsedMs=$elapsedMs dioType=${e.type}',
+        );
+      }
+
+      rethrow;
+    }
+  }
+
   /// Normalizes bearer token by stripping "Bearer " prefix and whitespace.
   ///
   /// This prevents "Bearer Bearer ..." double prefixing and handles
@@ -1295,6 +1429,39 @@ class MedGemmaV1ResponseMetadata {
   final String? schemaVersion;
   final String? contractStatus;
   final List<String>? contractWarnings;
+}
+
+// =============================================================================
+// SUGGEST PLAN RESPONSE
+// =============================================================================
+
+/// Response from MedGemma /v1/suggest_plan endpoint.
+///
+/// PHI note: [planTratamiento] contains clinical data - NEVER log.
+class MedGemmaSuggestPlanResponse {
+  const MedGemmaSuggestPlanResponse({
+    required this.success,
+    this.planTratamiento,
+    this.error,
+  });
+
+  factory MedGemmaSuggestPlanResponse.fromJson(Map<String, dynamic> json) {
+    return MedGemmaSuggestPlanResponse(
+      success: json['success'] as bool? ?? false,
+      planTratamiento: json['plan_tratamiento'] as String?,
+      error: json['error'] != null
+          ? MedGemmaErrorInfo.fromJson(json['error'] as Map<String, dynamic>)
+          : null,
+    );
+  }
+
+  final bool success;
+
+  /// Suggested treatment plan text.
+  /// PHI: NEVER log this field.
+  final String? planTratamiento;
+
+  final MedGemmaErrorInfo? error;
 }
 
 // =============================================================================

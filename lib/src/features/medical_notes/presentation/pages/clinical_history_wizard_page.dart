@@ -28,6 +28,8 @@ import '../../domain/entities/medical_note_entity.dart';
 import '../../medical_notes_providers.dart';
 import '../controllers/medical_notes_controller.dart';
 import '../../data/medgemma/clients/medgemma_client.dart';
+import '../../data/medgemma/config/medgemma_config.dart';
+import '../../data/medgemma/providers/medgemma_providers.dart';
 import '../controllers/job_queue_controller.dart';
 import '../controllers/clinical_history_form_controller.dart';
 import '../models/ai_suggestion_models.dart';
@@ -970,7 +972,6 @@ class _ClinicalHistoryWizardPageState
   /// - At least one of: diagnostico, motivo, or padecimientoActual is non-empty
   /// - Not currently generating
   bool get _canShowPlanAutocompleteCta {
-    if (_planController.text.trim().isNotEmpty) return false;
     if (_isGeneratingPlan) return false;
 
     // At least one context field must have content
@@ -996,79 +997,110 @@ class _ClinicalHistoryWizardPageState
 
   /// Generates treatment plan suggestion using AI.
   ///
-  /// Uses context from: diagnostico (required), motivo, padecimiento, exploración ORL.
-  /// Opens AISuggestionsSheet with a single section for user review.
+  /// Primary: MedGemma /v1/suggest_plan (if feature flag enabled).
+  /// Fallback: OpenAI via NoteAIServiceImpl.suggestTreatmentPlan.
+  ///
+  /// Applies result directly if plan is empty, or shows replace/append dialog.
   Future<void> _generateAIPlanSuggestion() async {
     if (_isGeneratingPlan) return;
 
-    final diagnostico = _diagnosticoController.text.trim();
     final motivo = _motivoController.text.trim();
-    final padecimiento = _padecimientoActualController.text.trim();
+    final dx = _diagnosticoController.text.trim();
 
-    // Build ORL exploration text from controllers
-    final orlParts = <String>[];
-    for (final entry in _orlControllers.entries) {
-      final text = entry.value.text.trim();
-      if (text.isNotEmpty) {
-        orlParts.add('${entry.key.toUpperCase()}: $text');
-      }
-    }
-    final exploracionOrl = orlParts.isNotEmpty ? orlParts.join('\n') : null;
-
-    // Validate context
-    if (diagnostico.isEmpty && motivo.isEmpty && padecimiento.isEmpty) {
+    // Validate: both motivo and diagnostico required
+    if (motivo.isEmpty || dx.isEmpty) {
       DocsoftSnackBar.show(
         context,
-        message: 'Ingresa diagnóstico, motivo o padecimiento primero',
-        type: SnackBarType.warning,
+        message: 'Completa motivo y diagnóstico para sugerir el plan.',
+        type: SnackBarType.info,
       );
       return;
     }
+
+    Log.info('[AI-PLAN] plan_autocomplete_click');
+    final totalStopwatch = Stopwatch()..start();
 
     setState(() {
       _isGeneratingPlan = true;
     });
 
     try {
-      final aiService = ref.read(noteAIServiceProvider);
+      String? planSuggestion;
+      bool usedMedGemma = false;
 
-      final planSuggestion = await aiService.suggestTreatmentPlan(
-        diagnostico: diagnostico.isNotEmpty ? diagnostico : motivo,
-        motivo: motivo.isNotEmpty ? motivo : null,
-        padecimientoActual: padecimiento.isNotEmpty ? padecimiento : null,
-        exploracionOrl: exploracionOrl,
-      );
+      // A) Try MedGemma first (if feature flag enabled)
+      if (MedGemmaConfig.useMedGemmaSuggestPlan) {
+        final medGemmaClient = ref.read(medGemmaClientProvider);
+        if (medGemmaClient != null) {
+          try {
+            final mgStopwatch = Stopwatch()..start();
+            final response = await medGemmaClient.suggestPlan(
+              motivoConsulta: motivo,
+              diagnostico: dx,
+            );
+            mgStopwatch.stop();
+            if (response.success &&
+                response.planTratamiento != null &&
+                response.planTratamiento!.trim().isNotEmpty) {
+              planSuggestion = response.planTratamiento!.trim();
+              usedMedGemma = true;
+              Log.info(
+                '[AI-PLAN] plan_autocomplete_medgemma_success '
+                'latencyMs=${mgStopwatch.elapsedMilliseconds}',
+              );
+            }
+          } catch (e) {
+            Log.warning(
+              '[AI-PLAN] plan_autocomplete_medgemma_fallback_to_openai '
+              'reason=$e',
+            );
+          }
+        }
+      }
+
+      // B) Fallback to OpenAI if MedGemma didn't produce a result
+      if (planSuggestion == null) {
+        try {
+          final aiService = ref.read(noteAIServiceProvider);
+          final fallbackResult = await aiService.suggestTreatmentPlan(
+            diagnostico: dx,
+            motivo: motivo,
+          );
+          if (fallbackResult.trim().isNotEmpty) {
+            planSuggestion = fallbackResult.trim();
+            Log.info('[AI-PLAN] plan_autocomplete_openai_success');
+          }
+        } catch (e) {
+          Log.warning('[AI-PLAN] OpenAI fallback also failed: $e');
+        }
+      }
+
+      totalStopwatch.stop();
 
       if (!mounted) return;
 
-      if (planSuggestion.trim().isEmpty) {
+      // Both failed
+      if (planSuggestion == null) {
+        Log.warning(
+          '[AI-PLAN] plan_autocomplete_total_failure '
+          'totalMs=${totalStopwatch.elapsedMilliseconds}',
+        );
         DocsoftSnackBar.show(
           context,
-          message: 'No se pudo generar un plan con el contexto actual',
+          message: 'No se pudo generar sugerencia. Intenta de nuevo.',
           type: SnackBarType.warning,
         );
         return;
       }
 
-      // Build single section for AISuggestionsSheet
-      final sections = [
-        AISuggestionSection(
-          id: 'planTratamiento',
-          label: 'Plan de tratamiento (autocompletado)',
-          suggestion: planSuggestion,
-          currentValue: _planController.text,
-        ),
-      ];
-
-      // Show suggestions sheet
-      _showPlanAutocompleteSheet(sections);
-    } catch (e) {
-      if (!mounted) return;
-      DocsoftSnackBar.show(
-        context,
-        message: 'Error: ${e.toString()}',
-        type: SnackBarType.error,
+      Log.info(
+        '[AI-PLAN] plan_autocomplete_done '
+        'source=${usedMedGemma ? "medgemma" : "openai"} '
+        'totalMs=${totalStopwatch.elapsedMilliseconds}',
       );
+
+      // Apply result with source feedback
+      _applyPlanSuggestion(planSuggestion, usedMedGemma: usedMedGemma);
     } finally {
       if (mounted) {
         setState(() {
@@ -1078,31 +1110,60 @@ class _ClinicalHistoryWizardPageState
     }
   }
 
-  /// Shows the AI suggestions sheet for plan autocomplete.
-  ///
-  /// Similar to _showSuggestionsSheet but specifically for plan autocomplete.
-  void _showPlanAutocompleteSheet(List<AISuggestionSection> sections) {
-    // Capture parent messenger BEFORE opening sheet
-    _parentMessenger = ScaffoldMessenger.of(context);
+  /// Applies plan suggestion: direct insert if empty, dialog if existing text.
+  void _applyPlanSuggestion(String suggestion, {bool usedMedGemma = false}) {
+    final currentText = _planController.text.trim();
+    final sourceMsg = usedMedGemma
+        ? 'Sugerencia generada con IA clínica.'
+        : 'IA clínica no disponible. Se usó IA alternativa.';
+    final sourceType = usedMedGemma ? SnackBarType.success : SnackBarType.info;
 
-    // Create a fresh key for this sheet's ScaffoldMessenger
-    _sheetMessengerKey = GlobalKey<ScaffoldMessengerState>();
+    if (currentText.isEmpty) {
+      // Direct insert
+      _planController.text = suggestion;
+      DocsoftSnackBar.show(context, message: sourceMsg, type: sourceType);
+      return;
+    }
 
-    // Show AI suggestions as a proper bottom sheet (from below)
-    AISuggestionsSheet.show(
+    // Show replace/append dialog
+    showDialog<void>(
       context: context,
-      sections: sections,
-      messengerKey: _sheetMessengerKey,
-      onApply: (editedSections, mode) {
-        _applySuggestions(editedSections, mode);
-      },
-      onApplySection: (editedSection, mode) {
-        _applySingleSectionWithFeedback(editedSection, mode);
-      },
-    ).whenComplete(() {
-      _sheetMessengerKey = null;
-      _parentMessenger = null;
-    });
+      builder: (ctx) => AlertDialog(
+        title: const Text('Plan existente'),
+        content: const Text('¿Qué deseas hacer con la sugerencia?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _planController.text =
+                  '${_planController.text.trimRight()}\n\n$suggestion';
+              DocsoftSnackBar.show(
+                context,
+                message: sourceMsg,
+                type: sourceType,
+              );
+            },
+            child: const Text('Agregar al final'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _planController.text = suggestion;
+              DocsoftSnackBar.show(
+                context,
+                message: sourceMsg,
+                type: sourceType,
+              );
+            },
+            child: const Text('Reemplazar'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Builds the CTA widget for plan autocomplete (Step 6 only).

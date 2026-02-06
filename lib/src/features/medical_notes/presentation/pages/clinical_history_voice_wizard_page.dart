@@ -14,7 +14,9 @@ import '../../../patients/domain/entities/patient_entity.dart';
 import '../../../patients/patients_providers.dart';
 import '../../application/scribe/finalize_service.dart';
 import '../../application/structured_fields_schema_v1.dart';
+import '../../data/medgemma/config/medgemma_config.dart';
 import '../../data/medgemma/providers/medgemma_providers.dart';
+import '../../medical_notes_providers.dart';
 import '../../domain/entities/attachment_entity.dart';
 import '../../domain/entities/medical_note_entity.dart';
 import '../../domain/entities/medical_note_type.dart';
@@ -111,6 +113,7 @@ class _ClinicalHistoryVoiceWizardPageState
   bool _isSaving = false;
   bool _isFinalizing = false;
   bool _isProcessingAI = false;
+  bool _isGeneratingPlan = false;
   bool _isDictationSheetOpen = false;
   bool _isUploading = false;
   PatientEntity? _patient;
@@ -1867,6 +1870,174 @@ class _ClinicalHistoryVoiceWizardPageState
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Plan Autocomplete (MedGemma primary + OpenAI fallback)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// Generates treatment plan suggestion using AI.
+  ///
+  /// Primary: MedGemma /v1/suggest_plan (if feature flag enabled).
+  /// Fallback: OpenAI via NoteAIServiceImpl.suggestTreatmentPlan.
+  Future<void> _generateAIPlanSuggestion() async {
+    if (_isGeneratingPlan) return;
+
+    final motivo = _motivoController.text.trim();
+    final dx = _diagnosticoController.text.trim();
+
+    if (motivo.isEmpty || dx.isEmpty) {
+      DocsoftSnackBar.show(
+        context,
+        message: 'Completa motivo y diagnóstico para sugerir el plan.',
+        type: SnackBarType.info,
+      );
+      return;
+    }
+
+    Log.info('[AI-PLAN] plan_autocomplete_click source=voice_wizard');
+    final totalStopwatch = Stopwatch()..start();
+
+    setState(() {
+      _isGeneratingPlan = true;
+    });
+
+    try {
+      String? planSuggestion;
+      bool usedMedGemma = false;
+
+      // A) Try MedGemma first (if feature flag enabled)
+      if (MedGemmaConfig.useMedGemmaSuggestPlan) {
+        final medGemmaClient = ref.read(medGemmaClientProvider);
+        if (medGemmaClient != null) {
+          try {
+            final mgStopwatch = Stopwatch()..start();
+            final response = await medGemmaClient.suggestPlan(
+              motivoConsulta: motivo,
+              diagnostico: dx,
+            );
+            mgStopwatch.stop();
+            if (response.success &&
+                response.planTratamiento != null &&
+                response.planTratamiento!.trim().isNotEmpty) {
+              planSuggestion = response.planTratamiento!.trim();
+              usedMedGemma = true;
+              Log.info(
+                '[AI-PLAN] plan_autocomplete_medgemma_success '
+                'latencyMs=${mgStopwatch.elapsedMilliseconds}',
+              );
+            }
+          } catch (e) {
+            Log.warning(
+              '[AI-PLAN] plan_autocomplete_medgemma_fallback_to_openai '
+              'reason=$e',
+            );
+          }
+        }
+      }
+
+      // B) Fallback to OpenAI
+      if (planSuggestion == null) {
+        try {
+          final aiService = ref.read(noteAIServiceProvider);
+          final fallbackResult = await aiService.suggestTreatmentPlan(
+            diagnostico: dx,
+            motivo: motivo,
+          );
+          if (fallbackResult.trim().isNotEmpty) {
+            planSuggestion = fallbackResult.trim();
+            Log.info('[AI-PLAN] plan_autocomplete_openai_success');
+          }
+        } catch (e) {
+          Log.warning('[AI-PLAN] OpenAI fallback also failed: $e');
+        }
+      }
+
+      totalStopwatch.stop();
+
+      if (!mounted) return;
+
+      if (planSuggestion == null) {
+        Log.warning(
+          '[AI-PLAN] plan_autocomplete_total_failure '
+          'totalMs=${totalStopwatch.elapsedMilliseconds}',
+        );
+        DocsoftSnackBar.show(
+          context,
+          message: 'No se pudo generar sugerencia. Intenta de nuevo.',
+          type: SnackBarType.warning,
+        );
+        return;
+      }
+
+      Log.info(
+        '[AI-PLAN] plan_autocomplete_done '
+        'source=${usedMedGemma ? "medgemma" : "openai"} '
+        'totalMs=${totalStopwatch.elapsedMilliseconds}',
+      );
+
+      _applyPlanSuggestion(planSuggestion, usedMedGemma: usedMedGemma);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isGeneratingPlan = false;
+        });
+      }
+    }
+  }
+
+  /// Applies plan suggestion: direct insert if empty, dialog if existing.
+  void _applyPlanSuggestion(String suggestion, {bool usedMedGemma = false}) {
+    final currentText = _planController.text.trim();
+    final sourceMsg = usedMedGemma
+        ? 'Sugerencia generada con IA clínica.'
+        : 'IA clínica no disponible. Se usó IA alternativa.';
+    final sourceType = usedMedGemma ? SnackBarType.success : SnackBarType.info;
+
+    if (currentText.isEmpty) {
+      _planController.text = suggestion;
+      DocsoftSnackBar.show(context, message: sourceMsg, type: sourceType);
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Plan existente'),
+        content: const Text('¿Qué deseas hacer con la sugerencia?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _planController.text =
+                  '${_planController.text.trimRight()}\n\n$suggestion';
+              DocsoftSnackBar.show(
+                context,
+                message: sourceMsg,
+                type: sourceType,
+              );
+            },
+            child: const Text('Agregar al final'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _planController.text = suggestion;
+              DocsoftSnackBar.show(
+                context,
+                message: sourceMsg,
+                type: sourceType,
+              );
+            },
+            child: const Text('Reemplazar'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAssessmentStep() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -1887,6 +2058,40 @@ class _ClinicalHistoryVoiceWizardPageState
             hintText: 'Ej: Amoxicilina 500mg cada 8 horas por 7 días...',
             maxLines: 6,
             minLines: 3,
+          ),
+          // Plan autocomplete CTA
+          Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextButton.icon(
+                  onPressed: _isGeneratingPlan
+                      ? null
+                      : _generateAIPlanSuggestion,
+                  icon: _isGeneratingPlan
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.auto_awesome, size: 18),
+                  label: const Text('Autocompletar plan con IA'),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: Text(
+                    'Basado en diagnóstico/motivo. '
+                    'Revisa antes de aplicar.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
           GuidedTextArea(

@@ -76,6 +76,26 @@ abstract class MedGemmaConfig {
       String.fromEnvironment('AUTH_MODE', defaultValue: 'firebase') == 'dev';
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // FEATURE FLAGS
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /// Whether MedGemma /v1/suggest_plan is enabled for plan autocomplete.
+  ///
+  /// When true (default), the wizard tries MedGemma first, then OpenAI.
+  /// When false, skips MedGemma and uses OpenAI directly.
+  ///
+  /// Set via:
+  /// ```bash
+  /// flutter run --dart-define=USE_MEDGEMMA_SUGGEST_PLAN=false
+  /// ```
+  static const bool useMedGemmaSuggestPlan =
+      String.fromEnvironment(
+        'USE_MEDGEMMA_SUGGEST_PLAN',
+        defaultValue: 'true',
+      ) ==
+      'true';
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // TIMEOUT CONFIGURATION
   // ─────────────────────────────────────────────────────────────────────────────
 
