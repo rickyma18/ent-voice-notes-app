@@ -29,6 +29,7 @@ import '../controllers/sign_note_controller.dart';
 import '../utils/medical_note_pdf_builder.dart';
 import '../widgets/signature/signature.dart';
 import 'image_viewer_page.dart';
+import 'clinical_history_wizard_page.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 
@@ -381,7 +382,7 @@ class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
     });
   }
 
-  /// Toggle edit mode
+  /// Toggle edit mode (only for inReview notes)
   void _toggleEditMode() {
     if (_isEditMode && _hasUnsavedChanges) {
       // Show dialog before exiting edit mode
@@ -413,6 +414,79 @@ class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
           _editingSection = null;
         }
       });
+    }
+  }
+
+  /// Navigate to wizard for editing (used for draft notes)
+  Future<void> _navigateToWizardForEdit() async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ClinicalHistoryWizardPage(
+          patientId: _currentNote.patientId,
+          doctorId: _currentNote.doctorId,
+          existingNote: _currentNote,
+        ),
+      ),
+    );
+
+    // If saved, pop back to refresh the list
+    if (result == true && mounted) {
+      Navigator.of(context).pop(true);
+    }
+  }
+
+  /// Create a revision of the note (for signed/sent/archived notes)
+  /// Duplicates the note with inReview status and opens wizard.
+  Future<void> _createRevision() async {
+    final now = DateTime.now();
+
+    // Create a new note with same content but inReview status
+    final revisionNote = MedicalNoteEntity(
+      id: '', // New note, ID will be assigned by backend
+      patientId: _currentNote.patientId,
+      doctorId: _currentNote.doctorId,
+      createdAt: now,
+      updatedAt: now,
+      type: _currentNote.type,
+      motivoConsulta: _currentNote.motivoConsulta,
+      antecedentes: _currentNote.antecedentes,
+      exploracionFisicaOrl: _currentNote.exploracionFisicaOrl,
+      diagnostico: _currentNote.diagnostico,
+      planTratamiento: _currentNote.planTratamiento,
+      prognosis: _currentNote.prognosis,
+      resumen: _currentNote.resumen,
+      notaAdicional: _currentNote.notaAdicional,
+      weightKg: _currentNote.weightKg,
+      heightCm: _currentNote.heightCm,
+      bpSystolic: _currentNote.bpSystolic,
+      bpDiastolic: _currentNote.bpDiastolic,
+      heartRate: _currentNote.heartRate,
+      respiratoryRate: _currentNote.respiratoryRate,
+      temperatureC: _currentNote.temperatureC,
+      spo2: _currentNote.spo2,
+      status: NoteStatus.inReview, // New revision starts as inReview
+      rawTranscript: _currentNote.rawTranscript,
+      stepTranscripts: _currentNote.stepTranscripts,
+      surgicalData: _currentNote.surgicalData,
+      estudiosIndicados: _currentNote.estudiosIndicados,
+      attachments: [], // Don't copy attachments - user can add new ones
+      signatureData: null, // No signature for new revision
+    );
+
+    // Navigate to wizard with the revision note
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ClinicalHistoryWizardPage(
+          patientId: revisionNote.patientId,
+          doctorId: revisionNote.doctorId,
+          existingNote: revisionNote,
+        ),
+      ),
+    );
+
+    // If saved, pop back to refresh the list
+    if (result == true && mounted) {
+      Navigator.of(context).pop(true);
     }
   }
 
@@ -720,6 +794,64 @@ class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
     DocsoftSnackBar.show(context, message: message, type: SnackBarType.error);
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Popup Menu Helpers
+  // ─────────────────────────────────────────────────────────────────────────
+
+  PopupMenuItem<String> _buildMenuItem({
+    required String value,
+    required IconData icon,
+    required String label,
+    Color? iconColor,
+    Color? textColor,
+  }) {
+    return PopupMenuItem<String>(
+      value: value,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      height: 48,
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: (iconColor ?? DocsoftColors.textSecondary).withValues(
+                alpha: 0.10,
+              ),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              icon,
+              size: 18,
+              color: iconColor ?? DocsoftColors.textSecondary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            label,
+            style: DocsoftTextStyles.body.copyWith(
+              color: textColor ?? DocsoftColors.textPrimary,
+              fontWeight: FontWeight.w500,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  PopupMenuEntry<String> _buildMenuDivider() {
+    return const PopupMenuItem<String>(
+      enabled: false,
+      height: 1,
+      padding: EdgeInsets.zero,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16),
+        child: Divider(height: 1, thickness: 1, color: DocsoftColors.divider),
+      ),
+    );
+  }
+
   // ============================================================================
   // Signature methods
   // ============================================================================
@@ -909,8 +1041,23 @@ class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
                                 : _showAttachmentSheet,
                           ),
 
-                      // Edit mode toggle (hide if locked or signing)
-                      if (canEdit)
+                      // Edit button behavior depends on note status:
+                      // - draft: navigate to wizard (full edit)
+                      // - inReview: inline edit toggle
+                      // - signed/sent/archived: no edit button
+                      if (_currentNote.status == NoteStatus.draft && !isSigning)
+                        IconButton(
+                          icon: const Icon(
+                            Icons.edit_outlined,
+                            color: DocsoftColors.textSecondary,
+                          ),
+                          tooltip: 'Editar en wizard',
+                          onPressed: _isGeneratingPdf
+                              ? null
+                              : _navigateToWizardForEdit,
+                        )
+                      else if (_currentNote.status == NoteStatus.inReview &&
+                          !isSigning)
                         IconButton(
                           icon: Icon(
                             _isEditMode ? Icons.check : Icons.edit_outlined,
@@ -924,14 +1071,23 @@ class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
                           onPressed: _isGeneratingPdf ? null : _toggleEditMode,
                         ),
 
-                      // Export menu
+                      // Export menu (Docsoft styled)
                       PopupMenuButton<String>(
                         icon: Icon(
-                          Icons.more_horiz,
+                          Icons.more_vert_rounded,
                           color: DocsoftColors.textSecondary,
                         ),
                         enabled: !_isGeneratingPdf && !isSigning,
                         tooltip: 'Opciones',
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        color: DocsoftColors.surface,
+                        elevation: 8,
+                        shadowColor: DocsoftColors.shadowLight,
+                        surfaceTintColor: Colors.transparent,
+                        offset: const Offset(0, 8),
+                        padding: EdgeInsets.zero,
                         onSelected: (value) {
                           switch (value) {
                             case 'export':
@@ -940,37 +1096,48 @@ class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
                               _onSharePdf();
                             case 'print':
                               _onPrintPdf();
+                            case 'revision':
+                              _createRevision();
                           }
                         },
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(
-                            value: 'export',
-                            child: ListTile(
-                              leading: Icon(Icons.picture_as_pdf),
-                              title: Text('Exportar PDF'),
-                              contentPadding: EdgeInsets.zero,
-                              visualDensity: VisualDensity.compact,
+                        itemBuilder: (context) {
+                          final canCreateRevision =
+                              _currentNote.status == NoteStatus.inReview ||
+                              _currentNote.status == NoteStatus.sent ||
+                              _currentNote.status == NoteStatus.archived;
+
+                          return [
+                            _buildMenuItem(
+                              value: 'export',
+                              icon: Icons.picture_as_pdf_rounded,
+                              iconColor: const Color(0xFFEF4444),
+                              label: 'Exportar PDF',
                             ),
-                          ),
-                          const PopupMenuItem(
-                            value: 'share',
-                            child: ListTile(
-                              leading: Icon(Icons.share),
-                              title: Text('Compartir'),
-                              contentPadding: EdgeInsets.zero,
-                              visualDensity: VisualDensity.compact,
+                            _buildMenuDivider(),
+                            _buildMenuItem(
+                              value: 'share',
+                              icon: Icons.share_rounded,
+                              iconColor: DocsoftColors.primary,
+                              label: 'Compartir',
                             ),
-                          ),
-                          const PopupMenuItem(
-                            value: 'print',
-                            child: ListTile(
-                              leading: Icon(Icons.print),
-                              title: Text('Imprimir'),
-                              contentPadding: EdgeInsets.zero,
-                              visualDensity: VisualDensity.compact,
+                            _buildMenuDivider(),
+                            _buildMenuItem(
+                              value: 'print',
+                              icon: Icons.print_rounded,
+                              iconColor: DocsoftColors.textSecondary,
+                              label: 'Imprimir',
                             ),
-                          ),
-                        ],
+                            if (canCreateRevision) ...[
+                              _buildMenuDivider(),
+                              _buildMenuItem(
+                                value: 'revision',
+                                icon: Icons.content_copy_rounded,
+                                iconColor: const Color(0xFF8B5CF6),
+                                label: 'Editar en wizard',
+                              ),
+                            ],
+                          ];
+                        },
                       ),
                     ],
                   ),

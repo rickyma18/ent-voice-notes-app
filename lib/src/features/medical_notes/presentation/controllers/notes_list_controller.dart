@@ -304,11 +304,18 @@ List<NoteListItemUiModel> filteredNotes(
   // Apply filter
   switch (filter) {
     case NotesFilter.drafts:
+      // Drafts: only draft status (inReview is a separate state now)
       uiNotes = uiNotes.where((n) => n.status == NoteListStatus.draft).toList();
       break;
     case NotesFilter.finalized:
+      // Finalized: signed, sent, or archived (completed states)
       uiNotes = uiNotes
-          .where((n) => n.status == NoteListStatus.finalized)
+          .where(
+            (n) =>
+                n.status == NoteListStatus.signed ||
+                n.status == NoteListStatus.sent ||
+                n.status == NoteListStatus.archived,
+          )
           .toList();
       break;
     case NotesFilter.recent:
@@ -369,11 +376,14 @@ NoteListItemUiModel _mapToUiModel(MedicalNoteEntity note, String patientName) {
 NoteListStatus _mapStatus(NoteStatus status) {
   switch (status) {
     case NoteStatus.draft:
-    case NoteStatus.inReview:
       return NoteListStatus.draft;
+    case NoteStatus.inReview:
+      return NoteListStatus.inReview;
     case NoteStatus.signed:
+      return NoteListStatus.signed;
     case NoteStatus.sent:
+      return NoteListStatus.sent;
     case NoteStatus.archived:
-      return NoteListStatus.finalized;
+      return NoteListStatus.archived;
   }
 }

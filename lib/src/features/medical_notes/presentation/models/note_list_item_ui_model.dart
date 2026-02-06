@@ -35,14 +35,23 @@ class NoteListItemUiModel {
 /// Colors are resolved in the widget layer (NoteCard).
 enum NoteListStatus {
   draft,
-  finalized;
+  inReview,
+  signed,
+  sent,
+  archived;
 
   String get label {
     switch (this) {
       case NoteListStatus.draft:
         return 'Borrador';
-      case NoteListStatus.finalized:
-        return 'Finalizada';
+      case NoteListStatus.inReview:
+        return 'En revisión';
+      case NoteListStatus.signed:
+        return 'Firmada';
+      case NoteListStatus.sent:
+        return 'Enviada al paciente';
+      case NoteListStatus.archived:
+        return 'Archivada';
     }
   }
 }

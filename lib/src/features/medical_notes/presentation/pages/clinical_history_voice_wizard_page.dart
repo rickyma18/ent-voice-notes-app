@@ -796,6 +796,10 @@ class _ClinicalHistoryVoiceWizardPageState
 
   /// Finalize-and-review flow: calls finalize with consistency check,
   /// then shows warnings review if applicable, or saves directly.
+  ///
+  /// NOTE: This is an OPTIONAL action, separate from [_saveNote].
+  /// The main "Guardar" button calls [_saveNote] directly without finalize.
+  /// This method is exposed via "Validar con IA" button in the last step.
   Future<void> _finalizeAndReview() async {
     final finalizeService = ref.read(finalizeServiceProvider);
 
@@ -884,6 +888,22 @@ class _ClinicalHistoryVoiceWizardPageState
   // Save
   // ─────────────────────────────────────────────────────────────────────────
 
+  /// Checks if minimum required fields are filled for inReview status.
+  /// Returns (isComplete, missingFieldLabels).
+  ({bool isComplete, List<String> missing}) _checkMinimumRequired() {
+    final motivoOk = _motivoController.text.trim().isNotEmpty;
+    final dxOk = _diagnosticoController.text.trim().isNotEmpty;
+    final planOk = _planController.text.trim().isNotEmpty;
+
+    final missing = <String>[
+      if (!motivoOk) 'Motivo de consulta',
+      if (!dxOk) 'Diagnóstico',
+      if (!planOk) 'Plan de tratamiento',
+    ];
+
+    return (isComplete: missing.isEmpty, missing: missing);
+  }
+
   Future<void> _saveNote({required bool asDraft}) async {
     setState(() => _isSaving = true);
 
@@ -911,18 +931,31 @@ class _ClinicalHistoryVoiceWizardPageState
           .map((s) => StudyEntity(tipo: 'General', descripcion: s.trim()))
           .toList();
 
+      // Smart save: check minimum required fields when not saving as draft
+      final requiredCheck = _checkMinimumRequired();
+      final bool savedAsDraftDueToMissing =
+          !asDraft && !requiredCheck.isComplete;
+
+      // Determine effective status
+      final NoteStatus effectiveStatus;
+      if (asDraft || savedAsDraftDueToMissing) {
+        effectiveStatus = NoteStatus.draft;
+      } else {
+        effectiveStatus = NoteStatus.inReview;
+      }
+
       final MedicalNoteEntity note;
 
       if (widget.isEditMode && widget.existingNote != null) {
         // Edit mode status logic:
-        // - asDraft → force draft
-        // - !asDraft && existing is draft → promote to signed (finalize)
-        // - !asDraft && existing is NOT draft → keep current status
+        // - asDraft or missing required → force draft
+        // - !asDraft && requiredOk && existing is draft → promote to inReview
+        // - !asDraft && requiredOk && existing is NOT draft → keep current status
         final NoteStatus editStatus;
-        if (asDraft) {
+        if (asDraft || savedAsDraftDueToMissing) {
           editStatus = NoteStatus.draft;
         } else if (widget.existingNote!.status == NoteStatus.draft) {
-          editStatus = NoteStatus.signed;
+          editStatus = NoteStatus.inReview;
         } else {
           editStatus = widget.existingNote!.status;
         }
@@ -978,7 +1011,7 @@ class _ClinicalHistoryVoiceWizardPageState
           prognosis: prognosis,
           stepTranscripts: _stepTranscripts,
           rawTranscript: '', // Computed from stepTranscripts
-          status: asDraft ? NoteStatus.draft : NoteStatus.signed,
+          status: effectiveStatus,
           attachments: _attachments,
           estudiosIndicados: estudiosList,
         );
@@ -989,12 +1022,28 @@ class _ClinicalHistoryVoiceWizardPageState
       }
 
       if (mounted) {
-        final message = asDraft ? 'Borrador guardado' : 'Nota finalizada';
-        DocsoftSnackBar.show(
-          context,
-          message: message,
-          type: SnackBarType.success,
-        );
+        // Show appropriate snackbar based on save outcome
+        if (asDraft) {
+          DocsoftSnackBar.show(
+            context,
+            message: 'Borrador guardado',
+            type: SnackBarType.success,
+          );
+        } else if (savedAsDraftDueToMissing) {
+          DocsoftSnackBar.show(
+            context,
+            message:
+                'Faltan campos mínimos para guardar como revisión. '
+                'Se guardó como borrador.',
+            type: SnackBarType.warning,
+          );
+        } else {
+          DocsoftSnackBar.show(
+            context,
+            message: 'Nota guardada',
+            type: SnackBarType.success,
+          );
+        }
         Navigator.of(context).pop(true);
       }
     } catch (e) {
@@ -1406,25 +1455,23 @@ class _ClinicalHistoryVoiceWizardPageState
   void _showTranscriptDialog() {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Dictado - ${_stepTitles[_currentStep]}'),
-        content: SingleChildScrollView(child: Text(_currentStepTranscript)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cerrar'),
-          ),
-          TextButton(
-            onPressed: () {
-              setState(() {
-                _stepTranscripts[_currentScope] = '';
-                _aiAppliedByScope[_currentScope] = false;
-              });
-              Navigator.pop(ctx);
-            },
-            child: const Text('Borrar', style: TextStyle(color: Colors.red)),
-          ),
-        ],
+      builder: (ctx) => DocsoftDialog(
+        icon: Icons.mic,
+        title: 'Dictado - ${_stepTitles[_currentStep]}',
+        message: _currentStepTranscript.isEmpty
+            ? 'No hay texto dictado aún'
+            : _currentStepTranscript,
+        confirmLabel: 'Borrar',
+        cancelLabel: 'Cerrar',
+        variant: DocsoftDialogVariant.confirm,
+        onConfirm: () {
+          setState(() {
+            _stepTranscripts[_currentScope] = '';
+            _aiAppliedByScope[_currentScope] = false;
+          });
+          Navigator.pop(ctx);
+        },
+        onCancel: () => Navigator.pop(ctx),
       ),
     );
   }
@@ -1491,10 +1538,10 @@ class _ClinicalHistoryVoiceWizardPageState
                   Expanded(
                     child: isLastStep
                         ? DocsoftPrimaryButton(
-                            label: 'Finalizar y revisar',
+                            label: 'Guardar',
                             icon: Icons.check,
-                            isLoading: _isSaving || _isFinalizing,
-                            onPressed: _finalizeAndReview,
+                            isLoading: _isSaving,
+                            onPressed: () => _saveNote(asDraft: false),
                           )
                         : DocsoftOutlinedButton(
                             label: 'Siguiente',
@@ -1587,21 +1634,20 @@ class _ClinicalHistoryVoiceWizardPageState
   /// Compact icon-only Next/Finalize button (48×48) for narrow screens.
   Widget _buildCompactNextButton(bool isLastStep) {
     if (isLastStep) {
-      // Finalize — filled style matching theme
+      // Save — filled style matching theme
       final themedStyle = Theme.of(context).elevatedButtonTheme.style;
-      final busy = _isSaving || _isFinalizing;
       return Tooltip(
-        message: 'Finalizar y revisar',
+        message: 'Guardar',
         child: SizedBox(
           width: 48,
           height: 48,
           child: ElevatedButton(
-            onPressed: busy ? null : _finalizeAndReview,
+            onPressed: _isSaving ? null : () => _saveNote(asDraft: false),
             style: themedStyle?.copyWith(
               padding: const WidgetStatePropertyAll(EdgeInsets.zero),
             ),
             child: Center(
-              child: busy
+              child: _isSaving
                   ? const SizedBox(
                       width: 20,
                       height: 20,
@@ -1833,6 +1879,31 @@ class _ClinicalHistoryVoiceWizardPageState
             maxLines: 3,
             minLines: 2,
           ),
+          const SizedBox(height: 24),
+          // Validar con IA — optional AI consistency check
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _isFinalizing ? null : _finalizeAndReview,
+              icon: _isFinalizing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_awesome),
+              label: const Text('Validar con IA'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                side: BorderSide(
+                  color: _isFinalizing
+                      ? DocsoftColors.border
+                      : DocsoftColors.primary,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
         ],
       ),
     );

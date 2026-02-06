@@ -19,8 +19,13 @@ class NoteCard extends StatelessWidget {
     switch (note.status) {
       case NoteListStatus.draft:
         return DocsoftColors.textSecondary;
-      case NoteListStatus.finalized:
+      case NoteListStatus.inReview:
+        return DocsoftColors.warning;
+      case NoteListStatus.signed:
+      case NoteListStatus.sent:
         return DocsoftColors.primary;
+      case NoteListStatus.archived:
+        return DocsoftColors.textTertiary;
     }
   }
 
