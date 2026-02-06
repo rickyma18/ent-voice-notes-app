@@ -172,6 +172,8 @@ class _ClinicalHistoryVoiceWizardPageState
   // Exam scope (ORL)
   Map<String, TextEditingController> get _orlControllers =>
       _formState.orlControllers;
+  TextEditingController get _exploracionFisicaGeneralController =>
+      _formState.exploracionFisicaGeneralController;
 
   // Vitals
   TextEditingController get _weightController => _formState.weightController;
@@ -923,6 +925,10 @@ class _ClinicalHistoryVoiceWizardPageState
       final prognosis = _prognosisController.text.trim().isEmpty
           ? null
           : _prognosisController.text.trim();
+      final exploracionFisicaGeneral =
+          _exploracionFisicaGeneralController.text.trim().isEmpty
+          ? null
+          : _exploracionFisicaGeneralController.text.trim();
 
       final estudiosList = _estudiosIndicadosController.text
           .trim()
@@ -966,6 +972,7 @@ class _ClinicalHistoryVoiceWizardPageState
           motivoConsulta: _motivoController.text.trim(),
           antecedentes: antecedentes,
           exploracionFisicaOrl: exploracionOrl,
+          exploracionFisicaGeneral: exploracionFisicaGeneral,
           diagnostico: _diagnosticoController.text.trim(),
           planTratamiento: _planController.text.trim(),
           weightKg: weightKg,
@@ -998,6 +1005,7 @@ class _ClinicalHistoryVoiceWizardPageState
           motivoConsulta: _motivoController.text.trim(),
           antecedentes: antecedentes,
           exploracionFisicaOrl: exploracionOrl,
+          exploracionFisicaGeneral: exploracionFisicaGeneral,
           diagnostico: _diagnosticoController.text.trim(),
           planTratamiento: _planController.text.trim(),
           weightKg: weightKg,
@@ -1793,6 +1801,15 @@ class _ClinicalHistoryVoiceWizardPageState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          GuidedTextArea(
+            controller: _exploracionFisicaGeneralController,
+            label: 'Exploración física general',
+            hintText: 'Escribe aquí la exploración física general...',
+            maxLines: 5,
+            minLines: 3,
+          ),
+          const SizedBox(height: 16),
+
           // Vitals card
           VitalsCard(
             weightController: _weightController,

@@ -27,6 +27,7 @@ class MedicalNoteEntity extends Equatable {
     required this.motivoConsulta,
     required this.antecedentes,
     required this.exploracionFisicaOrl,
+    this.exploracionFisicaGeneral,
     required this.diagnostico,
     required this.planTratamiento,
     // Signos vitales (vital signs)
@@ -82,6 +83,8 @@ class MedicalNoteEntity extends Equatable {
 
   /// Exploración física otorrinolaringológica detallada
   final String exploracionFisicaOrl;
+
+  final String? exploracionFisicaGeneral;
 
   /// Diagnóstico médico establecido
   final String diagnostico;
@@ -217,6 +220,7 @@ class MedicalNoteEntity extends Equatable {
     String? motivoConsulta,
     String? antecedentes,
     String? exploracionFisicaOrl,
+    String? exploracionFisicaGeneral,
     String? diagnostico,
     String? planTratamiento,
     double? weightKg,
@@ -252,6 +256,8 @@ class MedicalNoteEntity extends Equatable {
       motivoConsulta: motivoConsulta ?? this.motivoConsulta,
       antecedentes: antecedentes ?? this.antecedentes,
       exploracionFisicaOrl: exploracionFisicaOrl ?? this.exploracionFisicaOrl,
+      exploracionFisicaGeneral:
+          exploracionFisicaGeneral ?? this.exploracionFisicaGeneral,
       diagnostico: diagnostico ?? this.diagnostico,
       planTratamiento: planTratamiento ?? this.planTratamiento,
       weightKg: weightKg ?? this.weightKg,
@@ -355,6 +361,7 @@ class MedicalNoteEntity extends Equatable {
     motivoConsulta,
     antecedentes,
     exploracionFisicaOrl,
+    exploracionFisicaGeneral,
     diagnostico,
     planTratamiento,
     weightKg,

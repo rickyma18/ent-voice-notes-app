@@ -67,6 +67,7 @@ class ClinicalHistoryFormState {
 
   // ORL Controllers
   final Map<String, TextEditingController> orlControllers;
+  final TextEditingController exploracionFisicaGeneralController;
 
   // Vitals Controllers
   final TextEditingController weightController;
@@ -103,6 +104,7 @@ class ClinicalHistoryFormState {
     required this.planController,
     required this.prognosisController,
     required this.orlControllers,
+    required this.exploracionFisicaGeneralController,
     required this.weightController,
     required this.heightController,
     required this.bpSystolicController,
@@ -141,6 +143,7 @@ class ClinicalHistoryFormState {
       planController: planController,
       prognosisController: prognosisController,
       orlControllers: orlControllers,
+      exploracionFisicaGeneralController: exploracionFisicaGeneralController,
       weightController: weightController,
       heightController: heightController,
       bpSystolicController: bpSystolicController,
@@ -190,6 +193,7 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
       'cuello': TextEditingController(),
       'laringoscopia': TextEditingController(),
     };
+    final exploracionFisicaGeneral = TextEditingController();
 
     final weight = TextEditingController();
     final height = TextEditingController();
@@ -211,6 +215,7 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
       plan.dispose();
       prognosis.dispose();
       for (final c in orlControllers.values) c.dispose();
+      exploracionFisicaGeneral.dispose();
       weight.dispose();
       height.dispose();
       bpSys.dispose();
@@ -237,6 +242,7 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
       planController: plan,
       prognosisController: prognosis,
       orlControllers: orlControllers,
+      exploracionFisicaGeneralController: exploracionFisicaGeneral,
       weightController: weight,
       heightController: height,
       bpSystolicController: bpSys,
@@ -264,12 +270,14 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
     // SKIP if: editing existing note OR patientId is empty OR already requested
     assert(() {
       final currentDoc = ref.read(currentDoctorIdProvider);
-      debugPrint('[Prefill][Manual] CHECK: '
-          'existingNote=${args.existingNote != null} '
-          'patientId="${args.patientId}" '
-          'doctorIdArg="${args.doctorId}" '
-          'currentDoctorId="$currentDoc" '
-          'didRequest=$_didRequestPrefill');
+      debugPrint(
+        '[Prefill][Manual] CHECK: '
+        'existingNote=${args.existingNote != null} '
+        'patientId="${args.patientId}" '
+        'doctorIdArg="${args.doctorId}" '
+        'currentDoctorId="$currentDoc" '
+        'didRequest=$_didRequestPrefill',
+      );
       return true;
     }());
     if (args.existingNote == null &&
@@ -281,8 +289,10 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
           : ref.read(currentDoctorIdProvider);
 
       assert(() {
-        debugPrint('[Prefill][Manual] TRIGGERED: '
-            'resolvedDoctorId="$doctorId"');
+        debugPrint(
+          '[Prefill][Manual] TRIGGERED: '
+          'resolvedDoctorId="$doctorId"',
+        );
         return true;
       }());
 
@@ -324,6 +334,7 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
       s.diagnosticoController: 'diagnostico',
       s.planController: 'planTratamiento',
       s.prognosisController: 'pronostico',
+      s.exploracionFisicaGeneralController: 'exploracionFisicaGeneral',
     };
 
     // Add ORL controllers
@@ -379,6 +390,10 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
 
     _parseAntecedentes(s, note.antecedentes);
     _parseExploracion(s, note.exploracionFisicaOrl);
+    if (note.exploracionFisicaGeneral != null) {
+      s.exploracionFisicaGeneralController.text =
+          note.exploracionFisicaGeneral!;
+    }
 
     if (note.weightKg != null)
       s.weightController.text = note.weightKg!.toString();
@@ -528,8 +543,10 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
   /// using [setFieldValueFromAI] to avoid marking as touched.
   void _fetchAndApplyPatientPrefill(String patientId, String doctorId) {
     assert(() {
-      debugPrint('[Prefill][Manual] FETCH: patientId="$patientId" '
-          'doctorId="$doctorId"');
+      debugPrint(
+        '[Prefill][Manual] FETCH: patientId="$patientId" '
+        'doctorId="$doctorId"',
+      );
       return true;
     }());
 
@@ -538,95 +555,108 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
         .read(getPatientPrefillUseCaseProvider)
         .call(patientId: patientId, doctorId: doctorId)
         .then((result) {
-      switch (result) {
-        case Success(:final data):
-          final prefill = data;
+          switch (result) {
+            case Success(:final data):
+              final prefill = data;
 
-          assert(() {
-            debugPrint('[Prefill][Manual] SUCCESS: '
-                'prefill=${prefill != null} '
-                'hasData=${prefill?.hasData} '
-                'sourceNoteId="${prefill?.sourceNoteId}" '
-                'sourceNoteDate=${prefill?.sourceNoteDate} '
-                'heredo.len=${prefill?.heredofamiliares.length ?? 0} '
-                'noPato.len=${prefill?.noPatologicos.length ?? 0} '
-                'pato.len=${prefill?.patologicos.length ?? 0}');
-            return true;
-          }());
+              assert(() {
+                debugPrint(
+                  '[Prefill][Manual] SUCCESS: '
+                  'prefill=${prefill != null} '
+                  'hasData=${prefill?.hasData} '
+                  'sourceNoteId="${prefill?.sourceNoteId}" '
+                  'sourceNoteDate=${prefill?.sourceNoteDate} '
+                  'heredo.len=${prefill?.heredofamiliares.length ?? 0} '
+                  'noPato.len=${prefill?.noPatologicos.length ?? 0} '
+                  'pato.len=${prefill?.patologicos.length ?? 0}',
+                );
+                return true;
+              }());
 
-          if (prefill == null || !prefill.hasData) {
-            assert(() {
-              debugPrint('[Prefill][Manual] SKIP: no prefill data');
-              return true;
-            }());
-            return;
+              if (prefill == null || !prefill.hasData) {
+                assert(() {
+                  debugPrint('[Prefill][Manual] SKIP: no prefill data');
+                  return true;
+                }());
+                return;
+              }
+
+              // Apply only to effectively empty fields
+              assert(() {
+                final heredoVal = currentValueForSectionId('heredofamiliares');
+                debugPrint(
+                  '[Prefill][Manual] BEFORE heredo: '
+                  'current="${heredoVal.length > 50 ? '${heredoVal.substring(0, 50)}...' : heredoVal}" '
+                  'empty=${isEffectivelyEmpty('heredofamiliares')}',
+                );
+                return true;
+              }());
+              if (prefill.heredofamiliares.isNotEmpty &&
+                  isEffectivelyEmpty('heredofamiliares')) {
+                setFieldValueFromAI(
+                  'heredofamiliares',
+                  prefill.heredofamiliares,
+                );
+                assert(() {
+                  debugPrint('[Prefill][Manual] APPLIED heredo');
+                  return true;
+                }());
+              }
+
+              assert(() {
+                final noPatoVal = currentValueForSectionId('noPatologicos');
+                debugPrint(
+                  '[Prefill][Manual] BEFORE noPato: '
+                  'current="${noPatoVal.length > 50 ? '${noPatoVal.substring(0, 50)}...' : noPatoVal}" '
+                  'empty=${isEffectivelyEmpty('noPatologicos')}',
+                );
+                return true;
+              }());
+              if (prefill.noPatologicos.isNotEmpty &&
+                  isEffectivelyEmpty('noPatologicos')) {
+                setFieldValueFromAI('noPatologicos', prefill.noPatologicos);
+                assert(() {
+                  debugPrint('[Prefill][Manual] APPLIED noPato');
+                  return true;
+                }());
+              }
+
+              assert(() {
+                final patoVal = currentValueForSectionId('patologicos');
+                debugPrint(
+                  '[Prefill][Manual] BEFORE pato: '
+                  'current="${patoVal.length > 50 ? '${patoVal.substring(0, 50)}...' : patoVal}" '
+                  'empty=${isEffectivelyEmpty('patologicos')}',
+                );
+                return true;
+              }());
+              if (prefill.patologicos.isNotEmpty &&
+                  isEffectivelyEmpty('patologicos')) {
+                setFieldValueFromAI('patologicos', prefill.patologicos);
+                assert(() {
+                  debugPrint('[Prefill][Manual] APPLIED pato');
+                  return true;
+                }());
+              }
+
+              assert(() {
+                debugPrint(
+                  '[Prefill][Manual] DONE from note ${prefill.sourceNoteId}',
+                );
+                return true;
+              }());
+
+            case Error(:final error):
+              // Log the error for debugging
+              assert(() {
+                debugPrint('[Prefill][Manual] ERROR: $error');
+                return true;
+              }());
+              // Also print in release for diagnostics (temporary)
+              debugPrint('[Prefill][Manual] ERROR: $error');
+              break;
           }
-
-          // Apply only to effectively empty fields
-          assert(() {
-            final heredoVal = currentValueForSectionId('heredofamiliares');
-            debugPrint('[Prefill][Manual] BEFORE heredo: '
-                'current="${heredoVal.length > 50 ? '${heredoVal.substring(0, 50)}...' : heredoVal}" '
-                'empty=${isEffectivelyEmpty('heredofamiliares')}');
-            return true;
-          }());
-          if (prefill.heredofamiliares.isNotEmpty &&
-              isEffectivelyEmpty('heredofamiliares')) {
-            setFieldValueFromAI('heredofamiliares', prefill.heredofamiliares);
-            assert(() {
-              debugPrint('[Prefill][Manual] APPLIED heredo');
-              return true;
-            }());
-          }
-
-          assert(() {
-            final noPatoVal = currentValueForSectionId('noPatologicos');
-            debugPrint('[Prefill][Manual] BEFORE noPato: '
-                'current="${noPatoVal.length > 50 ? '${noPatoVal.substring(0, 50)}...' : noPatoVal}" '
-                'empty=${isEffectivelyEmpty('noPatologicos')}');
-            return true;
-          }());
-          if (prefill.noPatologicos.isNotEmpty &&
-              isEffectivelyEmpty('noPatologicos')) {
-            setFieldValueFromAI('noPatologicos', prefill.noPatologicos);
-            assert(() {
-              debugPrint('[Prefill][Manual] APPLIED noPato');
-              return true;
-            }());
-          }
-
-          assert(() {
-            final patoVal = currentValueForSectionId('patologicos');
-            debugPrint('[Prefill][Manual] BEFORE pato: '
-                'current="${patoVal.length > 50 ? '${patoVal.substring(0, 50)}...' : patoVal}" '
-                'empty=${isEffectivelyEmpty('patologicos')}');
-            return true;
-          }());
-          if (prefill.patologicos.isNotEmpty &&
-              isEffectivelyEmpty('patologicos')) {
-            setFieldValueFromAI('patologicos', prefill.patologicos);
-            assert(() {
-              debugPrint('[Prefill][Manual] APPLIED pato');
-              return true;
-            }());
-          }
-
-          assert(() {
-            debugPrint('[Prefill][Manual] DONE from note ${prefill.sourceNoteId}');
-            return true;
-          }());
-
-        case Error(:final error):
-          // Log the error for debugging
-          assert(() {
-            debugPrint('[Prefill][Manual] ERROR: $error');
-            return true;
-          }());
-          // Also print in release for diagnostics (temporary)
-          debugPrint('[Prefill][Manual] ERROR: $error');
-          break;
-      }
-    });
+        });
   }
 
   String _computeSignature(ClinicalHistoryFormState s) {
@@ -639,6 +669,7 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
       s.diagnosticoController.text.trim(),
       s.planController.text.trim(),
       ...s.orlControllers.values.map((c) => c.text.trim()),
+      s.exploracionFisicaGeneralController.text.trim(),
       s.weightController.text.trim(),
       s.heightController.text.trim(),
       s.bpSystolicController.text.trim(),
@@ -742,6 +773,10 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
       final prognosis = state.prognosisController.text.trim().isEmpty
           ? null
           : state.prognosisController.text.trim();
+      final exploracionFisicaGeneral =
+          state.exploracionFisicaGeneralController.text.trim().isEmpty
+          ? null
+          : state.exploracionFisicaGeneralController.text.trim();
 
       final MedicalNoteEntity note;
 
@@ -757,6 +792,7 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
           motivoConsulta: state.motivoController.text.trim(),
           antecedentes: antecedentes,
           exploracionFisicaOrl: exploracionOrl,
+          exploracionFisicaGeneral: exploracionFisicaGeneral,
           diagnostico: state.diagnosticoController.text.trim(),
           planTratamiento: state.planController.text.trim(),
           weightKg: weightKg,
@@ -787,6 +823,7 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
           motivoConsulta: state.motivoController.text.trim(),
           antecedentes: antecedentes,
           exploracionFisicaOrl: exploracionOrl,
+          exploracionFisicaGeneral: exploracionFisicaGeneral,
           diagnostico: state.diagnosticoController.text.trim(),
           planTratamiento: state.planController.text.trim(),
           weightKg: weightKg,
@@ -866,6 +903,9 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
     for (final controller in s.orlControllers.values) {
       if (controller.text.trim().isNotEmpty) return true;
     }
+    if (s.exploracionFisicaGeneralController.text.trim().isNotEmpty) {
+      return true;
+    }
 
     // Check vital signs
     if (s.weightController.text.trim().isNotEmpty) return true;
@@ -942,6 +982,8 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
         return s.orlControllers['cuello']?.text ?? '';
       case 'laringoscopia':
         return s.orlControllers['laringoscopia']?.text ?? '';
+      case 'exploracionFisicaGeneral':
+        return s.exploracionFisicaGeneralController.text;
       case 'pronostico':
         return s.prognosisController.text;
       case 'diagnostico':
@@ -1013,6 +1055,9 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
       case 'laringoscopia':
         s.orlControllers['laringoscopia']?.text = value;
         break;
+      case 'exploracionFisicaGeneral':
+        s.exploracionFisicaGeneralController.text = value;
+        break;
       case 'pronostico':
         s.prognosisController.text = value;
         break;
@@ -1075,7 +1120,9 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
           .toSet();
 
       // Check if ANY significant word from suggestion appears in transcript
-      final hasEvidence = suggestedWords.any((word) => transcript.contains(word));
+      final hasEvidence = suggestedWords.any(
+        (word) => transcript.contains(word),
+      );
 
       if (!hasEvidence) return null;
 
@@ -1098,7 +1145,10 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
   /// - applied: fields that were updated
   /// - skipped: fields skipped due to onlyEmpty mode
   /// - conflicts: touched fields that need user confirmation
-  ApplyResult applySuggestions(List<AISuggestionSection> sections, ApplyMode mode) {
+  ApplyResult applySuggestions(
+    List<AISuggestionSection> sections,
+    ApplyMode mode,
+  ) {
     final applied = <String>[];
     final skipped = <String>[];
     final conflicts = <ConflictItem>[];
@@ -1132,17 +1182,19 @@ class ClinicalHistoryForm extends _$ClinicalHistoryForm {
           // Non-empty AND touched by user: conflict, needs confirmation
           // Use actual controller value (may differ from section.currentValue)
           final currentVal = currentValueForSectionId(fieldId);
-          conflicts.add(ConflictItem(
-            fieldId: fieldId,
-            currentValue: currentVal,
-            suggestedValue: section.suggestion,
-            label: section.label,
-            rationale: _generateConflictRationale(
+          conflicts.add(
+            ConflictItem(
               fieldId: fieldId,
               currentValue: currentVal,
               suggestedValue: section.suggestion,
+              label: section.label,
+              rationale: _generateConflictRationale(
+                fieldId: fieldId,
+                currentValue: currentVal,
+                suggestedValue: section.suggestion,
+              ),
             ),
-          ));
+          );
         }
       }
     }

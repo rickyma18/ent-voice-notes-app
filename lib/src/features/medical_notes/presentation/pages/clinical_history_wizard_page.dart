@@ -187,6 +187,8 @@ class _ClinicalHistoryWizardPageState
       _formState.prognosisController;
   Map<String, TextEditingController> get _orlControllers =>
       _formState.orlControllers;
+  TextEditingController get _exploracionFisicaGeneralController =>
+      _formState.exploracionFisicaGeneralController;
 
   TextEditingController get _weightController => _formState.weightController;
   TextEditingController get _heightController => _formState.heightController;
@@ -2278,6 +2280,15 @@ class _ClinicalHistoryWizardPageState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
+
+          GuidedTextArea(
+            controller: _exploracionFisicaGeneralController,
+            label: 'Exploración física general',
+            hintText: 'Escribe aquí la exploración física general...',
+            maxLines: 5,
+            minLines: 3,
+          ),
+          const SizedBox(height: 16),
 
           // Vital signs card (always shown)
           VitalsCard(

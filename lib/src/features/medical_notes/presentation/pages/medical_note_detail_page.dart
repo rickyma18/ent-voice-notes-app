@@ -37,6 +37,7 @@ import 'package:file_picker/file_picker.dart';
 enum _EditableSection {
   motivoConsulta,
   antecedentes,
+  exploracionFisicaGeneral,
   exploracionFisicaOrl,
   diagnostico,
   planTratamiento,
@@ -109,6 +110,8 @@ class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
         return _currentNote.motivoConsulta;
       case _EditableSection.antecedentes:
         return _currentNote.antecedentes;
+      case _EditableSection.exploracionFisicaGeneral:
+        return _currentNote.exploracionFisicaGeneral ?? '';
       case _EditableSection.exploracionFisicaOrl:
         return _currentNote.exploracionFisicaOrl;
       case _EditableSection.diagnostico:
@@ -146,6 +149,8 @@ class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
         return 'Motivo de consulta';
       case _EditableSection.antecedentes:
         return 'Antecedentes';
+      case _EditableSection.exploracionFisicaGeneral:
+        return 'Exploración física general';
       case _EditableSection.exploracionFisicaOrl:
         return 'Exploración física ORL';
       case _EditableSection.diagnostico:
@@ -332,6 +337,11 @@ class _MedicalNoteDetailPageState extends ConsumerState<MedicalNoteDetailPage> {
       case _EditableSection.antecedentes:
         return _currentNote.copyWith(
           antecedentes: newValue,
+          updatedAt: DateTime.now(),
+        );
+      case _EditableSection.exploracionFisicaGeneral:
+        return _currentNote.copyWith(
+          exploracionFisicaGeneral: newValue.isEmpty ? null : newValue,
           updatedAt: DateTime.now(),
         );
       case _EditableSection.exploracionFisicaOrl:
@@ -1248,6 +1258,25 @@ class _MedicalNoteDetailContent extends StatelessWidget {
             isSaving: isSaving,
             controller: getController(_EditableSection.antecedentes),
             onEdit: () => onEditSection(_EditableSection.antecedentes),
+            onSave: onSave,
+            onCancel: onCancel,
+          ),
+          const SizedBox(height: 12),
+
+          _EditableSectionCard(
+            section: _EditableSection.exploracionFisicaGeneral,
+            title: 'Exploración física general',
+            icon: Icons.medical_services_outlined,
+            content: note.exploracionFisicaGeneral ?? '',
+            isEditMode: isEditMode,
+            isEditing:
+                editingSection == _EditableSection.exploracionFisicaGeneral,
+            isSaving: isSaving,
+            controller: getController(
+              _EditableSection.exploracionFisicaGeneral,
+            ),
+            onEdit: () =>
+                onEditSection(_EditableSection.exploracionFisicaGeneral),
             onSave: onSave,
             onCancel: onCancel,
           ),
