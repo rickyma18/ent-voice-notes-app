@@ -19,6 +19,8 @@ import 'package:medical_notes_app/src/features/medical_notes/domain/scribe/repos
     show TranscriptionOptions;
 import 'package:medical_notes_app/src/features/medical_notes/application/scribe/finalize_service.dart';
 import 'package:medical_notes_app/src/features/medical_notes/data/medgemma/clients/medgemma_client.dart';
+import '../../data/medgemma/config/medgemma_config.dart';
+import '../../data/medgemma/experiment/ai_telemetry.dart';
 import '../../data/medgemma/providers/medgemma_providers.dart';
 import '../../medical_notes_providers.dart';
 import '../../domain/entities/pipeline_flags.dart';
@@ -479,6 +481,18 @@ class MedicalNotesController extends _$MedicalNotesController {
             );
           }
 
+          // Shadow comparison (fire-and-forget)
+          if (MedGemmaConfig.voiceExtractShadowCompare) {
+            _runExtractShadowComparison(
+              transcript: transcript,
+              language: language,
+              scope: 'full',
+              primarySource: kSourceMedGemmaV1,
+              primaryLatencyMs: swPipeline.elapsedMilliseconds,
+              primarySuggestions: suggestions,
+            );
+          }
+
           // Add pipeline metadata if not already present
           final meta = Map<String, dynamic>.from(
             suggestions['metadata'] as Map? ?? {},
@@ -583,13 +597,13 @@ class MedicalNotesController extends _$MedicalNotesController {
 
     Log.info('[AI-SCOPE] Generating suggestions for scope=$scope');
 
+    final primarySw = Stopwatch()..start();
+
     // ─────────────────────────────────────────────────────────────────────────
     // Priority 1: Backend Pipeline with scope (ÉPICA 19 + Wizard)
     // ─────────────────────────────────────────────────────────────────────────
     if (flags.pipelineEnabled && medGemmaClient != null) {
-      Log.info(
-        '[AI-SCOPE] Using Backend Pipeline with scope=$scope',
-      );
+      Log.info('[AI-SCOPE] Using Backend Pipeline with scope=$scope');
 
       try {
         final suggestions = await _extractWithMedGemmaV1(
@@ -598,6 +612,8 @@ class MedicalNotesController extends _$MedicalNotesController {
           language: language,
           scope: scope,
         );
+
+        primarySw.stop();
 
         if (suggestions != null) {
           // Add pipeline metadata
@@ -611,6 +627,19 @@ class MedicalNotesController extends _$MedicalNotesController {
           suggestions['metadata'] = meta;
 
           Log.info('[AI-SCOPE] Backend extraction succeeded for scope=$scope');
+
+          // Shadow comparison (fire-and-forget)
+          if (MedGemmaConfig.voiceExtractShadowCompare) {
+            _runExtractShadowComparison(
+              transcript: transcript,
+              language: language,
+              scope: scope,
+              primarySource: kSourceMedGemmaV1,
+              primaryLatencyMs: primarySw.elapsedMilliseconds,
+              primarySuggestions: suggestions,
+            );
+          }
+
           return {'suggestions': suggestions, 'source': kSourceMedGemmaV1};
         }
 
@@ -634,6 +663,8 @@ class MedicalNotesController extends _$MedicalNotesController {
         .read(noteAIServiceProvider)
         .suggestStructuredFieldsV3(transcript);
 
+    primarySw.stop();
+
     // Ensure metadata reflects fallback
     final meta = Map<String, dynamic>.from(
       suggestions['metadata'] as Map? ?? {},
@@ -643,6 +674,18 @@ class MedicalNotesController extends _$MedicalNotesController {
     meta['fallbackUsed'] = true;
     meta['scopeNotApplied'] = true; // Legacy doesn't support scope filtering
     suggestions['metadata'] = meta;
+
+    // Shadow comparison: run MedGemma in background
+    if (MedGemmaConfig.voiceExtractShadowCompare && medGemmaClient != null) {
+      _runExtractShadowComparison(
+        transcript: transcript,
+        language: language,
+        scope: scope,
+        primarySource: 'fallback',
+        primaryLatencyMs: primarySw.elapsedMilliseconds,
+        primarySuggestions: suggestions,
+      );
+    }
 
     return {
       'suggestions': suggestions,
@@ -683,6 +726,69 @@ class MedicalNotesController extends _$MedicalNotesController {
         );
       } catch (e) {
         Log.warning('[TELEMETRY-AB] Legacy run failed: $e');
+      }
+    });
+  }
+
+  /// Shadow comparison for voice extraction (fire-and-forget).
+  ///
+  /// After the primary extraction engine returns, runs the OTHER engine
+  /// in the background and logs comparison metrics.
+  ///
+  /// PHI-safe: Only logs numerical metrics, never content.
+  void _runExtractShadowComparison({
+    required String transcript,
+    String? language,
+    required String scope,
+    required String primarySource,
+    required int primaryLatencyMs,
+    required Map<String, dynamic> primarySuggestions,
+  }) {
+    Future(() async {
+      try {
+        final sw = Stopwatch()..start();
+        Map<String, dynamic>? shadowSuggestions;
+        String shadowEngine;
+
+        if (primarySource == kSourceMedGemmaV1) {
+          // Shadow: legacy (OpenAI)
+          shadowEngine = kEngineOpenAi;
+          shadowSuggestions = await ref
+              .read(noteAIServiceProvider)
+              .suggestStructuredFieldsV3(transcript);
+        } else {
+          // Shadow: MedGemma
+          shadowEngine = kEngineMedGemma;
+          final mgClient = ref.read(medGemmaClientProvider);
+          if (mgClient != null) {
+            shadowSuggestions = await _extractWithMedGemmaV1(
+              mgClient,
+              transcript,
+              language: language,
+              scope: scope,
+            );
+          }
+        }
+        sw.stop();
+
+        AiTelemetry.shadowCompare(
+          event: 'extract_shadow_compare',
+          scope: scope,
+          primaryEngine: primarySource,
+          shadowEngine: shadowEngine,
+          primaryLatencyMs: primaryLatencyMs,
+          shadowLatencyMs: sw.elapsedMilliseconds,
+          primaryKeys: AiTelemetry.keysCount(primarySuggestions),
+          shadowKeys: AiTelemetry.keysCount(shadowSuggestions),
+          primaryCoverage: AiTelemetry.coverageScore(primarySuggestions),
+          shadowCoverage: AiTelemetry.coverageScore(shadowSuggestions),
+          shadowAvailable: shadowSuggestions != null,
+        );
+      } catch (e) {
+        AiTelemetry.shadowEvent('extract_shadow_error', {
+          'scope': scope,
+          'reason': '$e',
+        });
       }
     });
   }

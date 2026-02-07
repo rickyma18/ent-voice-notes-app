@@ -96,6 +96,75 @@ abstract class MedGemmaConfig {
       'true';
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // A/B EXPERIMENT FLAGS
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /// Enable shadow comparison for plan suggestion.
+  ///
+  /// When true, after the primary engine returns a plan suggestion,
+  /// the OTHER engine runs in the background (fire-and-forget) and
+  /// telemetry logs compare latency, chars, and lines.
+  ///
+  /// Set via:
+  /// ```bash
+  /// flutter run --dart-define=SUGGEST_PLAN_SHADOW_COMPARE=true
+  /// ```
+  static const bool suggestPlanShadowCompare =
+      String.fromEnvironment(
+        'SUGGEST_PLAN_SHADOW_COMPARE',
+        defaultValue: 'false',
+      ) ==
+      'true';
+
+  /// Enable shadow comparison for voice extraction.
+  ///
+  /// When true, after the primary extraction engine returns structured
+  /// fields, the OTHER engine runs in the background and telemetry
+  /// logs compare latency, keys_count, and coverage_score.
+  ///
+  /// Set via:
+  /// ```bash
+  /// flutter run --dart-define=VOICE_EXTRACT_SHADOW_COMPARE=true
+  /// ```
+  static const bool voiceExtractShadowCompare =
+      String.fromEnvironment(
+        'VOICE_EXTRACT_SHADOW_COMPARE',
+        defaultValue: 'false',
+      ) ==
+      'true';
+
+  /// Seed for A/B experiment randomization.
+  ///
+  /// Changing this value re-shuffles user assignments without code changes.
+  /// Default: 0.
+  ///
+  /// Set via:
+  /// ```bash
+  /// flutter run --dart-define=AI_EXPERIMENT_ASSIGNMENT_SEED=42
+  /// ```
+  static const int aiExperimentSeed = int.fromEnvironment(
+    'AI_EXPERIMENT_ASSIGNMENT_SEED',
+    defaultValue: 0,
+  );
+
+  /// Ratio of users assigned to MedGemma variant (0.0–1.0).
+  ///
+  /// Default: 0.5 (50/50 split).
+  ///
+  /// Set via:
+  /// ```bash
+  /// flutter run --dart-define=AI_EXPERIMENT_RATIO_MEDGEMMA=0.7
+  /// ```
+  static const String _ratioMedgemmaStr = String.fromEnvironment(
+    'AI_EXPERIMENT_RATIO_MEDGEMMA',
+    defaultValue: '0.5',
+  );
+
+  /// Parsed MedGemma ratio. Falls back to 0.5 if unparseable.
+  static double get aiExperimentRatioMedgemma =>
+      double.tryParse(_ratioMedgemmaStr) ?? 0.5;
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // TIMEOUT CONFIGURATION
   // ─────────────────────────────────────────────────────────────────────────────
 

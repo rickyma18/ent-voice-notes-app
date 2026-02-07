@@ -182,6 +182,44 @@ class DocsoftDialogs {
     );
   }
 
+  /// Confirma salir ofreciendo guardar como borrador.
+  ///
+  /// Muestra un diálogo con 3 opciones:
+  /// - **Guardar borrador** (confirm) → ejecuta [onSaveDraft], retorna `null`
+  /// - **Descartar** (secondary, destructivo) → retorna `true`
+  /// - **Cancelar** → retorna `false`
+  ///
+  /// Return semantics match [confirmExitWithoutSaving]:
+  /// - `true` = descartar (caller should pop the page)
+  /// - `false` = cancelar (stay on page)
+  /// - `null` = dismissed or draft saved
+  static Future<bool?> confirmExitWithDraftOption(
+    BuildContext context, {
+    required Future<void> Function() onSaveDraft,
+  }) {
+    return _showAnimatedDialog<bool?>(
+      context: context,
+      builder: (dialogContext) => DocsoftDialog(
+        icon: Icons.warning_amber_rounded,
+        title: '¿Salir sin guardar?',
+        message:
+            'Tienes cambios sin guardar. '
+            'Puedes guardar como borrador o descartar.',
+        confirmLabel: 'Guardar borrador',
+        secondaryLabel: 'Descartar',
+        secondaryIsDestructive: true,
+        cancelLabel: 'Cancelar',
+        variant: DocsoftDialogVariant.warning,
+        onConfirm: () {
+          Navigator.of(dialogContext).pop(null);
+          onSaveDraft();
+        },
+        onSecondary: () => Navigator.of(dialogContext).pop(true),
+        onCancel: () => Navigator.of(dialogContext).pop(false),
+      ),
+    );
+  }
+
   /// Internal method to show the dialog with animation.
   static Future<bool?> _showDialog({
     required BuildContext context,
@@ -192,23 +230,34 @@ class DocsoftDialogs {
     String? cancelLabel = 'Cancelar',
     required DocsoftDialogVariant variant,
   }) {
-    return showGeneralDialog<bool?>(
+    return _showAnimatedDialog<bool?>(
+      context: context,
+      builder: (dialogContext) => DocsoftDialog(
+        icon: icon,
+        title: title,
+        message: message,
+        confirmLabel: confirmLabel,
+        cancelLabel: cancelLabel,
+        variant: variant,
+        onCancel: () => Navigator.of(dialogContext).pop(false),
+        onConfirm: () => Navigator.of(dialogContext).pop(true),
+      ),
+    );
+  }
+
+  /// Reusable animated dialog shell (fade + scale).
+  static Future<T?> _showAnimatedDialog<T>({
+    required BuildContext context,
+    required Widget Function(BuildContext dialogContext) builder,
+  }) {
+    return showGeneralDialog<T>(
       context: context,
       barrierDismissible: true,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       barrierColor: DocsoftColors.scrim,
       transitionDuration: const Duration(milliseconds: 250),
-      pageBuilder: (context, animation, secondaryAnimation) {
-        return DocsoftDialog(
-          icon: icon,
-          title: title,
-          message: message,
-          confirmLabel: confirmLabel,
-          cancelLabel: cancelLabel,
-          variant: variant,
-          onCancel: () => Navigator.of(context).pop(false),
-          onConfirm: () => Navigator.of(context).pop(true),
-        );
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return builder(dialogContext);
       },
       transitionBuilder: (context, animation, secondaryAnimation, child) {
         final curvedAnimation = CurvedAnimation(

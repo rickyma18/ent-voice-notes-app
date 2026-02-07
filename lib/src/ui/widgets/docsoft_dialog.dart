@@ -33,6 +33,9 @@ class DocsoftDialog extends StatelessWidget {
     required this.message,
     required this.confirmLabel,
     this.cancelLabel,
+    this.secondaryLabel,
+    this.onSecondary,
+    this.secondaryIsDestructive = false,
     this.variant = DocsoftDialogVariant.confirm,
     this.onConfirm,
     this.onCancel,
@@ -61,6 +64,15 @@ class DocsoftDialog extends StatelessWidget {
 
   /// Callback when cancel is pressed
   final VoidCallback? onCancel;
+
+  /// Label for an optional secondary (middle) button.
+  final String? secondaryLabel;
+
+  /// Callback when the secondary button is pressed.
+  final VoidCallback? onSecondary;
+
+  /// When true, the secondary button uses error/red text styling.
+  final bool secondaryIsDestructive;
 
   /// Returns the bubble background color based on variant
   Color get _bubbleColor {
@@ -205,6 +217,101 @@ class DocsoftDialog extends StatelessWidget {
                           ),
                         ),
                       ),
+                    );
+                  }
+
+                  // 3-button layout: always stack vertically
+                  if (secondaryLabel != null) {
+                    return Column(
+                      children: [
+                        // Confirm (top) — primary action
+                        SizedBox(
+                          height: buttonHeight,
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: onConfirm,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _confirmButtonColor,
+                              foregroundColor: _confirmButtonTextColor,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: DocsoftSpacing.md,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  DocsoftRadii.full,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              confirmLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: DocsoftTextStyles.button.copyWith(
+                                color: _confirmButtonTextColor,
+                                height: 1.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: DocsoftSpacing.sm),
+                        // Secondary (middle)
+                        SizedBox(
+                          height: buttonHeight,
+                          width: double.infinity,
+                          child: TextButton(
+                            onPressed: onSecondary,
+                            style: TextButton.styleFrom(
+                              foregroundColor: secondaryIsDestructive
+                                  ? DocsoftColors.error
+                                  : DocsoftColors.textSecondary,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  DocsoftRadii.full,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              secondaryLabel!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: DocsoftTextStyles.button.copyWith(
+                                color: secondaryIsDestructive
+                                    ? DocsoftColors.error
+                                    : DocsoftColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ),
+                        // Cancel (bottom, if present)
+                        if (cancelLabel != null) ...[
+                          const SizedBox(height: DocsoftSpacing.sm),
+                          SizedBox(
+                            height: buttonHeight,
+                            width: double.infinity,
+                            child: TextButton(
+                              onPressed: onCancel,
+                              style: TextButton.styleFrom(
+                                foregroundColor: DocsoftColors.textSecondary,
+                                backgroundColor: DocsoftColors.surfaceAlt,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    DocsoftRadii.full,
+                                  ),
+                                ),
+                              ),
+                              child: Text(
+                                cancelLabel!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: DocsoftTextStyles.button.copyWith(
+                                  color: DocsoftColors.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     );
                   }
 

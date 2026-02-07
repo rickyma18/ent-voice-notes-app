@@ -1,5 +1,6 @@
 // lib/src/features/medical_notes/presentation/pages/clinical_history_wizard_page.dart
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -29,6 +30,8 @@ import '../../medical_notes_providers.dart';
 import '../controllers/medical_notes_controller.dart';
 import '../../data/medgemma/clients/medgemma_client.dart';
 import '../../data/medgemma/config/medgemma_config.dart';
+import '../../data/medgemma/experiment/ai_experiment_assigner.dart';
+import '../../data/medgemma/experiment/ai_telemetry.dart';
 import '../../data/medgemma/providers/medgemma_providers.dart';
 import '../controllers/job_queue_controller.dart';
 import '../controllers/clinical_history_form_controller.dart';
@@ -111,6 +114,11 @@ class _ClinicalHistoryWizardPageState
 
   // State for AI Plan generation (spinner)
   bool _isGeneratingPlan = false;
+
+  // Edit-after-apply tracking for A/B telemetry
+  int? _planTextLenAtApply;
+  Timer? _editAfterApplyTimer;
+  String? _lastPlanVariant;
 
   // Cached structured fields from AI (v1 schema)
   Map<String, dynamic>? _structuredFieldsV1;
@@ -1007,7 +1015,6 @@ class _ClinicalHistoryWizardPageState
     final motivo = _motivoController.text.trim();
     final dx = _diagnosticoController.text.trim();
 
-    // Validate: both motivo and diagnostico required
     if (motivo.isEmpty || dx.isEmpty) {
       DocsoftSnackBar.show(
         context,
@@ -1017,8 +1024,32 @@ class _ClinicalHistoryWizardPageState
       return;
     }
 
-    Log.info('[AI-PLAN] plan_autocomplete_click');
-    final totalStopwatch = Stopwatch()..start();
+    // A/B assignment
+    final variant = AiExperimentAssigner.assign(
+      userId: widget.doctorId,
+      experimentName: 'suggest_plan',
+      seed: MedGemmaConfig.aiExperimentSeed,
+      medgemmaRatio: MedGemmaConfig.aiExperimentRatioMedgemma,
+    );
+    _lastPlanVariant = variant;
+
+    AiTelemetry.experimentEvent('assignment', {
+      ...AiExperimentAssigner.describeAssignment(
+        userId: widget.doctorId,
+        experimentName: 'suggest_plan',
+        seed: MedGemmaConfig.aiExperimentSeed,
+        medgemmaRatio: MedGemmaConfig.aiExperimentRatioMedgemma,
+      ),
+      'sessionId': _sessionId,
+      'wizard': 'manual',
+    });
+
+    AiTelemetry.planEvent('plan_autocomplete_click', {
+      'variant': variant,
+      'sessionId': _sessionId,
+    });
+
+    final totalSw = Stopwatch()..start();
 
     setState(() {
       _isGeneratingPlan = true;
@@ -1026,65 +1057,130 @@ class _ClinicalHistoryWizardPageState
 
     try {
       String? planSuggestion;
-      bool usedMedGemma = false;
+      String? actualSource;
+      int? primaryLatencyMs;
+      int? fallbackLatencyMs;
 
-      // A) Try MedGemma first (if feature flag enabled)
-      if (MedGemmaConfig.useMedGemmaSuggestPlan) {
-        final medGemmaClient = ref.read(medGemmaClientProvider);
-        if (medGemmaClient != null) {
-          try {
-            final mgStopwatch = Stopwatch()..start();
-            final response = await medGemmaClient.suggestPlan(
-              motivoConsulta: motivo,
-              diagnostico: dx,
-            );
-            mgStopwatch.stop();
-            if (response.success &&
-                response.planTratamiento != null &&
-                response.planTratamiento!.trim().isNotEmpty) {
-              planSuggestion = response.planTratamiento!.trim();
-              usedMedGemma = true;
-              Log.info(
-                '[AI-PLAN] plan_autocomplete_medgemma_success '
-                'latencyMs=${mgStopwatch.elapsedMilliseconds}',
+      if (variant == 'medgemma') {
+        // PRIMARY: MedGemma → FALLBACK: OpenAI
+        if (MedGemmaConfig.useMedGemmaSuggestPlan) {
+          final mgClient = ref.read(medGemmaClientProvider);
+          if (mgClient != null) {
+            try {
+              final sw = Stopwatch()..start();
+              final resp = await mgClient.suggestPlan(
+                motivoConsulta: motivo,
+                diagnostico: dx,
               );
+              sw.stop();
+              primaryLatencyMs = sw.elapsedMilliseconds;
+              if (resp.success &&
+                  resp.planTratamiento != null &&
+                  resp.planTratamiento!.trim().isNotEmpty) {
+                planSuggestion = resp.planTratamiento!.trim();
+                actualSource = 'medgemma';
+              }
+            } catch (e) {
+              AiTelemetry.planEvent('medgemma_error', {
+                'reason': '$e',
+                'sessionId': _sessionId,
+              });
+            }
+          }
+        }
+        if (planSuggestion == null) {
+          try {
+            final sw = Stopwatch()..start();
+            final result = await ref
+                .read(noteAIServiceProvider)
+                .suggestTreatmentPlan(diagnostico: dx, motivo: motivo);
+            sw.stop();
+            fallbackLatencyMs = sw.elapsedMilliseconds;
+            if (result.trim().isNotEmpty) {
+              planSuggestion = result.trim();
+              actualSource = 'openai_fallback';
             }
           } catch (e) {
-            Log.warning(
-              '[AI-PLAN] plan_autocomplete_medgemma_fallback_to_openai '
-              'reason=$e',
-            );
+            AiTelemetry.planEvent('openai_fallback_error', {
+              'reason': '$e',
+              'sessionId': _sessionId,
+            });
           }
         }
-      }
-
-      // B) Fallback to OpenAI if MedGemma didn't produce a result
-      if (planSuggestion == null) {
+      } else {
+        // PRIMARY: OpenAI → FALLBACK: MedGemma
         try {
-          final aiService = ref.read(noteAIServiceProvider);
-          final fallbackResult = await aiService.suggestTreatmentPlan(
-            diagnostico: dx,
-            motivo: motivo,
-          );
-          if (fallbackResult.trim().isNotEmpty) {
-            planSuggestion = fallbackResult.trim();
-            Log.info('[AI-PLAN] plan_autocomplete_openai_success');
+          final sw = Stopwatch()..start();
+          final result = await ref
+              .read(noteAIServiceProvider)
+              .suggestTreatmentPlan(diagnostico: dx, motivo: motivo);
+          sw.stop();
+          primaryLatencyMs = sw.elapsedMilliseconds;
+          if (result.trim().isNotEmpty) {
+            planSuggestion = result.trim();
+            actualSource = 'openai';
           }
         } catch (e) {
-          Log.warning('[AI-PLAN] OpenAI fallback also failed: $e');
+          AiTelemetry.planEvent('openai_error', {
+            'reason': '$e',
+            'sessionId': _sessionId,
+          });
+        }
+        if (planSuggestion == null && MedGemmaConfig.useMedGemmaSuggestPlan) {
+          final mgClient = ref.read(medGemmaClientProvider);
+          if (mgClient != null) {
+            try {
+              final sw = Stopwatch()..start();
+              final resp = await mgClient.suggestPlan(
+                motivoConsulta: motivo,
+                diagnostico: dx,
+              );
+              sw.stop();
+              fallbackLatencyMs = sw.elapsedMilliseconds;
+              if (resp.success &&
+                  resp.planTratamiento != null &&
+                  resp.planTratamiento!.trim().isNotEmpty) {
+                planSuggestion = resp.planTratamiento!.trim();
+                actualSource = 'medgemma_fallback';
+              }
+            } catch (e) {
+              AiTelemetry.planEvent('medgemma_fallback_error', {
+                'reason': '$e',
+                'sessionId': _sessionId,
+              });
+            }
+          }
         }
       }
 
-      totalStopwatch.stop();
+      totalSw.stop();
+
+      AiTelemetry.planEvent('plan_primary_result', {
+        'variant': variant,
+        'actualSource': actualSource ?? 'none',
+        'totalMs': totalSw.elapsedMilliseconds,
+        'primaryMs': primaryLatencyMs ?? -1,
+        'fallbackMs': fallbackLatencyMs ?? -1,
+        'chars': AiTelemetry.charsCount(planSuggestion),
+        'lines': AiTelemetry.linesCount(planSuggestion),
+        'sessionId': _sessionId,
+      });
+
+      // Shadow comparison (fire-and-forget)
+      if (MedGemmaConfig.suggestPlanShadowCompare && planSuggestion != null) {
+        _runPlanShadowComparison(
+          motivo: motivo,
+          dx: dx,
+          primarySource: actualSource ?? 'none',
+          primaryLatencyMs: primaryLatencyMs ?? totalSw.elapsedMilliseconds,
+          primaryChars: AiTelemetry.charsCount(planSuggestion),
+          primaryLines: AiTelemetry.linesCount(planSuggestion),
+        );
+      }
 
       if (!mounted) return;
 
-      // Both failed
       if (planSuggestion == null) {
-        Log.warning(
-          '[AI-PLAN] plan_autocomplete_total_failure '
-          'totalMs=${totalStopwatch.elapsedMilliseconds}',
-        );
         DocsoftSnackBar.show(
           context,
           message: 'No se pudo generar sugerencia. Intenta de nuevo.',
@@ -1093,13 +1189,7 @@ class _ClinicalHistoryWizardPageState
         return;
       }
 
-      Log.info(
-        '[AI-PLAN] plan_autocomplete_done '
-        'source=${usedMedGemma ? "medgemma" : "openai"} '
-        'totalMs=${totalStopwatch.elapsedMilliseconds}',
-      );
-
-      // Apply result with source feedback
+      final usedMedGemma = actualSource == 'medgemma';
       _applyPlanSuggestion(planSuggestion, usedMedGemma: usedMedGemma);
     } finally {
       if (mounted) {
@@ -1108,6 +1198,66 @@ class _ClinicalHistoryWizardPageState
         });
       }
     }
+  }
+
+  /// Fire-and-forget shadow call to the NON-primary engine.
+  void _runPlanShadowComparison({
+    required String motivo,
+    required String dx,
+    required String primarySource,
+    required int primaryLatencyMs,
+    required int primaryChars,
+    required int primaryLines,
+  }) {
+    Future(() async {
+      try {
+        final sw = Stopwatch()..start();
+        String? shadowResult;
+        String shadowEngine;
+
+        if (primarySource.startsWith('medgemma')) {
+          // Shadow: OpenAI
+          shadowEngine = kEngineOpenAi;
+          final result = await ref
+              .read(noteAIServiceProvider)
+              .suggestTreatmentPlan(diagnostico: dx, motivo: motivo);
+          shadowResult = result.trim();
+        } else {
+          // Shadow: MedGemma
+          shadowEngine = kEngineMedGemma;
+          final mgClient = ref.read(medGemmaClientProvider);
+          if (mgClient != null) {
+            final resp = await mgClient.suggestPlan(
+              motivoConsulta: motivo,
+              diagnostico: dx,
+            );
+            if (resp.success && resp.planTratamiento != null) {
+              shadowResult = resp.planTratamiento!.trim();
+            }
+          }
+        }
+        sw.stop();
+
+        AiTelemetry.shadowCompare(
+          event: 'plan_shadow_compare',
+          scope: 'plan',
+          primaryEngine: primarySource,
+          shadowEngine: shadowEngine,
+          primaryLatencyMs: primaryLatencyMs,
+          shadowLatencyMs: sw.elapsedMilliseconds,
+          primaryKeys: primaryLines,
+          shadowKeys: AiTelemetry.linesCount(shadowResult),
+          primaryCoverage: primaryLines > 0 ? 1.0 : 0.0,
+          shadowCoverage: AiTelemetry.linesCount(shadowResult) > 0 ? 1.0 : 0.0,
+          shadowAvailable: shadowResult != null,
+        );
+      } catch (e) {
+        AiTelemetry.shadowEvent('plan_shadow_error', {
+          'reason': '$e',
+          'sessionId': _sessionId,
+        });
+      }
+    });
   }
 
   /// Applies plan suggestion: direct insert if empty, dialog if existing text.
@@ -1119,13 +1269,17 @@ class _ClinicalHistoryWizardPageState
     final sourceType = usedMedGemma ? SnackBarType.success : SnackBarType.info;
 
     if (currentText.isEmpty) {
-      // Direct insert
       _planController.text = suggestion;
       DocsoftSnackBar.show(context, message: sourceMsg, type: sourceType);
+      AiTelemetry.planEvent('plan_apply_action', {
+        'action': 'direct_insert',
+        'variant': _lastPlanVariant ?? 'unknown',
+        'sessionId': _sessionId,
+      });
+      _startEditAfterApplyTracking();
       return;
     }
 
-    // Show replace/append dialog
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1133,7 +1287,14 @@ class _ClinicalHistoryWizardPageState
         content: const Text('¿Qué deseas hacer con la sugerencia?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () {
+              Navigator.pop(ctx);
+              AiTelemetry.planEvent('plan_apply_action', {
+                'action': 'cancel',
+                'variant': _lastPlanVariant ?? 'unknown',
+                'sessionId': _sessionId,
+              });
+            },
             child: const Text('Cancelar'),
           ),
           TextButton(
@@ -1146,6 +1307,12 @@ class _ClinicalHistoryWizardPageState
                 message: sourceMsg,
                 type: sourceType,
               );
+              AiTelemetry.planEvent('plan_apply_action', {
+                'action': 'append',
+                'variant': _lastPlanVariant ?? 'unknown',
+                'sessionId': _sessionId,
+              });
+              _startEditAfterApplyTracking();
             },
             child: const Text('Agregar al final'),
           ),
@@ -1158,12 +1325,48 @@ class _ClinicalHistoryWizardPageState
                 message: sourceMsg,
                 type: sourceType,
               );
+              AiTelemetry.planEvent('plan_apply_action', {
+                'action': 'replace',
+                'variant': _lastPlanVariant ?? 'unknown',
+                'sessionId': _sessionId,
+              });
+              _startEditAfterApplyTracking();
             },
             child: const Text('Reemplazar'),
           ),
         ],
       ),
     );
+  }
+
+  /// Starts a 2-minute tracking window to detect manual edits after apply.
+  void _startEditAfterApplyTracking() {
+    _editAfterApplyTimer?.cancel();
+    _planTextLenAtApply = _planController.text.length;
+
+    _editAfterApplyTimer = Timer(const Duration(minutes: 2), () {
+      _flushEditAfterApplyTimer();
+    });
+  }
+
+  /// Emits edit-after-apply telemetry event and resets tracking.
+  void _flushEditAfterApplyTimer() {
+    if (_planTextLenAtApply == null) return;
+
+    final currentLen = _planController.text.length;
+    final delta = currentLen - _planTextLenAtApply!;
+    final edited = delta != 0;
+
+    AiTelemetry.planEvent('plan_edit_after_apply', {
+      'edit_after_apply_bool': edited,
+      'edit_delta_chars': delta,
+      'variant': _lastPlanVariant ?? 'unknown',
+      'sessionId': _sessionId,
+    });
+
+    _planTextLenAtApply = null;
+    _editAfterApplyTimer?.cancel();
+    _editAfterApplyTimer = null;
   }
 
   /// Builds the CTA widget for plan autocomplete (Step 6 only).
@@ -1207,6 +1410,8 @@ class _ClinicalHistoryWizardPageState
 
   @override
   void dispose() {
+    _flushEditAfterApplyTimer();
+    _editAfterApplyTimer?.cancel();
     _overlayController.hide();
     _jobQueueSub?.close();
     _pageController.dispose();
@@ -1720,8 +1925,11 @@ class _ClinicalHistoryWizardPageState
           bool shouldExit = false;
 
           if (hasChanges) {
-            shouldExit =
-                await DocsoftDialogs.confirmExitWithoutSaving(context) ?? false;
+            final result = await DocsoftDialogs.confirmExitWithDraftOption(
+              context,
+              onSaveDraft: () => _saveNote(asDraft: true),
+            );
+            shouldExit = result == true;
           } else {
             shouldExit = true;
           }
@@ -1792,17 +2000,6 @@ class _ClinicalHistoryWizardPageState
                               onPressed: _canSaveDraft
                                   ? () => _saveNote(asDraft: true)
                                   : null,
-                            ),
-                          if (!_showAiChip)
-                            Padding(
-                              padding: const EdgeInsets.only(
-                                left: DocsoftSpacing.sm,
-                              ),
-                              child: Icon(
-                                Icons.auto_awesome_outlined,
-                                color: DocsoftColors.textTertiary,
-                                size: 20,
-                              ),
                             ),
                         ],
                       ),
