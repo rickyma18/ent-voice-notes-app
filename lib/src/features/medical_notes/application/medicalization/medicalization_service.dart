@@ -19,8 +19,25 @@ abstract class MedicalizationService {
   /// Returns the medicalized text with spans for traceability.
   Future<MedicalizationOutput> medicalize(String rawText);
 
+  /// Medicalize text for extraction and expose negation signal counters.
+  ///
+  /// This keeps the original medicalized text flow while surfacing a compact
+  /// PHI-safe signal for downstream gating.
+  Future<MedicalizationResult> medicalizeForExtraction(String rawText);
+
   /// Get statistics about loaded mappings (for logging).
   Future<MedicalizationStats> getStats();
+}
+
+/// Compact medicalization result used by extraction-gating logic.
+class MedicalizationResult {
+  const MedicalizationResult({
+    required this.text,
+    required this.negatedFindingsCount,
+  });
+
+  final String text;
+  final int negatedFindingsCount;
 }
 
 /// Output of the medicalization process.
@@ -216,6 +233,15 @@ class LocalMedicalizationService implements MedicalizationService {
       spans: result.spans,
       negationsPreserved: result.negationsPreserved,
       negatedFindings: negatedFindings,
+    );
+  }
+
+  @override
+  Future<MedicalizationResult> medicalizeForExtraction(String rawText) async {
+    final output = await medicalize(rawText);
+    return MedicalizationResult(
+      text: output.medicalizedText,
+      negatedFindingsCount: output.negatedFindings.length,
     );
   }
 

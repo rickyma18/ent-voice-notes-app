@@ -613,6 +613,13 @@ class NoteAIServiceImpl implements NoteAIService {
       // - Empty/non-informative entries from arrays
       // - Residual fillers from text fields
       final sanitized = sanitizeStructuredFieldsV1(parsed);
+      final meta = Map<String, dynamic>.from(
+        sanitized['metadata'] as Map? ?? <String, dynamic>{},
+      );
+      meta['negatedFindingsCount'] =
+          _lastMedicalizationOutput?.negatedFindings.length ?? 0;
+      meta['pipelineUsed'] = 'v3_local';
+      sanitized['metadata'] = meta;
 
       if (!kReleaseMode) {
         // Log any fields that were nulled by sanitizer

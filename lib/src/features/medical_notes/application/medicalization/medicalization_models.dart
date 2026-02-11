@@ -159,8 +159,8 @@ class MedicalizedSection {
 /// Result of the medicalization layer processing.
 ///
 /// Contains the dictionary of mappings that were loaded for logging/debug.
-class MedicalizationResult {
-  const MedicalizationResult({
+class MedicalizationDictionaryResult {
+  const MedicalizationDictionaryResult({
     required this.mappingsLoaded,
     required this.mappingsApplied,
   });

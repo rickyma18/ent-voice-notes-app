@@ -22,6 +22,7 @@ const List<String> kRootKeys = [
   'estudios_indicados',
   'notas_adicionales',
   'contradicciones',
+  'negations',
   'metadata',
 ];
 
@@ -92,6 +93,7 @@ Map<String, dynamic> getEmptySchemaV1() {
     'estudios_indicados': <String>[],
     'notas_adicionales': null,
     'contradicciones': <String>[],
+    'negations': <String>[],
     'metadata': {
       'idioma': 'es',
       'fuente': 'dictado',
@@ -160,6 +162,9 @@ bool isSchemaV1(Map<String, dynamic> response) {
 class StructuredFieldsV1 {
   StructuredFieldsV1(this._data);
 
+  factory StructuredFieldsV1.fromJson(Map<String, dynamic> json) =>
+      StructuredFieldsV1(json);
+
   final Map<String, dynamic> _data;
 
   // Root fields
@@ -198,6 +203,7 @@ class StructuredFieldsV1 {
   // Arrays
   List<String> get estudiosIndicados => _getList('estudios_indicados');
   List<String> get contradicciones => _getList('contradicciones');
+  List<String> get negations => _getFlexibleList('negations');
 
   // Metadata
   String get idioma => _getNestedString('metadata', 'idioma') ?? 'es';
@@ -239,5 +245,32 @@ class StructuredFieldsV1 {
       return value.whereType<String>().where((s) => s.isNotEmpty).toList();
     }
     return [];
+  }
+
+  List<String> _getFlexibleList(String key) {
+    final value = _data[key];
+    if (value is! List) return [];
+
+    final out = <String>[];
+    for (final item in value) {
+      if (item is String) {
+        final trimmed = item.trim();
+        if (trimmed.isNotEmpty) out.add(trimmed);
+        continue;
+      }
+      if (item is Map) {
+        final candidate =
+            item['text'] ??
+            item['finding'] ??
+            item['term'] ??
+            item['canonical'] ??
+            item['label'];
+        if (candidate is String) {
+          final trimmed = candidate.trim();
+          if (trimmed.isNotEmpty) out.add(trimmed);
+        }
+      }
+    }
+    return out;
   }
 }

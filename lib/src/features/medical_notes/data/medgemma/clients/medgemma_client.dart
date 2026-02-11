@@ -15,6 +15,62 @@ import '../config/medgemma_config.dart';
 import '../utils/request_id_generator.dart';
 import '../../utils/key_normalizer.dart';
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ROBUST PARSING HELPERS (file-private)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Converts [v] to Map<String, dynamic> if possible, otherwise null.
+///
+/// Handles:
+/// - Map<String, dynamic> → returned as-is
+/// - Map (non-String keys) → converted via Map.from
+/// - String → attempts jsonDecode; returns Map result or null
+/// - "", "null", non-JSON strings → null
+/// - null → null
+Map<String, dynamic>? _mapOrNull(dynamic v) {
+  if (v == null) return null;
+  if (v is Map<String, dynamic>) return v;
+  if (v is Map) {
+    try {
+      return Map<String, dynamic>.from(v);
+    } catch (_) {
+      return null;
+    }
+  }
+  if (v is String) {
+    final trimmed = v.trim();
+    if (trimmed.isEmpty || trimmed == 'null') return null;
+    try {
+      final decoded = jsonDecode(trimmed);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) return Map<String, dynamic>.from(decoded);
+    } catch (_) {
+      // Not valid JSON — ignore
+    }
+    return null;
+  }
+  return null;
+}
+
+/// Converts [v] to List<String> if possible, otherwise null.
+///
+/// Handles:
+/// - List<String> → returned as-is
+/// - List<dynamic> → cast with safety
+/// - null → null
+/// - Other types → null
+List<String>? _stringListOrNull(dynamic v) {
+  if (v == null) return null;
+  if (v is List) {
+    try {
+      return v.cast<String>();
+    } catch (_) {
+      return v.whereType<String>().toList();
+    }
+  }
+  return null;
+}
+
 /// Response from MedGemma extract endpoint.
 class MedGemmaExtractResponse {
   const MedGemmaExtractResponse({
@@ -25,16 +81,14 @@ class MedGemmaExtractResponse {
   });
 
   factory MedGemmaExtractResponse.fromJson(Map<String, dynamic> json) {
+    final errorMap = _mapOrNull(json['error']);
+    final metaMap = _mapOrNull(json['metadata']);
     return MedGemmaExtractResponse(
       success: json['success'] as bool? ?? false,
-      data: json['data'] as Map<String, dynamic>?,
-      error: json['error'] != null
-          ? MedGemmaErrorInfo.fromJson(json['error'] as Map<String, dynamic>)
-          : null,
-      metadata: json['metadata'] != null
-          ? MedGemmaResponseMetadata.fromJson(
-              json['metadata'] as Map<String, dynamic>,
-            )
+      data: _mapOrNull(json['data']),
+      error: errorMap != null ? MedGemmaErrorInfo.fromJson(errorMap) : null,
+      metadata: metaMap != null
+          ? MedGemmaResponseMetadata.fromJson(metaMap)
           : null,
     );
   }
@@ -82,7 +136,7 @@ class MedGemmaResponseMetadata {
       inferenceMs: json['inferenceMs'] as int?,
       requestId: json['requestId'] as String?,
       contractStatus: json['contractStatus'] as String?,
-      contractWarnings: (json['contractWarnings'] as List?)?.cast<String>(),
+      contractWarnings: _stringListOrNull(json['contractWarnings']),
     );
   }
 
@@ -618,7 +672,14 @@ class MedGemmaServiceClient {
     if (useLegacyFormat) {
       requestBody = {'structuredV1': structuredFields};
     } else {
-      requestBody = {'structuredFields': structuredFields, 'refine': refine};
+      // Unwrap if caller passes the full extraction wrapper
+      // (keys: structured_fields, extraction_meta, metadata, negations).
+      // Backend expects only the clinical fields, not the wrapper.
+      final inner = structuredFields['structured_fields'];
+      final effectiveFields =
+          (inner is Map<String, dynamic>) ? inner : structuredFields;
+
+      requestBody = {'structuredFields': effectiveFields, 'refine': refine};
       if (transcript != null && transcript.isNotEmpty) {
         requestBody['transcript'] = transcript;
       }
@@ -643,6 +704,10 @@ class MedGemmaServiceClient {
     // Log nested keys if it's a Map (PHI-safe: only key names, no values)
     if (sf is Map) {
       Log.info('[MEDGEMMA-FINALIZE] structuredFields.keys=${sf.keys.toList()}');
+      final hasNegations = sf.containsKey('negations');
+      Log.info(
+        '[NEGATIONS][finalize_structured_keys] hasNegations=$hasNegations',
+      );
     }
 
     // PHI-safe logging: Log endpoint, timeout, and body shape
@@ -1072,6 +1137,24 @@ class MedGemmaServiceClient {
         // Wait before next poll
         await Future<void>.delayed(interval);
       } on DioException catch (e) {
+        // Handle 404 as terminal "job not found" state
+        final statusCode = e.response?.statusCode;
+        if (statusCode == 404) {
+          Log.warning(
+            '[MEDGEMMA-QUEUE] polling 404: job not found jobId=$jobId',
+          );
+          yield JobStatusResponse(
+            success: false,
+            jobId: jobId,
+            status: 'failed',
+            error: const MedGemmaErrorInfo(
+              code: 'JOB_NOT_FOUND',
+              message: 'Job not found',
+            ),
+          );
+          return;
+        }
+
         // Yield error status but continue polling for transient errors
         if (e.type == DioExceptionType.connectionError ||
             e.type == DioExceptionType.receiveTimeout) {
@@ -1105,28 +1188,39 @@ class MedGemmaServiceClient {
   ///
   /// Handles:
   /// - Map<String, dynamic>: returns as-is
+  /// - Map<dynamic, dynamic>: converts via Map.from
   /// - String (JSON): attempts jsonDecode
   /// - null or unparseable: returns null
   ///
   /// PHI-safe: No response content logged.
   Map<String, dynamic>? _parseResponseData(dynamic data) {
-    if (data == null) {
-      return null;
-    }
+    if (data == null) return null;
+    if (data is Map<String, dynamic>) return data;
 
-    if (data is Map<String, dynamic>) {
-      return data;
+    // Handle Map with non-String keys (e.g., Map<dynamic, dynamic>)
+    if (data is Map) {
+      try {
+        return Map<String, dynamic>.from(data);
+      } catch (_) {
+        Log.warning(
+          '[MEDGEMMA] response Map conversion failed: '
+          '${data.runtimeType}',
+        );
+        return null;
+      }
     }
 
     if (data is String) {
+      final trimmed = data.trim();
+      if (trimmed.isEmpty || trimmed == 'null') return null;
       try {
-        final decoded = jsonDecode(data);
-        if (decoded is Map<String, dynamic>) {
-          return decoded;
-        }
+        final decoded = jsonDecode(trimmed);
+        if (decoded is Map<String, dynamic>) return decoded;
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
         // Decoded but not a Map - invalid format
         Log.warning(
-          '[MEDGEMMA] response parsed but not a Map, got ${decoded.runtimeType}',
+          '[MEDGEMMA] response parsed but not a Map, '
+          'got ${decoded.runtimeType}',
         );
         return null;
       } on FormatException {
@@ -1365,16 +1459,14 @@ class MedGemmaStructuredV1Response {
   });
 
   factory MedGemmaStructuredV1Response.fromJson(Map<String, dynamic> json) {
+    final errorMap = _mapOrNull(json['error']);
+    final metaMap = _mapOrNull(json['metadata']);
     return MedGemmaStructuredV1Response(
       success: json['success'] as bool? ?? false,
-      data: json['data'] as Map<String, dynamic>?,
-      error: json['error'] != null
-          ? MedGemmaErrorInfo.fromJson(json['error'] as Map<String, dynamic>)
-          : null,
-      metadata: json['metadata'] != null
-          ? MedGemmaV1ResponseMetadata.fromJson(
-              json['metadata'] as Map<String, dynamic>,
-            )
+      data: _mapOrNull(json['data']),
+      error: errorMap != null ? MedGemmaErrorInfo.fromJson(errorMap) : null,
+      metadata: metaMap != null
+          ? MedGemmaV1ResponseMetadata.fromJson(metaMap)
           : null,
     );
   }
@@ -1419,7 +1511,7 @@ class MedGemmaV1ResponseMetadata {
       requestId: json['requestId'] as String?,
       schemaVersion: json['schemaVersion'] as String?,
       contractStatus: json['contractStatus'] as String?,
-      contractWarnings: (json['contractWarnings'] as List?)?.cast<String>(),
+      contractWarnings: _stringListOrNull(json['contractWarnings']),
     );
   }
 
@@ -1446,12 +1538,11 @@ class MedGemmaSuggestPlanResponse {
   });
 
   factory MedGemmaSuggestPlanResponse.fromJson(Map<String, dynamic> json) {
+    final errorMap = _mapOrNull(json['error']);
     return MedGemmaSuggestPlanResponse(
       success: json['success'] as bool? ?? false,
       planTratamiento: json['plan_tratamiento'] as String?,
-      error: json['error'] != null
-          ? MedGemmaErrorInfo.fromJson(json['error'] as Map<String, dynamic>)
-          : null,
+      error: errorMap != null ? MedGemmaErrorInfo.fromJson(errorMap) : null,
     );
   }
 
@@ -1507,14 +1598,16 @@ class MedGemmaFinalizeResponse {
     return MedGemmaFinalizeResponse(
       success: json['success'] as bool? ?? false,
       structured: structured,
-      metadata: json['metadata'] != null
-          ? MedGemmaFinalizeMetadata.fromJson(
-              json['metadata'] as Map<String, dynamic>,
-            )
-          : null,
-      error: json['error'] != null
-          ? MedGemmaErrorInfo.fromJson(json['error'] as Map<String, dynamic>)
-          : null,
+      metadata: () {
+        final metaMap = _mapOrNull(json['metadata']);
+        return metaMap != null
+            ? MedGemmaFinalizeMetadata.fromJson(metaMap)
+            : null;
+      }(),
+      error: () {
+        final errorMap = _mapOrNull(json['error']);
+        return errorMap != null ? MedGemmaErrorInfo.fromJson(errorMap) : null;
+      }(),
     );
   }
 
@@ -1549,7 +1642,7 @@ class MedGemmaFinalizeMetadata {
     return MedGemmaFinalizeMetadata(
       confidenceOverall: json['confidenceOverall'] as String?,
       contractStatus: json['contractStatus'] as String?,
-      contractWarnings: (json['contractWarnings'] as List?)?.cast<String>(),
+      contractWarnings: _stringListOrNull(json['contractWarnings']),
       finalizeUsedEvidence: json['finalizeUsedEvidence'] as bool?,
       requestId: json['requestId'] as String?,
       inferenceMs: json['inferenceMs'] as int?,
@@ -1588,15 +1681,14 @@ class JobEnqueueResponse {
   });
 
   factory JobEnqueueResponse.fromJson(Map<String, dynamic> json) {
+    final errorMap = _mapOrNull(json['error']);
     return JobEnqueueResponse(
       success: json['success'] as bool? ?? false,
       jobId: json['jobId'] as String? ?? json['requestId'] as String?,
       status: json['status'] as String?,
       position: json['position'] as int?,
       etaSeconds: json['etaSeconds'] as int?,
-      error: json['error'] != null
-          ? MedGemmaErrorInfo.fromJson(json['error'] as Map<String, dynamic>)
-          : null,
+      error: errorMap != null ? MedGemmaErrorInfo.fromJson(errorMap) : null,
     );
   }
 
@@ -1620,21 +1712,23 @@ class JobStatusResponse {
     this.fallbackUsed = false,
     this.contractWarnings,
     this.error,
+    this.rawError,
   });
 
   factory JobStatusResponse.fromJson(Map<String, dynamic> json) {
+    final resultMap = _mapOrNull(json['result']);
+    final errorMap = _mapOrNull(json['error']);
     return JobStatusResponse(
       success: json['success'] as bool? ?? false,
       jobId: json['jobId'] as String? ?? json['requestId'] as String?,
       status: json['status'] as String?,
       position: json['position'] as int?,
       etaSeconds: json['etaSeconds'] as int?,
-      result: json['result'] as Map<String, dynamic>?,
+      result: resultMap,
       fallbackUsed: json['fallbackUsed'] as bool? ?? false,
-      contractWarnings: (json['contractWarnings'] as List?)?.cast<String>(),
-      error: json['error'] != null
-          ? MedGemmaErrorInfo.fromJson(json['error'] as Map<String, dynamic>)
-          : null,
+      contractWarnings: _stringListOrNull(json['contractWarnings']),
+      error: errorMap != null ? MedGemmaErrorInfo.fromJson(errorMap) : null,
+      rawError: json['error'],
     );
   }
 
@@ -1649,6 +1743,48 @@ class JobStatusResponse {
   final bool fallbackUsed;
   final List<String>? contractWarnings;
   final MedGemmaErrorInfo? error;
+  final Object? rawError;
+
+  /// Normalized error message from heterogeneous backend error shapes.
+  String? get errorMessage {
+    final e = rawError;
+    if (e == null) return null;
+
+    if (e is String) {
+      final msg = e.trim();
+      return msg.isEmpty ? null : msg;
+    }
+
+    if (e is Map) {
+      final message = e['message'] ?? e['error'];
+      if (message is String) {
+        final msg = message.trim();
+        if (msg.isNotEmpty) return msg;
+      }
+      return e.toString();
+    }
+
+    if (error != null) {
+      final msg = error!.message.trim();
+      return msg.isEmpty ? null : msg;
+    }
+
+    return e.toString();
+  }
+
+  /// Normalized error code (when available).
+  String? get errorCode {
+    if (error != null && error!.code.trim().isNotEmpty) return error!.code;
+    final e = rawError;
+    if (e is Map) {
+      final code = e['code'];
+      if (code is String) {
+        final normalized = code.trim();
+        if (normalized.isNotEmpty) return normalized;
+      }
+    }
+    return null;
+  }
 
   /// Whether the job has completed (successfully or not).
   bool get isTerminal => status == 'done' || status == 'failed';

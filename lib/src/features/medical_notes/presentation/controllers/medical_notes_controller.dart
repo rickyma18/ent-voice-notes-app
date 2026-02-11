@@ -18,6 +18,7 @@ import 'package:medical_notes_app/src/features/medical_notes/domain/scribe/repos
 import 'package:medical_notes_app/src/features/medical_notes/domain/scribe/repositories/transcription_repository.dart'
     show TranscriptionOptions;
 import 'package:medical_notes_app/src/features/medical_notes/application/scribe/finalize_service.dart';
+import 'package:medical_notes_app/src/features/medical_notes/application/structured_fields_schema_v1.dart';
 import 'package:medical_notes_app/src/features/medical_notes/data/medgemma/clients/medgemma_client.dart';
 import '../../data/medgemma/config/medgemma_config.dart';
 import '../../data/medgemma/experiment/ai_telemetry.dart';
@@ -25,6 +26,7 @@ import '../../data/medgemma/providers/medgemma_providers.dart';
 import '../../medical_notes_providers.dart';
 import '../../domain/entities/pipeline_flags.dart';
 import '../../data/medgemma/providers/pipeline_flags_provider.dart';
+import '../../application/medgemma/job_queue_service.dart';
 import 'job_queue_controller.dart';
 
 part 'medical_notes_controller.g.dart';
@@ -437,6 +439,27 @@ class MedicalNotesController extends _$MedicalNotesController {
   static const String kSourceLegacy = 'legacy';
   static const String kSourceFallback = 'fallback_from_scribe_v2';
 
+  // Fallback reason constants
+  static const String kFallbackSparseExtract = 'sparse_extract';
+  static const String kFallbackBackendError = 'backend_error';
+  static const String kFallbackBackendReturnedNull = 'backend_returned_null';
+  static const String kFallbackBackendUnreachable =
+      'backend_unreachable_or_disabled';
+
+  /// Resolves a user-facing message from a fallbackReason string.
+  static String fallbackMessageForReason(String? reason) {
+    switch (reason) {
+      case kFallbackSparseExtract:
+        return 'MedGemma no extrajo suficiente información; usando fallback para completar.';
+      case kFallbackBackendUnreachable:
+        return 'Se usó OpenAI (Direct).';
+      case kFallbackBackendError:
+      case kFallbackBackendReturnedNull:
+      default:
+        return 'Backend no disponible. Se usó OpenAI (Direct).';
+    }
+  }
+
   /// Generates AI suggestions from transcript using the appropriate pipeline.
   ///
   /// Respects [PipelineFlags] (ÉPICA 19 - App ↔ Backend Alignment).
@@ -446,6 +469,7 @@ class MedicalNotesController extends _$MedicalNotesController {
   }) async {
     final flags = ref.read(pipelineFlagsProvider);
     final medGemmaClient = ref.read(medGemmaClientProvider);
+    String fallbackReason = kFallbackBackendUnreachable;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Priority 1: Backend Pipeline (ÉPICA 19)
@@ -506,8 +530,10 @@ class MedicalNotesController extends _$MedicalNotesController {
         }
 
         Log.info('[AI] Backend Pipeline returned null, trying fallback...');
+        fallbackReason = kFallbackBackendReturnedNull;
       } catch (e) {
         Log.error('[AI] Backend Pipeline failed: $e');
+        fallbackReason = kFallbackBackendError;
         // Fallback proceeds below
       }
     }
@@ -563,7 +589,7 @@ class MedicalNotesController extends _$MedicalNotesController {
       'source': 'fallback',
       // Metadata for UI Banner
       'source_original': kSourceFallback, // Triggers source=='fallback' check
-      'fallbackReason': 'backend_unreachable',
+      'fallbackReason': fallbackReason,
       'fallbackEngine': 'openai_direct',
     };
   }
@@ -594,8 +620,12 @@ class MedicalNotesController extends _$MedicalNotesController {
   }) async {
     final flags = ref.read(pipelineFlagsProvider);
     final medGemmaClient = ref.read(medGemmaClientProvider);
+    String fallbackReason = kFallbackBackendUnreachable;
 
-    Log.info('[AI-SCOPE] Generating suggestions for scope=$scope');
+    Log.info(
+      '[AI-SCOPE] Generating suggestions for scope=$scope '
+      'transcriptLen=${transcript.length}',
+    );
 
     final primarySw = Stopwatch()..start();
 
@@ -616,38 +646,81 @@ class MedicalNotesController extends _$MedicalNotesController {
         primarySw.stop();
 
         if (suggestions != null) {
-          // Add pipeline metadata
-          final meta = Map<String, dynamic>.from(
+          // ── Sparse-extract guard ──────────────────────────────────
+          // If MedGemma returned almost nothing (≤1 non-null field)
+          // but the transcript has substantial content, the extraction
+          // likely failed. Fall through to V3 instead of returning
+          // sparse/hallucinated data.
+          final usefulFieldsCount = _countUsefulFields(suggestions);
+          final positiveFieldsCount = _countPositiveFieldsForNegationSignal(
+            StructuredFieldsV1(suggestions),
+          );
+          final suggestionsMeta = Map<String, dynamic>.from(
             suggestions['metadata'] as Map? ?? {},
           );
-          meta['pipelineUsed'] = 'backend_v1';
-          meta['scope'] = scope;
-          meta['fallbackUsed'] = false;
-
-          suggestions['metadata'] = meta;
-
-          Log.info('[AI-SCOPE] Backend extraction succeeded for scope=$scope');
-
-          // Shadow comparison (fire-and-forget)
-          if (MedGemmaConfig.voiceExtractShadowCompare) {
-            _runExtractShadowComparison(
-              transcript: transcript,
-              language: language,
-              scope: scope,
-              primarySource: kSourceMedGemmaV1,
-              primaryLatencyMs: primarySw.elapsedMilliseconds,
-              primarySuggestions: suggestions,
+          final negatedFindingsCount =
+              (suggestionsMeta['negatedFindingsCount'] as num?)?.toInt() ?? 0;
+          Log.info(
+            '[MEDGEMMA-V1] positiveFieldsCount=$positiveFieldsCount '
+            'negatedFindingsCount=$negatedFindingsCount',
+          );
+          // Interview scope: a single useful field (e.g. antecedentes)
+          // or presence of negations is clinically valid — only fall back
+          // when truly empty.  Other scopes keep the ≤1 threshold.
+          final isSparse = transcript.length > 80 &&
+              (scope == 'interview'
+                  ? usefulFieldsCount == 0 && negatedFindingsCount == 0
+                  : usefulFieldsCount <= 1);
+          if (isSparse) {
+            Log.warning(
+              '[AI-SCOPE] Sparse extract detected: '
+              'usefulFields=$usefulFieldsCount, '
+              'transcriptLen=${transcript.length}, '
+              'scope=$scope → falling back to V3',
             );
-          }
+            fallbackReason = kFallbackSparseExtract;
+            // Fall through to legacy fallback below
+          } else {
+            // Add pipeline metadata
+            final meta = Map<String, dynamic>.from(
+              suggestions['metadata'] as Map? ?? {},
+            );
+            meta['pipelineUsed'] = 'backend_v1';
+            meta['scope'] = scope;
+            meta['fallbackUsed'] = false;
+            meta['usefulFieldsCount'] = usefulFieldsCount;
+            meta['positiveFieldsCount'] = positiveFieldsCount;
+            meta['negatedFindingsCount'] = negatedFindingsCount;
 
-          return {'suggestions': suggestions, 'source': kSourceMedGemmaV1};
+            suggestions['metadata'] = meta;
+
+            Log.info(
+              '[AI-SCOPE] Backend extraction succeeded for scope=$scope',
+            );
+
+            // Shadow comparison (fire-and-forget)
+            if (MedGemmaConfig.voiceExtractShadowCompare) {
+              _runExtractShadowComparison(
+                transcript: transcript,
+                language: language,
+                scope: scope,
+                primarySource: kSourceMedGemmaV1,
+                primaryLatencyMs: primarySw.elapsedMilliseconds,
+                primarySuggestions: suggestions,
+              );
+            }
+
+            return {'suggestions': suggestions, 'source': kSourceMedGemmaV1};
+          }
         }
 
         Log.warning(
           '[AI-SCOPE] Backend returned null for scope=$scope, trying fallback...',
         );
+        fallbackReason = kFallbackBackendReturnedNull;
       } catch (e) {
         Log.error('[AI-SCOPE] Backend failed for scope=$scope: $e');
+        fallbackReason = kFallbackBackendError;
         // Fallback proceeds below
       }
     }
@@ -669,10 +742,23 @@ class MedicalNotesController extends _$MedicalNotesController {
     final meta = Map<String, dynamic>.from(
       suggestions['metadata'] as Map? ?? {},
     );
+    final usefulFieldsCount = _countUsefulFields(suggestions);
+    final positiveFieldsCount = _countPositiveFieldsForNegationSignal(
+      StructuredFieldsV1.fromJson(suggestions),
+    );
+    final negatedFindingsCount =
+        (meta['negatedFindingsCount'] as num?)?.toInt() ?? 0;
+    Log.info(
+      '[AI-V3] positiveFieldsCount=$positiveFieldsCount '
+      'negatedFindingsCount=$negatedFindingsCount',
+    );
     meta['pipelineUsed'] = 'legacy_fallback';
     meta['scope'] = scope;
     meta['fallbackUsed'] = true;
     meta['scopeNotApplied'] = true; // Legacy doesn't support scope filtering
+    meta['usefulFieldsCount'] = usefulFieldsCount;
+    meta['positiveFieldsCount'] = positiveFieldsCount;
+    meta['negatedFindingsCount'] = negatedFindingsCount;
     suggestions['metadata'] = meta;
 
     // Shadow comparison: run MedGemma in background
@@ -690,7 +776,7 @@ class MedicalNotesController extends _$MedicalNotesController {
     return {
       'suggestions': suggestions,
       'source': 'fallback',
-      'fallbackReason': 'backend_unreachable_or_disabled',
+      'fallbackReason': fallbackReason,
     };
   }
 
@@ -818,12 +904,59 @@ class MedicalNotesController extends _$MedicalNotesController {
     String? language,
     String? scope,
   }) async {
+    // ── Step 0: Local medicalization ──────────────────────────────
+    // Apply the same deterministic term normalization that V3 uses
+    // (colloquial → clinical terminology) so MedGemma receives
+    // cleaner input.  If it fails, fall back to raw transcript.
+    String medicalizedText = transcript;
+    var negatedFindingsCount = 0;
+    List<String> negatedFindings = const [];
+    try {
+      final medService = ref.read(medicalizationServiceProvider);
+      final sw = Stopwatch()..start();
+      final medResult = await medService.medicalize(transcript);
+      sw.stop();
+
+      medicalizedText = medResult.medicalizedText;
+      negatedFindings = medResult.negatedFindings
+          .map((finding) => finding.trim())
+          .where((finding) => finding.isNotEmpty)
+          .toList(growable: false);
+      negatedFindingsCount = negatedFindings.length;
+
+      // PHI-safe: only counters and latency, never text content
+      Log.info(
+        '[MEDGEMMA-V1] Medicalization applied: '
+        'charsBefore=${transcript.length}, '
+        'charsAfter=${medicalizedText.length}, '
+        'negatedFindingsCount=$negatedFindingsCount, '
+        'latencyMs=${sw.elapsedMilliseconds}',
+      );
+    } catch (e) {
+      Log.warning(
+        '[MEDGEMMA-V1] Medicalization failed, using raw transcript: $e',
+      );
+      // medicalizedText remains == transcript (safe fallback)
+    }
+
+    // ── Step 1: Enrich transcript with scope context ──────────────
+    // Prefix the medicalized transcript with a human-readable label
+    // so the LLM knows which clinical section it belongs to and
+    // which fields are expected.
+    final enrichedTranscript = _enrichTranscriptWithScope(
+      medicalizedText,
+      scope: scope,
+    );
+
     // Build request body using helper
     final body = _buildStructuredV1BodyFromSpeech(
-      transcript,
+      enrichedTranscript,
       language: language ?? 'es',
       scope: scope,
     );
+    final context = body['context'] as Map<String, dynamic>;
+    context['negations'] = negatedFindings;
+    Log.info('[NEGATIONS] sent count=${negatedFindings.length}');
 
     // PHI-safe log: scope is OK to log
     if (scope != null) {
@@ -837,11 +970,18 @@ class MedicalNotesController extends _$MedicalNotesController {
         .map((s) => (s as Map)['speaker'] as String)
         .toList();
 
+    // Total chars across all segments (PHI-safe: length only, no content)
+    final totalTranscriptLen = segments.fold<int>(
+      0,
+      (sum, s) => sum + ((s as Map)['text'] as String).length,
+    );
+
     Log.info(
       '[MEDGEMMA-V1] body shape: '
       'rootKeys=${body.keys.toList()}, '
       'transcriptKeys=${transcriptMap.keys.toList()}, '
       'segmentsLen=${segments.length}, '
+      'totalTranscriptLen=$totalTranscriptLen, '
       'speakers=$speakers, '
       'language=${transcriptMap['language']}, '
       'durationMs=${transcriptMap['durationMs']}',
@@ -868,33 +1008,178 @@ class MedicalNotesController extends _$MedicalNotesController {
         return null;
       }
 
-      // Parse result into structured response wrapper to reuse existing logic
-      // We reconstruct response object to leverage existing helpers
-      // Note: JobStatusResponse.result is the data map (camelCase from backend)
-      final response = MedGemmaStructuredV1Response(
-        success: true,
-        data: resultData,
-      );
-
-      // Convert backend camelCase to Flutter snake_case format
-      final flutterFormat = response.toFlutterFormat();
-      if (flutterFormat == null) {
-        Log.error('[AI] MedGemma V1 returned null data from queue result');
-        return null;
+      // Normalize to snake_case if needed.
+      // JobQueueService already normalizes when status=='done', so skip
+      // if the data is already snake_case to avoid double conversion.
+      final Map<String, dynamic> flutterFormat;
+      if (JobQueueService.isAlreadySnakeCase(resultData)) {
+        Log.info(
+          '[AI] queue result already snake_case, '
+          'skipping toFlutterFormat',
+        );
+        flutterFormat = resultData;
+      } else {
+        Log.info(
+          '[AI] queue result needs normalization, '
+          'applying toFlutterFormat',
+        );
+        final response = MedGemmaStructuredV1Response(
+          success: true,
+          data: resultData,
+        );
+        final converted = response.toFlutterFormat();
+        if (converted == null) {
+          Log.error(
+            '[AI] MedGemma V1 returned null data '
+            'from queue result',
+          );
+          return null;
+        }
+        flutterFormat = converted;
       }
 
       // PHI-safe debug: log which fields have content (booleans only)
       _logMedGemmaV1FieldsPresence(flutterFormat);
+      final initialMeta = Map<String, dynamic>.from(
+        flutterFormat['metadata'] as Map? ?? {},
+      );
+      initialMeta['negatedFindingsCount'] = negatedFindingsCount;
+      flutterFormat['metadata'] = initialMeta;
 
       // ─────────────────────────────────────────────────────────────────────────
       // ÉPICA 17: Finalize Step (single LLM call)
       // ─────────────────────────────────────────────────────────────────────────
-      // TODO: Pass metadata from job status if available
+
+      // ── Sparse-extract guard: skip finalize if extract is nearly empty ──
+      // Finalize tends to hallucinate when the reduce_draft has ≤1 field.
+      // Return the raw extract directly so the caller's sparse-fallback
+      // logic (in generateAISuggestionsForScope) can trigger V3 instead.
+      var usefulFieldsCount = _countUsefulFields(flutterFormat);
+      final ante = flutterFormat['antecedentes'] as Map<String, dynamic>?;
+      final diag = flutterFormat['diagnostico'] as Map<String, dynamic>?;
+      final noPat = (ante?['no_patologicos'] as String? ?? '')
+          .trim()
+          .isNotEmpty;
+      final diagTipo = diag?['tipo'];
+      final diagTextoLen = (diag?['texto'] as String? ?? '').trim().length;
+
+      // ── Interview scope: count antecedentes / negations as useful ──
+      // For scope == 'interview', the presence of any antecedentes field
+      // (heredofamiliares, no_patologicos, patologicos) should mark the
+      // extract as useful, even without motivoConsulta or
+      // padecimientoActual. This prevents false sparse detection for valid
+      // interview data.
+      //
+      // Additionally, if negatedFindingsCount > 0 the transcript contains
+      // clinically meaningful negation data (e.g. "niega diabetes") that
+      // should not be discarded by the sparse guard.
+      if (scope == 'interview') {
+        // PHI-safe instrumentation: only booleans, counts, key names.
+        Log.info(
+          '[AI-INTERVIEW] pre_guard scope=$scope '
+          'usefulFieldsCount=$usefulFieldsCount '
+          'anteNull=${ante == null} '
+          'anteKeys=${ante?.keys.toList()} '
+          'negatedFindingsCount=$negatedFindingsCount',
+        );
+
+        if (usefulFieldsCount == 0) {
+          // 1) Check antecedentes sub-fields (snake_case after
+          //    KeyNormalizer.toSnakeCaseDeep).
+          if (ante != null) {
+            final hasHeredofam =
+                (ante['heredofamiliares'] as String?)
+                    ?.trim()
+                    .isNotEmpty ==
+                true;
+            final hasNoPatologicos =
+                (ante['no_patologicos'] as String?)
+                    ?.trim()
+                    .isNotEmpty ==
+                true;
+            final hasPatologicos =
+                (ante['patologicos'] as String?)?.trim().isNotEmpty ==
+                true;
+
+            if (hasHeredofam || hasNoPatologicos || hasPatologicos) {
+              usefulFieldsCount = 1;
+              Log.info(
+                '[AI-INTERVIEW] antecedents_present=true '
+                '(heredofam=$hasHeredofam, noPat=$hasNoPatologicos, '
+                'pat=$hasPatologicos) → marking extract as useful',
+              );
+            }
+          }
+
+          // 2) Negation-based policy: in interview scope, negations
+          //    ("niega diabetes", "no fiebre") are clinically relevant.
+          //    If the client detected negations during medicalization the
+          //    extract is not truly sparse — the patient reported
+          //    meaningful clinical information.
+          if (usefulFieldsCount == 0 && negatedFindingsCount > 0) {
+            usefulFieldsCount = 1;
+            Log.info(
+              '[AI-INTERVIEW] negations_present=true '
+              'count=$negatedFindingsCount '
+              '→ marking extract as useful',
+            );
+          }
+        }
+      }
+
+      Log.info(
+        '[MEDGEMMA-V1] usefulFieldsCount=$usefulFieldsCount '
+        'noPat=$noPat '
+        'diagTipo=$diagTipo '
+        'diagTextoLen=$diagTextoLen '
+        'scope=$scope',
+      );
+      if (usefulFieldsCount == 0) {
+        Log.warning(
+          '[MEDGEMMA-V1] Skipping finalize: sparse extract '
+          '(usefulFields=$usefulFieldsCount) → returning raw extract',
+        );
+
+        if (negatedFindings.isNotEmpty) {
+          flutterFormat['negations'] = negatedFindings;
+          Log.info(
+            '[NEGATIONS][sparse_return] added len=${negatedFindings.length}',
+          );
+        }
+
+        return flutterFormat;
+      }
+
+      // ── Inject client-side negations into structuredFields ────────
+      // Negations are computed locally (medicalization) and were sent in
+      // context.negations to extract, but the backend does NOT echo them
+      // back inside structuredFields.  We must inject them here so that
+      // /v1/finalize receives structuredFields.negations and can return
+      // them in its response for the UI.
+      if (negatedFindings.isNotEmpty) {
+        flutterFormat['negations'] = negatedFindings;
+        Log.info(
+          '[NEGATIONS][finalize_payload] added len=${negatedFindings.length}',
+        );
+      }
+
+      Log.info(
+        '[MEDGEMMA-V1] Passing to finalize: '
+        'transcriptLen=${transcript.length} '
+        'usefulFields=$usefulFieldsCount '
+        'reduceDraftKeys=${flutterFormat.keys.toList()}',
+      );
+
+      // Queue result doesn't carry typed metadata; pass null.
       final finalizeResult = await _applyFinalizeStep(
         transcript: transcript,
         reduceDraft: flutterFormat,
-        extractMetadata: response.metadata,
       );
+      final finalizeMeta = Map<String, dynamic>.from(
+        finalizeResult['metadata'] as Map? ?? {},
+      );
+      finalizeMeta['negatedFindingsCount'] = negatedFindingsCount;
+      finalizeResult['metadata'] = finalizeMeta;
 
       return finalizeResult;
     } catch (e) {
@@ -1078,6 +1363,128 @@ class MedicalNotesController extends _$MedicalNotesController {
     );
   }
 
+  /// Counts fields with **real clinical content** in a V1 extraction result.
+  ///
+  /// Only counts:
+  /// - String fields that are non-empty after trim
+  /// - List fields (alergias, estudios_indicados) that have >= 1 item
+  /// - Nested maps (antecedentes, exploracion_orl) where at least one
+  ///   sub-field passes the above checks — BUT excludes boolean-like
+  ///   keys (no_patologicos) that merely echo negations
+  /// - diagnostico only if tipo != 'sindromico' OR texto is non-empty
+  ///
+  /// This prevents negation-only transcripts from passing the sparse guard.
+  int _countUsefulFields(Map<String, dynamic> data) {
+    var count = 0;
+
+    // ── Top-level string fields ──
+    if (_isNonEmptyString(data['motivo_consulta'])) count++;
+    if (_isNonEmptyString(data['padecimiento_actual'])) count++;
+    if (_isNonEmptyString(data['plan_tratamiento'])) count++;
+    if (_isNonEmptyString(data['notas_adicionales'])) count++;
+
+    // ── Top-level list fields ──
+    final estudios = data['estudios_indicados'];
+    if (estudios is List && estudios.isNotEmpty) count++;
+
+    // ── antecedentes: count if any sub-field has real content ──
+    // Exclude 'no_patologicos' (boolean-like negation flag)
+    final ante = data['antecedentes'] as Map<String, dynamic>?;
+    if (ante != null) {
+      final hasUsefulAnte = ante.entries.any((e) {
+        if (e.key == 'no_patologicos') return false;
+        final v = e.value;
+        if (v is String) return v.trim().isNotEmpty;
+        if (v is List) return v.isNotEmpty;
+        return false;
+      });
+      if (hasUsefulAnte) count++;
+    }
+
+    // ── exploracion_orl: count if any sub-field is non-empty string ──
+    final orl = data['exploracion_orl'] as Map<String, dynamic>?;
+    if (orl != null) {
+      final hasUsefulOrl = orl.values.any(
+        (v) => v is String && v.trim().isNotEmpty,
+      );
+      if (hasUsefulOrl) count++;
+    }
+
+    // ── diagnostico: count only if texto is non-empty,
+    //    OR tipo is NOT 'sindromico' (i.e. definitivo/presuntivo/diferencial
+    //    implies real evidence) ──
+    final dx = data['diagnostico'] as Map<String, dynamic>?;
+    if (dx != null) {
+      final tipoRaw = dx['tipo'];
+      final textoRaw = dx['texto'];
+      final tipoNorm = tipoRaw is String ? tipoRaw.trim().toLowerCase() : '';
+      final textoTrim = textoRaw is String ? textoRaw.trim() : '';
+      final hasEvidencedTipo = tipoNorm.isNotEmpty && tipoNorm != 'sindromico';
+      final hasTexto = textoTrim.isNotEmpty;
+      if (hasTexto || hasEvidencedTipo) count++;
+    }
+
+    return count;
+  }
+
+  /// Counts only robust positive clinical fields for negation-only detection.
+  ///
+  /// Excludes noisy/unstable fields:
+  /// - antecedentes.no_patologicos
+  /// - diagnostico
+  /// - plan_tratamiento
+  int _countPositiveFieldsForNegationSignal(StructuredFieldsV1 f) {
+    var count = 0;
+
+    if (_isNonEmptyString(f.motivoConsulta)) count++;
+    if (_isNonEmptyString(f.padecimientoActual)) count++;
+    if (f.alergias.isNotEmpty) count++;
+    if (f.medicamentosHabituales.isNotEmpty) count++;
+    if (_isNonEmptyString(f.antecedentesPatologicos)) count++;
+    if (_isNonEmptyString(f.antecedentesHeredofamiliares)) count++;
+
+    final hasOrlPositive =
+        _isNonEmptyString(f.otoscopia) ||
+        _isNonEmptyString(f.rinoscopia) ||
+        _isNonEmptyString(f.orofaringe) ||
+        _isNonEmptyString(f.cuello) ||
+        _isNonEmptyString(f.laringoscopia);
+    if (hasOrlPositive) count++;
+
+    return count;
+  }
+
+  bool _isNonEmptyString(dynamic v) => v is String && v.trim().isNotEmpty;
+
+  /// Scope-to-label map for enriching transcript context.
+  ///
+  /// Each label describes the clinical section and lists the expected fields
+  /// so the extraction LLM knows what to look for in the dictation.
+  static const _kScopeLabels = <String, String>{
+    'interview':
+        '[Sección: Entrevista clínica — '
+        'motivo de consulta, padecimiento actual, antecedentes]\n\n',
+    'exam':
+        '[Sección: Exploración física ORL — '
+        'otoscopia, rinoscopia, orofaringe, cuello, laringoscopia]\n\n',
+    'studies':
+        '[Sección: Estudios e indicaciones — '
+        'estudios indicados o solicitados]\n\n',
+    'assessment':
+        '[Sección: Diagnóstico y plan — '
+        'diagnóstico, plan de tratamiento]\n\n',
+  };
+
+  /// Prefixes [transcript] with a scope label (if [scope] is known).
+  ///
+  /// Returns the original transcript unchanged when scope is null or unknown.
+  String _enrichTranscriptWithScope(String transcript, {String? scope}) {
+    if (scope == null) return transcript;
+    final label = _kScopeLabels[scope];
+    if (label == null) return transcript;
+    return '$label$transcript';
+  }
+
   /// Builds the request body for /v1/extract-structured from plain speech text.
   ///
   /// Converts a plain text transcript into the structured format required by
@@ -1113,12 +1520,39 @@ class MedicalNotesController extends _$MedicalNotesController {
     // Normalize speaker to backend-accepted enum values
     final normalizedSpeaker = _normalizeSpeaker(speaker);
 
-    // Estimate duration: ~150 chars/second for speech, min 1s, max 10min
-    final textLength = speech.length;
-    final estimatedDurationMs = (textLength / 150 * 1000).round().clamp(
+    // Split by \n\n to recover per-dictation chunks
+    // (the voice wizard concatenates multiple dictation sessions with \n\n)
+    final chunks = speech
+        .split(RegExp(r'\n\n+'))
+        .where((c) => c.trim().isNotEmpty)
+        .map((c) => c.trim())
+        .toList();
+
+    if (chunks.isEmpty) chunks.add(speech);
+
+    // Estimate total duration proportionally: ~150 chars/sec, 1s–10min
+    final totalChars = chunks.fold<int>(0, (sum, c) => sum + c.length);
+    final totalDurationMs = (totalChars / 150 * 1000).round().clamp(
       1000,
       600000,
     );
+
+    // Build one segment per chunk with proportional timing
+    var offsetMs = 0;
+    final segments = <Map<String, dynamic>>[];
+
+    for (final chunk in chunks) {
+      final chunkDurationMs = totalChars > 0
+          ? (chunk.length / totalChars * totalDurationMs).round()
+          : 1000;
+      segments.add({
+        'speaker': normalizedSpeaker,
+        'text': chunk,
+        'startMs': offsetMs,
+        'endMs': offsetMs + chunkDurationMs,
+      });
+      offsetMs += chunkDurationMs;
+    }
 
     // Build context map
     final context = <String, dynamic>{
@@ -1133,16 +1567,9 @@ class MedicalNotesController extends _$MedicalNotesController {
 
     return {
       'transcript': {
-        'segments': [
-          {
-            'speaker': normalizedSpeaker,
-            'text': speech,
-            'startMs': 0,
-            'endMs': estimatedDurationMs,
-          },
-        ],
+        'segments': segments,
         'language': language,
-        'durationMs': estimatedDurationMs,
+        'durationMs': offsetMs,
       },
       'context': context,
     };

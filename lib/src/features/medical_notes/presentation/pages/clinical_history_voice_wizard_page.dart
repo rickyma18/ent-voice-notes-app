@@ -13,6 +13,7 @@ import '../../../../core/base/result.dart';
 import '../../../../core/logger/log.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 import '../../../patients/patients_providers.dart';
+import '../../application/medgemma/interview_fields_sanitizer.dart';
 import '../../application/scribe/finalize_service.dart';
 import '../../application/structured_fields_schema_v1.dart';
 import '../../data/medgemma/config/medgemma_config.dart';
@@ -33,6 +34,7 @@ import '../widgets/clinical_history_wizard/voice_dictation_sheet.dart';
 import '../widgets/clinical_history_wizard/guided_text_area.dart';
 import '../widgets/clinical_history_wizard/orl_accordion.dart';
 import '../widgets/clinical_history_wizard/vitals_card.dart';
+import 'clinical_history_voice_wizard_ai_feedback.dart';
 import '../../../../ui/docsoft_ui.dart';
 
 /// Voice-first wizard for creating clinical history notes in 4 steps.
@@ -349,6 +351,11 @@ class _ClinicalHistoryVoiceWizardPageState
     try {
       final controller = ref.read(medicalNotesControllerProvider.notifier);
 
+      Log.info(
+        '[VoiceWizard] _processWithAI scope=$_currentScope '
+        'transcriptLen=${_currentStepTranscript.length}',
+      );
+
       final result = await controller.generateAISuggestionsForScope(
         _currentStepTranscript,
         scope: _currentScope,
@@ -358,17 +365,56 @@ class _ClinicalHistoryVoiceWizardPageState
       if (!mounted) return;
 
       final structuredV1 = result['suggestions'] as Map<String, dynamic>;
+
+      Map<String, dynamic> effectiveData;
+      if (_currentScope == 'interview') {
+        final keysIn = structuredV1.keys.toList()..sort();
+        final out = sanitizeInterviewFields(structuredV1);
+        final keysOut = out.keys.toList()..sort();
+
+        final negType =
+            structuredV1['negations']?.runtimeType.toString() ??
+            structuredV1['negaciones']?.runtimeType.toString() ??
+            'null';
+
+        final hasAnte = out['antecedentes'] is Map<String, dynamic>;
+        List<String> anteKeys = const [];
+        if (hasAnte) {
+          anteKeys = (out['antecedentes'] as Map<String, dynamic>).keys.toList()
+            ..sort();
+        }
+
+        Log.info(
+          '[MEDGEMMA-V1] interview sanitize '
+          'keys_in=$keysIn keys_out=$keysOut '
+          'neg_type=$negType ante_keys=$anteKeys',
+        );
+
+        effectiveData = out;
+      } else {
+        effectiveData = structuredV1;
+      }
+
       final source = result['source'] as String;
+      final metadata = structuredV1['metadata'] as Map?;
+      final positiveFieldsCount = (metadata?['positiveFieldsCount'] as num?)
+          ?.toInt();
+      final negatedFindingsCount = (metadata?['negatedFindingsCount'] as num?)
+          ?.toInt();
 
       // Show fallback notification if needed
       if (source == 'fallback') {
+        final fallbackReason = result['fallbackReason'] as String?;
+        final fallbackMessage = MedicalNotesController.fallbackMessageForReason(
+          fallbackReason,
+        );
         DocsoftSnackBar.show(
           context,
-          message: 'Backend no disponible. Se usó OpenAI (Direct).',
+          message: fallbackMessage,
           type: SnackBarType.warning,
           duration: const Duration(seconds: 3),
           content: Text(
-            'Backend no disponible. Se usó OpenAI (Direct).',
+            fallbackMessage,
             style: DocsoftTextStyles.caption.copyWith(
               color: DocsoftColors.onWarning,
             ),
@@ -377,14 +423,28 @@ class _ClinicalHistoryVoiceWizardPageState
       }
 
       // Build sections filtered by current scope
-      final sections = _buildSuggestionsForScope(structuredV1, _currentScope);
+      final sections = _buildSuggestionsForScope(effectiveData, _currentScope);
 
       if (sections.isEmpty || sections.every((s) => !s.hasContent)) {
-        DocsoftSnackBar.show(
-          context,
-          message: 'No se encontraron hallazgos para este paso.',
-          type: SnackBarType.warning,
+        final feedback = resolveScopedAiEmptyResultFeedback(
+          hasTranscript: _currentStepTranscript.isNotEmpty,
+          positiveFieldsCount: positiveFieldsCount,
+          negatedFindingsCount: negatedFindingsCount,
         );
+        if (feedback == ScopedAiEmptyResultFeedback.negationOnlyInfo) {
+          DocsoftSnackBar.show(
+            context,
+            message:
+                'Solo se detectaron negaciones; no hay hallazgos positivos para este paso.',
+            type: SnackBarType.info,
+          );
+        } else {
+          DocsoftSnackBar.show(
+            context,
+            message: 'No se encontraron hallazgos para este paso.',
+            type: SnackBarType.warning,
+          );
+        }
         return;
       }
 
@@ -410,7 +470,16 @@ class _ClinicalHistoryVoiceWizardPageState
     Map<String, dynamic> v1Data,
     String scope,
   ) {
-    final structured = StructuredFieldsV1(v1Data);
+    // For Interview scope, strip negations/metadata/extra keys
+    // so only the 5 supported fields reach the UI.
+    final effectiveData = scope == 'interview'
+        ? sanitizeInterviewFields(v1Data)
+        : v1Data;
+    Log.info(
+      '[AI] interview effective_keys='
+      '${effectiveData.keys.toList()} scope=$scope',
+    );
+    final structured = StructuredFieldsV1(effectiveData);
     final allowedIds = _scopeAllowedSectionIds[scope] ?? {};
 
     final allSections = <AISuggestionSection>[

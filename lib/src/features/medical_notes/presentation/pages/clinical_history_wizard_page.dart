@@ -123,6 +123,9 @@ class _ClinicalHistoryWizardPageState
   // Cached structured fields from AI (v1 schema)
   Map<String, dynamic>? _structuredFieldsV1;
 
+  // Fallback banner message (shown inline, dismissible)
+  String? _fallbackMessage;
+
   // Job Queue Modal State
   bool _isQueueModalShown = false;
 
@@ -257,6 +260,7 @@ class _ClinicalHistoryWizardPageState
       'heredofamiliares',
       'noPatologicos',
       'patologicos',
+      'negaciones',
     },
     'exam': {
       'otoscopia',
@@ -514,17 +518,18 @@ class _ClinicalHistoryWizardPageState
         _suggestionsGenerated = true;
       });
 
-      // Show notification if fallback was used (applies to both scoped and full)
+      // Show inline fallback banner if fallback was used (applies to both scoped and full)
       if (source == 'fallback') {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            DocsoftSnackBar.show(
-              context,
-              message: 'Backend no disponible. Se usó OpenAI (Direct).',
-              type: SnackBarType.warning,
-              duration: const Duration(seconds: 4),
-            );
-          }
+        final fallbackReason = result['fallbackReason'] as String?;
+        setState(() {
+          _fallbackMessage = MedicalNotesController.fallbackMessageForReason(
+            fallbackReason,
+          );
+        });
+      } else {
+        // Clear any previous fallback message when primary pipeline succeeds
+        setState(() {
+          _fallbackMessage = null;
         });
       }
 
@@ -585,6 +590,12 @@ class _ClinicalHistoryWizardPageState
   }) {
     final structured = StructuredFieldsV1(v1Data);
 
+    Log.warning(
+      '[DEBUG][INTERVIEW] heredofam=${structured.antecedentesHeredofamiliares} '
+      'app=${structured.antecedentesPatologicos} '
+      'neg=${structured.negations}',
+    );
+
     // Build all sections first
     final allSections = [
       // Interview scope sections
@@ -605,6 +616,12 @@ class _ClinicalHistoryWizardPageState
         label: 'Antecedentes NO patologicos',
         suggestion: structured.antecedentesNoPatologicos ?? '',
         currentValue: _antecedentesNoPatologicosController.text,
+      ),
+      AISuggestionSection(
+        id: 'negaciones',
+        label: 'Negaciones',
+        suggestion: structured.negations.join('\n'),
+        currentValue: '',
       ),
       AISuggestionSection(
         id: 'patologicos',
@@ -2071,6 +2088,64 @@ class _ClinicalHistoryWizardPageState
                             ),
                           );
                         },
+                      ),
+
+                    // --- FALLBACK BANNER (inline, dismissible) ---
+                    if (_fallbackMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          DocsoftSpacing.md,
+                          DocsoftSpacing.sm,
+                          DocsoftSpacing.md,
+                          0,
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: DocsoftSpacing.md,
+                            vertical: DocsoftSpacing.sm,
+                          ),
+                          decoration: BoxDecoration(
+                            color: DocsoftColors.warningSoft,
+                            borderRadius: BorderRadius.circular(
+                              DocsoftRadii.md,
+                            ),
+                            border: Border.all(
+                              color: DocsoftColors.warning.withValues(
+                                alpha: 0.3,
+                              ),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.info_outline,
+                                size: 18,
+                                color: DocsoftColors.onWarning,
+                              ),
+                              const SizedBox(width: DocsoftSpacing.sm),
+                              Expanded(
+                                child: Text(
+                                  _fallbackMessage!,
+                                  style: DocsoftTextStyles.caption.copyWith(
+                                    color: DocsoftColors.onWarning,
+                                  ),
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    _fallbackMessage = null;
+                                  });
+                                },
+                                child: Icon(
+                                  Icons.close,
+                                  size: 18,
+                                  color: DocsoftColors.onWarning,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
 
                     // --- WIZARD CONTENT ---

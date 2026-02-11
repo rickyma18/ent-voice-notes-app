@@ -1,8 +1,11 @@
 // lib/src/features/medical_notes/presentation/widgets/clinical_history_wizard/voice_dictation_sheet.dart
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../../core/logger/log.dart';
 import '../../../../../ui/docsoft_ui.dart';
 import '../../../application/audio_recording_service.dart';
 import '../../../medical_notes_providers.dart';
@@ -71,6 +74,9 @@ class _VoiceDictationSheetState extends ConsumerState<VoiceDictationSheet>
   // Recording logic (mirrors DictationQuickSheet)
   // ─────────────────────────────────────────────────────────────────────────
 
+  /// Timestamp when recording started (for duration estimation).
+  DateTime? _recordingStartedAt;
+
   Future<void> _onStart() async {
     final audioService = ref.read(audioRecordingServiceProvider);
 
@@ -83,6 +89,7 @@ class _VoiceDictationSheetState extends ConsumerState<VoiceDictationSheet>
     try {
       await audioService.ensureStopped();
       await audioService.startRecording();
+      _recordingStartedAt = DateTime.now();
     } on AudioRecordingException catch (e) {
       if (mounted) {
         setState(() {
@@ -116,6 +123,7 @@ class _VoiceDictationSheetState extends ConsumerState<VoiceDictationSheet>
       final audioFilePath = await audioService.stopRecording();
 
       if (audioFilePath == null) {
+        Log.warning('[VoiceDictation] stopRecording returned null path');
         setState(() {
           _recordingState = RecordingState.idle;
           _isTranscribing = false;
@@ -125,12 +133,53 @@ class _VoiceDictationSheetState extends ConsumerState<VoiceDictationSheet>
         return;
       }
 
+      // ── Diagnostic: audio file stats before STT ──
+      final audioFile = File(audioFilePath);
+      final fileBytes = await audioFile.length();
+      final recordingDurationMs = _recordingStartedAt != null
+          ? DateTime.now().difference(_recordingStartedAt!).inMilliseconds
+          : -1;
+      _recordingStartedAt = null;
+
+      Log.info(
+        '[VoiceDictation] Audio ready: '
+        'bytes=$fileBytes '
+        'recordingDurationMs=$recordingDurationMs',
+      );
+
+      if (fileBytes < 8000 || recordingDurationMs < 5000) {
+        Log.warning(
+          '[VoiceDictation] WARNING audio too short '
+          'bytes=$fileBytes durationMs=$recordingDurationMs',
+        );
+      }
+
       final transcript = await sttService.transcribeAudio(audioFilePath);
 
+      // ── Diagnostic: transcript stats after STT ──
+      final trimmed = transcript.trim();
+      final preview = trimmed.length > 80
+          ? '${trimmed.substring(0, 80)}...'
+          : trimmed;
+      Log.info(
+        '[VoiceDictation] STT result: '
+        'rawLen=${transcript.length} '
+        'trimmedLen=${trimmed.length} '
+        'preview="$preview"',
+      );
+
+      if (trimmed.length < 30) {
+        Log.warning(
+          '[VoiceDictation] WARNING transcript very short '
+          'len=${trimmed.length} bytes=$fileBytes',
+        );
+      }
+
       if (mounted) {
-        Navigator.pop(context, transcript.trim());
+        Navigator.pop(context, trimmed);
       }
     } catch (e) {
+      Log.error('[VoiceDictation] _onStop error: $e');
       if (mounted) {
         setState(() {
           _recordingState = RecordingState.idle;
@@ -181,9 +230,7 @@ class _VoiceDictationSheetState extends ConsumerState<VoiceDictationSheet>
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('¿Descartar grabación?'),
-          content: const Text(
-            'Se perderá el audio grabado hasta el momento.',
-          ),
+          content: const Text('Se perderá el audio grabado hasta el momento.'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -259,9 +306,7 @@ class _VoiceDictationSheetState extends ConsumerState<VoiceDictationSheet>
         height: screenHeight * 0.75,
         decoration: const BoxDecoration(
           color: DocsoftColors.background,
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(24),
-          ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(
           children: [
@@ -286,10 +331,7 @@ class _VoiceDictationSheetState extends ConsumerState<VoiceDictationSheet>
             Expanded(child: _buildBody()),
 
             // Footer wrapped in SafeArea so buttons clear the home indicator
-            SafeArea(
-              top: false,
-              child: _buildFooter(),
-            ),
+            SafeArea(top: false, child: _buildFooter()),
           ],
         ),
       ),
@@ -365,16 +407,11 @@ class _VoiceDictationSheetState extends ConsumerState<VoiceDictationSheet>
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
       child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 8,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: DocsoftColors.errorSoft,
           borderRadius: BorderRadius.circular(DocsoftRadii.sm),
-          border: Border.all(
-            color: DocsoftColors.error.withValues(alpha: 0.3),
-          ),
+          border: Border.all(color: DocsoftColors.error.withValues(alpha: 0.3)),
         ),
         child: Row(
           children: [
@@ -409,8 +446,7 @@ class _VoiceDictationSheetState extends ConsumerState<VoiceDictationSheet>
             child: AnimatedBuilder(
               animation: _pulseAnimation,
               builder: (context, child) {
-                final scale =
-                    _isRecording ? _pulseAnimation.value : 1.0;
+                final scale = _isRecording ? _pulseAnimation.value : 1.0;
                 return Transform.scale(
                   scale: scale,
                   child: Container(
@@ -484,8 +520,7 @@ class _VoiceDictationSheetState extends ConsumerState<VoiceDictationSheet>
           label: 'Guardar dictado',
           icon: Icons.check,
           isLoading: _isTranscribing,
-          onPressed:
-              _hasActiveRecording && !_isTranscribing ? _onStop : null,
+          onPressed: _hasActiveRecording && !_isTranscribing ? _onStop : null,
         );
 
         // Compact: stack vertically to prevent overflow

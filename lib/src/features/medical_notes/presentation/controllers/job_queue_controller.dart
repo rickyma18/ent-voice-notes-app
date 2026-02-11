@@ -84,7 +84,12 @@ class JobQueueController extends _$JobQueueController {
               _completer?.completeError('Job done but no result returned');
             }
           } else {
-            final msg = status.error?.message ?? 'Job failed';
+            final msg = status.errorMessage ?? 'Job failed';
+            final code = status.errorCode ?? 'null';
+            final messageLen = msg.length;
+            Log.error(
+              '[MEDGEMMA-QUEUE] job failed code=$code messageLen=$messageLen',
+            );
             state = AsyncValue.error(msg, StackTrace.current);
             _completer?.completeError(msg);
           }
