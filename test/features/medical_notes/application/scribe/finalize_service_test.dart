@@ -70,6 +70,9 @@ void main() {
           structuredFields: any(named: 'structuredFields'),
           refine: any(named: 'refine'),
           timeoutOverride: any(named: 'timeoutOverride'),
+          transcript: any(named: 'transcript'),
+          checkConsistency: any(named: 'checkConsistency'),
+          scope: any(named: 'scope'),
         ),
       ).thenAnswer(
         (_) async => MedGemmaFinalizeResponse(
@@ -118,6 +121,9 @@ void main() {
           structuredFields: any(named: 'structuredFields'),
           refine: any(named: 'refine'),
           timeoutOverride: any(named: 'timeoutOverride'),
+          transcript: any(named: 'transcript'),
+          checkConsistency: any(named: 'checkConsistency'),
+          scope: any(named: 'scope'),
         ),
       ).thenAnswer((invocation) async {
         capturedFields =
@@ -166,6 +172,9 @@ void main() {
             structuredFields: any(named: 'structuredFields'),
             refine: any(named: 'refine'),
             timeoutOverride: any(named: 'timeoutOverride'),
+            transcript: any(named: 'transcript'),
+            checkConsistency: any(named: 'checkConsistency'),
+            scope: any(named: 'scope'),
           ),
         ).thenAnswer(
           (_) async => MedGemmaFinalizeResponse(
@@ -234,6 +243,9 @@ void main() {
             structuredFields: any(named: 'structuredFields'),
             refine: any(named: 'refine'),
             timeoutOverride: any(named: 'timeoutOverride'),
+            transcript: any(named: 'transcript'),
+            checkConsistency: any(named: 'checkConsistency'),
+            scope: any(named: 'scope'),
           ),
         ).thenAnswer(
           (_) async => MedGemmaFinalizeResponse(
@@ -301,6 +313,9 @@ void main() {
             structuredFields: any(named: 'structuredFields'),
             refine: any(named: 'refine'),
             timeoutOverride: any(named: 'timeoutOverride'),
+            transcript: any(named: 'transcript'),
+            checkConsistency: any(named: 'checkConsistency'),
+            scope: any(named: 'scope'),
           ),
         ).thenAnswer(
           (_) async => MedGemmaFinalizeResponse(
@@ -389,6 +404,9 @@ void main() {
             structuredFields: any(named: 'structuredFields'),
             refine: any(named: 'refine'),
             timeoutOverride: any(named: 'timeoutOverride'),
+            transcript: any(named: 'transcript'),
+            checkConsistency: any(named: 'checkConsistency'),
+            scope: any(named: 'scope'),
           ),
         ).thenAnswer(
           (_) async => MedGemmaFinalizeResponse(
@@ -444,6 +462,9 @@ void main() {
             structuredFields: any(named: 'structuredFields'),
             refine: any(named: 'refine'),
             timeoutOverride: any(named: 'timeoutOverride'),
+            transcript: any(named: 'transcript'),
+            checkConsistency: any(named: 'checkConsistency'),
+            scope: any(named: 'scope'),
           ),
         ).thenThrow(
           DioException(
@@ -486,6 +507,9 @@ void main() {
           structuredFields: any(named: 'structuredFields'),
           refine: any(named: 'refine'),
           timeoutOverride: any(named: 'timeoutOverride'),
+          transcript: any(named: 'transcript'),
+          checkConsistency: any(named: 'checkConsistency'),
+          scope: any(named: 'scope'),
         ),
       ).thenThrow(
         DioException(
@@ -522,6 +546,9 @@ void main() {
             structuredFields: any(named: 'structuredFields'),
             refine: any(named: 'refine'),
             timeoutOverride: any(named: 'timeoutOverride'),
+            transcript: any(named: 'transcript'),
+            checkConsistency: any(named: 'checkConsistency'),
+            scope: any(named: 'scope'),
           ),
         ).thenThrow(
           const MedGemmaUnauthorizedException(message: 'No bearer token'),
@@ -554,6 +581,9 @@ void main() {
             structuredFields: any(named: 'structuredFields'),
             refine: any(named: 'refine'),
             timeoutOverride: any(named: 'timeoutOverride'),
+            transcript: any(named: 'transcript'),
+            checkConsistency: any(named: 'checkConsistency'),
+            scope: any(named: 'scope'),
           ),
         ).thenAnswer(
           (_) async => const MedGemmaFinalizeResponse(
@@ -619,6 +649,9 @@ void main() {
             structuredFields: any(named: 'structuredFields'),
             refine: any(named: 'refine'),
             timeoutOverride: any(named: 'timeoutOverride'),
+            transcript: any(named: 'transcript'),
+            checkConsistency: any(named: 'checkConsistency'),
+            scope: any(named: 'scope'),
           ),
         );
       },
@@ -668,6 +701,9 @@ void main() {
           structuredFields: any(named: 'structuredFields'),
           refine: any(named: 'refine'),
           timeoutOverride: any(named: 'timeoutOverride'),
+          transcript: any(named: 'transcript'),
+          checkConsistency: any(named: 'checkConsistency'),
+          scope: any(named: 'scope'),
         ),
       ).thenAnswer(
         (_) async => MedGemmaFinalizeResponse(
@@ -691,6 +727,9 @@ void main() {
           structuredFields: any(named: 'structuredFields'),
           refine: any(named: 'refine'),
           timeoutOverride: any(named: 'timeoutOverride'),
+          transcript: any(named: 'transcript'),
+          checkConsistency: any(named: 'checkConsistency'),
+          scope: any(named: 'scope'),
         ),
       ).called(1);
     });
@@ -705,6 +744,9 @@ void main() {
           structuredFields: any(named: 'structuredFields'),
           refine: any(named: 'refine'),
           timeoutOverride: any(named: 'timeoutOverride'),
+          transcript: any(named: 'transcript'),
+          checkConsistency: any(named: 'checkConsistency'),
+          scope: any(named: 'scope'),
         ),
       ).thenThrow(
         DioException(
@@ -722,8 +764,126 @@ void main() {
           structuredFields: any(named: 'structuredFields'),
           refine: any(named: 'refine'),
           timeoutOverride: any(named: 'timeoutOverride'),
+          transcript: any(named: 'transcript'),
+          checkConsistency: any(named: 'checkConsistency'),
+          scope: any(named: 'scope'),
         ),
       ).called(1);
     });
+  });
+
+  // ===========================================================================
+  // SCOPE & ANTECEDENTES KEY TESTS
+  // ===========================================================================
+
+  group('FinalizeService - scope and antecedentes keys', () {
+    test('scope is passed through to client when provided', () async {
+      // Arrange
+      String? capturedScope;
+      final reduceDraft = createReduceDraftWithRawData();
+      const transcript = 'Test transcript for scope';
+
+      when(
+        () => mockClient.finalize(
+          structuredFields: any(named: 'structuredFields'),
+          refine: any(named: 'refine'),
+          timeoutOverride: any(named: 'timeoutOverride'),
+          transcript: any(named: 'transcript'),
+          checkConsistency: any(named: 'checkConsistency'),
+          scope: any(named: 'scope'),
+        ),
+      ).thenAnswer((invocation) async {
+        capturedScope = invocation.namedArguments[#scope] as String?;
+        return MedGemmaFinalizeResponse(
+          success: true,
+          structured: reduceDraft,
+          metadata: const MedGemmaFinalizeMetadata(
+            confidenceOverall: 'alta',
+            contractStatus: 'ok',
+            contractWarnings: [],
+            finalizeUsedEvidence: true,
+          ),
+        );
+      });
+
+      // Act
+      await service.finalize(
+        transcript: transcript,
+        reduceDraft: reduceDraft,
+        scope: 'interview',
+      );
+
+      // Assert
+      expect(capturedScope, equals('interview'));
+    });
+
+    test(
+      'antecedentes keys personalesNoPatologicos/personalesPatologicos pass through correctly',
+      () async {
+        // Arrange
+        Map<String, dynamic>? capturedFields;
+        final reduceDraft = {
+          'motivoConsulta': 'Test',
+          'antecedentes': {
+            'heredofamiliares': 'DM tipo 2 en madre',
+            'personalesNoPatologicos': 'No fuma, no bebe',
+            'personalesPatologicos': 'HTA controlada',
+          },
+        };
+        const transcript = 'Test transcript';
+
+        when(
+          () => mockClient.finalize(
+            structuredFields: any(named: 'structuredFields'),
+            refine: any(named: 'refine'),
+            timeoutOverride: any(named: 'timeoutOverride'),
+            transcript: any(named: 'transcript'),
+            checkConsistency: any(named: 'checkConsistency'),
+            scope: any(named: 'scope'),
+          ),
+        ).thenAnswer((invocation) async {
+          capturedFields =
+              invocation.namedArguments[#structuredFields]
+                  as Map<String, dynamic>;
+          return MedGemmaFinalizeResponse(
+            success: true,
+            structured: reduceDraft,
+            metadata: const MedGemmaFinalizeMetadata(
+              confidenceOverall: 'alta',
+              contractStatus: 'ok',
+              contractWarnings: [],
+              finalizeUsedEvidence: true,
+            ),
+          );
+        });
+
+        // Act
+        await service.finalize(
+          transcript: transcript,
+          reduceDraft: reduceDraft,
+          scope: 'interview',
+        );
+
+        // Assert
+        expect(capturedFields, isNotNull);
+        final antecedentes =
+            capturedFields!['antecedentes'] as Map<String, dynamic>;
+        expect(
+          antecedentes.containsKey('personalesNoPatologicos'),
+          isTrue,
+          reason: 'Should use personalesNoPatologicos (not noPatologicos)',
+        );
+        expect(
+          antecedentes.containsKey('personalesPatologicos'),
+          isTrue,
+          reason: 'Should use personalesPatologicos (not patologicos)',
+        );
+        expect(
+          antecedentes['personalesNoPatologicos'],
+          equals('No fuma, no bebe'),
+        );
+        expect(antecedentes['personalesPatologicos'], equals('HTA controlada'));
+      },
+    );
   });
 }

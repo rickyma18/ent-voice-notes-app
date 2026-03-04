@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -480,6 +481,25 @@ class _ClinicalHistoryVoiceWizardPageState
       '${effectiveData.keys.toList()} scope=$scope',
     );
     final structured = StructuredFieldsV1(effectiveData);
+
+    // DEBUG ONLY – REMOVE BEFORE PRODUCTION
+    if (kDebugMode && scope == 'interview') {
+      Log.debug(
+        '[INTERVIEW-UI-DUMP]\n'
+        'motivo_consulta:\n'
+        '${structured.motivoConsulta ?? ''}\n\n'
+        'padecimiento_actual:\n'
+        '${structured.padecimientoActual ?? ''}\n\n'
+        'heredofamiliares:\n'
+        '${structured.antecedentesHeredofamiliares ?? ''}\n\n'
+        'no_patologicos:\n'
+        '${structured.antecedentesNoPatologicos ?? ''}\n\n'
+        'patologicos:\n'
+        '${structured.antecedentesPatologicos ?? ''}\n'
+        '[END-INTERVIEW-UI-DUMP]',
+      );
+    }
+
     final allowedIds = _scopeAllowedSectionIds[scope] ?? {};
 
     final allSections = <AISuggestionSection>[
@@ -863,8 +883,8 @@ class _ClinicalHistoryVoiceWizardPageState
       'padecimientoActual': _padecimientoActualController.text.trim(),
       'antecedentes': {
         'heredofamiliares': _heredofamiliaresController.text.trim(),
-        'noPatologicos': _noPatologicosController.text.trim(),
-        'patologicos': _patologicosController.text.trim(),
+        'personalesNoPatologicos': _noPatologicosController.text.trim(),
+        'personalesPatologicos': _patologicosController.text.trim(),
       },
       'exploracionOrl': {
         for (final e in _orlControllers.entries) e.key: e.value.text.trim(),
@@ -910,6 +930,7 @@ class _ClinicalHistoryVoiceWizardPageState
         transcript: fullTranscript,
         reduceDraft: reduceDraft,
         checkConsistency: true,
+        scope: 'interview',
       );
 
       if (!mounted) return;

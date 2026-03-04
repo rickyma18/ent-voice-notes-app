@@ -154,4 +154,109 @@ void main() {
       },
     );
   });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // toCamelCaseDeep tests (snake_case → camelCase for /v1/finalize)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  group('KeyNormalizer.toCamelCaseDeep', () {
+    test('Should leave empty map unchanged', () {
+      final result = KeyNormalizer.toCamelCaseDeep(<String, dynamic>{});
+      expect(result, isEmpty);
+    });
+
+    test('Should convert top-level snake_case keys to camelCase', () {
+      final input = {
+        'motivo_consulta': 'Dolor de garganta',
+        'padecimiento_actual': 'Desde hace 3 días',
+        'plan_tratamiento': 'Ibuprofeno 400mg',
+      };
+      final result = KeyNormalizer.toCamelCaseDeep(input);
+      expect(
+        result,
+        equals({
+          'motivoConsulta': 'Dolor de garganta',
+          'padecimientoActual': 'Desde hace 3 días',
+          'planTratamiento': 'Ibuprofeno 400mg',
+        }),
+      );
+    });
+
+    test('Should convert antecedentes sub-keys correctly', () {
+      final input = {
+        'antecedentes': {
+          'heredofamiliares': 'DM tipo 2 en madre',
+          'no_patologicos': 'No fuma, no bebe',
+          'patologicos': 'HTA controlada',
+          'medicamentos_habituales': 'Losartán 50mg',
+          'alergias': ['Penicilina'],
+        },
+      };
+      final result = KeyNormalizer.toCamelCaseDeep(input);
+      final ante = result['antecedentes'] as Map<String, dynamic>;
+      expect(ante['heredofamiliares'], equals('DM tipo 2 en madre'));
+      expect(ante['personalesNoPatologicos'], equals('No fuma, no bebe'));
+      expect(ante['personalesPatologicos'], equals('HTA controlada'));
+      expect(ante['medicamentosHabituales'], equals('Losartán 50mg'));
+      expect(ante['alergias'], equals(['Penicilina']));
+    });
+
+    test('Should convert exploracion_orl to exploracionFisica', () {
+      final input = {
+        'exploracion_orl': {
+          'otoscopia': 'Normal bilateral',
+          'rinoscopia': 'Mucosa pálida',
+        },
+      };
+      final result = KeyNormalizer.toCamelCaseDeep(input);
+      expect(result.containsKey('exploracionFisica'), isTrue);
+      expect(result.containsKey('exploracion_orl'), isFalse);
+      final ef = result['exploracionFisica'] as Map<String, dynamic>;
+      expect(ef['otoscopia'], equals('Normal bilateral'));
+      expect(ef['rinoscopia'], equals('Mucosa pálida'));
+    });
+
+    test('Should handle full reduce_draft round-trip shape', () {
+      // Simulate a typical snake_case reduce_draft from the extraction pipeline
+      final snakeDraft = {
+        'motivo_consulta': 'Dolor',
+        'padecimiento_actual': 'Desde ayer',
+        'antecedentes': {
+          'heredofamiliares': 'Nada',
+          'no_patologicos': 'No fuma',
+          'patologicos': 'Ninguno',
+        },
+        'exploracion_orl': {'otoscopia': 'Normal'},
+        'diagnostico': {'texto': 'Otitis media', 'tipo': 'presuntivo'},
+        'negations': ['No diabetes', 'No HTA'],
+      };
+
+      final camelResult = KeyNormalizer.toCamelCaseDeep(snakeDraft);
+
+      // Verify top-level keys
+      expect(camelResult.containsKey('motivoConsulta'), isTrue);
+      expect(camelResult.containsKey('padecimientoActual'), isTrue);
+      expect(camelResult.containsKey('exploracionFisica'), isTrue);
+      expect(camelResult.containsKey('diagnostico'), isTrue);
+      expect(camelResult.containsKey('negations'), isTrue);
+
+      // Verify antecedentes inner keys
+      final ante = camelResult['antecedentes'] as Map<String, dynamic>;
+      expect(ante.containsKey('personalesNoPatologicos'), isTrue);
+      expect(ante.containsKey('personalesPatologicos'), isTrue);
+      expect(ante.containsKey('heredofamiliares'), isTrue);
+      // Old snake_case keys should NOT be present
+      expect(ante.containsKey('no_patologicos'), isFalse);
+      expect(ante.containsKey('patologicos'), isFalse);
+    });
+
+    test('Should preserve keys that are already camelCase', () {
+      final input = {
+        'motivoConsulta': 'Test',
+        'diagnostico': {'texto': 'Test'},
+      };
+      final result = KeyNormalizer.toCamelCaseDeep(input);
+      expect(result['motivoConsulta'], equals('Test'));
+    });
+  });
 }

@@ -8,6 +8,7 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import 'package:medical_notes_app/src/core/logger/log.dart';
 import '../auth/auth_token_provider.dart';
@@ -647,6 +648,7 @@ class MedGemmaServiceClient {
     Duration? timeoutOverride,
     String? transcript,
     bool checkConsistency = false,
+    String? scope,
   }) async {
     final stopwatch = Stopwatch()..start();
     final effectiveTimeout = timeoutOverride ?? _defaultFinalizeTimeout;
@@ -676,16 +678,61 @@ class MedGemmaServiceClient {
       // (keys: structured_fields, extraction_meta, metadata, negations).
       // Backend expects only the clinical fields, not the wrapper.
       final inner = structuredFields['structured_fields'];
-      final effectiveFields =
-          (inner is Map<String, dynamic>) ? inner : structuredFields;
+      final rawFields = (inner is Map<String, dynamic>)
+          ? inner
+          : structuredFields;
 
-      requestBody = {'structuredFields': effectiveFields, 'refine': refine};
+      // ── Convert snake_case → camelCase for backend V1 contract ──────
+      // Flutter layer uses snake_case internally, but /v1/finalize
+      // expects camelCase keys (motivoConsulta, personalesNoPatologicos,
+      // exploracionFisica, etc.).
+      final effectiveFields = KeyNormalizer.toCamelCaseDeep(rawFields);
+
+      // ── Interview scope: strip pre-populated antecedentes ───────────
+      // The backend's interview pipeline rebuilds personalesNoPatologicos
+      // and personalesPatologicos from negations[].  If we also send
+      // pre-populated values the backend merge produces duplicates.
+      // Solution: null-out those two sub-keys so the backend starts from
+      // a clean slate.  heredofamiliares and negations are preserved.
+      // Deep-clone to avoid mutating the caller's original map.
+      final Map<String, dynamic> sanitizedFields;
+      if (scope == 'interview') {
+        sanitizedFields = Map<String, dynamic>.from(effectiveFields);
+        final ante = sanitizedFields['antecedentes'];
+        if (ante is Map<String, dynamic>) {
+          final cleanAnte = Map<String, dynamic>.from(ante);
+          cleanAnte.remove('personalesNoPatologicos');
+          cleanAnte.remove('personalesPatologicos');
+          sanitizedFields['antecedentes'] = cleanAnte;
+          Log.info(
+            '[MEDGEMMA-FINALIZE] interview scope: stripped '
+            'personalesNoPatologicos/personalesPatologicos from '
+            'antecedentes (backend rebuilds from negations[])',
+          );
+        }
+      } else {
+        sanitizedFields = effectiveFields;
+      }
+
+      requestBody = {'structuredFields': sanitizedFields, 'refine': refine};
       if (transcript != null && transcript.isNotEmpty) {
         requestBody['transcript'] = transcript;
       }
       if (checkConsistency) {
         requestBody['checkConsistency'] = true;
       }
+
+      // ── Always include context (specialty + encounterType) ──────────
+      // scope is optional but specialty/encounterType are always needed
+      // for the backend pipeline.
+      final contextMap = <String, dynamic>{
+        'specialty': 'otorrinolaringología',
+        'encounterType': 'consulta',
+      };
+      if (scope != null) {
+        contextMap['scope'] = scope;
+      }
+      requestBody['context'] = contextMap;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -720,6 +767,15 @@ class MedGemmaServiceClient {
       'timeout=${timeoutSeconds}s '
       'bodyKeys=$bodyKeys fieldsCount=$fieldsCount',
     );
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DEBUG-ONLY: Full request body pretty-print (stripped in release builds)
+    // Activate: run in debug mode (flutter run --debug). kDebugMode is
+    // a compile-time const so the entire block is tree-shaken in release.
+    // ═══════════════════════════════════════════════════════════════════════════
+    if (kDebugMode) {
+      _logFinalizeRequestDebug(requestBody, requestId);
+    }
 
     try {
       final response = await _dio.post<dynamic>(
@@ -1293,6 +1349,75 @@ class MedGemmaServiceClient {
       'speaker=$firstSegmentSpeaker, '
       'language=$language, '
       'durationMs=$durationMs',
+    );
+  }
+
+  /// DEBUG-ONLY: Logs the full finalize request body as pretty JSON.
+  ///
+  /// PHI-safe by gate: only runs when [kDebugMode] is true (debug builds).
+  /// The `kDebugMode` check is a compile-time const so the entire call-site
+  /// and this method body are tree-shaken from release/profile builds.
+  ///
+  /// Logged tag: `[RAW-FINALIZE-REQUEST]`
+  ///
+  /// Includes:
+  /// - Full pretty-printed JSON of the request body
+  /// - Shape summary: scope, negations count, transcript duration,
+  ///   first/last segment timing
+  void _logFinalizeRequestDebug(
+    Map<String, dynamic> requestBody,
+    String requestId,
+  ) {
+    const encoder = JsonEncoder.withIndent('  ');
+    Log.debug(
+      '[RAW-FINALIZE-REQUEST] requestId=$requestId\n'
+      '${encoder.convert(requestBody)}',
+    );
+
+    // Shape summary for quick scanning
+    final sf = requestBody['structuredFields'] ?? requestBody['structuredV1'];
+    final context = requestBody['context'];
+    final scope = context is Map ? context['scope'] : null;
+    final negations = sf is Map ? sf['negations'] : null;
+    final negCount = negations is List ? negations.length : 0;
+
+    final transcript = requestBody['transcript'];
+    int? durationMs;
+    int? firstStartMs;
+    int? firstEndMs;
+    int? lastStartMs;
+    int? lastEndMs;
+    int segCount = 0;
+
+    if (transcript is Map) {
+      durationMs = transcript['durationMs'] as int?;
+      final segments = transcript['segments'];
+      if (segments is List && segments.isNotEmpty) {
+        segCount = segments.length;
+        final first = segments.first;
+        final last = segments.last;
+        if (first is Map) {
+          firstStartMs = first['startMs'] as int?;
+          firstEndMs = first['endMs'] as int?;
+        }
+        if (last is Map) {
+          lastStartMs = last['startMs'] as int?;
+          lastEndMs = last['endMs'] as int?;
+        }
+      }
+    } else if (transcript is String) {
+      // transcript passed as plain string (no segments)
+      durationMs = null;
+    }
+
+    Log.debug(
+      '[RAW-FINALIZE-REQUEST] shape: '
+      'scope=$scope '
+      'negationsCount=$negCount '
+      'transcriptDurationMs=$durationMs '
+      'segments=$segCount '
+      'firstSeg={startMs:$firstStartMs, endMs:$firstEndMs} '
+      'lastSeg={startMs:$lastStartMs, endMs:$lastEndMs}',
     );
   }
 

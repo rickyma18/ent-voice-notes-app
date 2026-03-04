@@ -667,7 +667,8 @@ class MedicalNotesController extends _$MedicalNotesController {
           // Interview scope: a single useful field (e.g. antecedentes)
           // or presence of negations is clinically valid — only fall back
           // when truly empty.  Other scopes keep the ≤1 threshold.
-          final isSparse = transcript.length > 80 &&
+          final isSparse =
+              transcript.length > 80 &&
               (scope == 'interview'
                   ? usefulFieldsCount == 0 && negatedFindingsCount == 0
                   : usefulFieldsCount <= 1);
@@ -1088,18 +1089,12 @@ class MedicalNotesController extends _$MedicalNotesController {
           //    KeyNormalizer.toSnakeCaseDeep).
           if (ante != null) {
             final hasHeredofam =
-                (ante['heredofamiliares'] as String?)
-                    ?.trim()
-                    .isNotEmpty ==
+                (ante['heredofamiliares'] as String?)?.trim().isNotEmpty ==
                 true;
             final hasNoPatologicos =
-                (ante['no_patologicos'] as String?)
-                    ?.trim()
-                    .isNotEmpty ==
-                true;
+                (ante['no_patologicos'] as String?)?.trim().isNotEmpty == true;
             final hasPatologicos =
-                (ante['patologicos'] as String?)?.trim().isNotEmpty ==
-                true;
+                (ante['patologicos'] as String?)?.trim().isNotEmpty == true;
 
             if (hasHeredofam || hasNoPatologicos || hasPatologicos) {
               usefulFieldsCount = 1;
@@ -1174,6 +1169,7 @@ class MedicalNotesController extends _$MedicalNotesController {
       final finalizeResult = await _applyFinalizeStep(
         transcript: transcript,
         reduceDraft: flutterFormat,
+        scope: scope,
       );
       final finalizeMeta = Map<String, dynamic>.from(
         finalizeResult['metadata'] as Map? ?? {},
@@ -1202,6 +1198,7 @@ class MedicalNotesController extends _$MedicalNotesController {
     required String transcript,
     required Map<String, dynamic> reduceDraft,
     MedGemmaV1ResponseMetadata? extractMetadata,
+    String? scope,
   }) async {
     final finalizeService = ref.read(finalizeServiceProvider);
 
@@ -1263,6 +1260,7 @@ class MedicalNotesController extends _$MedicalNotesController {
     final result = await finalizeService.finalize(
       transcript: transcript,
       reduceDraft: reduceDraft,
+      scope: scope,
     );
     Log.info(
       '[FINALIZE-POST] keys=${(result.structured ?? {}).keys.toList()} shape=${_shape(result.structured ?? {})}',

@@ -229,5 +229,34 @@ void main() {
 
       expect(countUsefulFields(data), equals(1));
     });
+
+    // ── Null-safe: out-of-scope backend sections ──────────────────
+
+    test('all sections null except motivo → count == 1', () {
+      final data = <String, dynamic>{
+        'motivo_consulta': 'otalgia',
+        'antecedentes': null,
+        'exploracion_orl': null,
+        'diagnostico': null,
+      };
+
+      expect(countUsefulFields(data), equals(1));
+    });
+
+    test('diagnostico null with other fields populated → counts '
+        'only non-null fields', () {
+      final data = <String, dynamic>{
+        'motivo_consulta': 'odinofagia',
+        'padecimiento_actual': 'hace 2 dias',
+        'diagnostico': null,
+        'exploracion_orl': null,
+        'antecedentes': <String, dynamic>{
+          'patologicos': 'DM2 desde 2015',
+        },
+      };
+
+      // motivo(1) + padecimiento(1) + antecedentes(1) = 3
+      expect(countUsefulFields(data), equals(3));
+    });
   });
 }

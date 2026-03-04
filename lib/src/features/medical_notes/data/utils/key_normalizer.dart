@@ -99,4 +99,95 @@ class KeyNormalizer {
       return '${m[1]}_${m[2]?.toLowerCase()}';
     }).toLowerCase();
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CAMEL-CASE DIRECTION (snake_case → camelCase) for /v1/finalize
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Recursively converts all keys in [input] from snake_case to camelCase.
+  ///
+  /// This is the inverse of [toSnakeCaseDeep] and is used to convert the
+  /// Flutter-internal snake_case format back to the camelCase format expected
+  /// by the backend's `/v1/finalize` endpoint.
+  static Map<String, dynamic> toCamelCaseDeep(Map<String, dynamic> input) {
+    if (input.isEmpty) return {};
+    return _processMapCamel(input);
+  }
+
+  static Map<String, dynamic> _processMapCamel(Map<String, dynamic> map) {
+    final result = <String, dynamic>{};
+
+    for (final entry in map.entries) {
+      final newKey = _toCamelKey(entry.key);
+      final value = entry.value;
+
+      if (value is Map) {
+        result[newKey] = _processMapCamel(Map<String, dynamic>.from(value));
+      } else if (value is List) {
+        result[newKey] = _processListCamel(value);
+      } else {
+        result[newKey] = value;
+      }
+    }
+
+    return result;
+  }
+
+  static List<dynamic> _processListCamel(List<dynamic> list) {
+    return list.map((item) {
+      if (item is Map) {
+        return _processMapCamel(Map<String, dynamic>.from(item));
+      } else if (item is List) {
+        return _processListCamel(item);
+      } else {
+        return item;
+      }
+    }).toList();
+  }
+
+  /// Converts a single snake_case key to camelCase.
+  ///
+  /// Priority:
+  /// 1. Explicit reverse mapping (fast path for known keys).
+  /// 2. Generic snake_to_camel conversion.
+  static String _toCamelKey(String key) {
+    // 1. Explicit reverse mapping (inverse of _normalizeKey's explicitMap)
+    const reverseMap = {
+      'motivo_consulta': 'motivoConsulta',
+      'padecimiento_actual': 'padecimientoActual',
+      'plan_tratamiento': 'planTratamiento',
+      'estudios_indicados': 'estudiosIndicados',
+      'notas_adicionales': 'notasAdicionales',
+      'exploracion_orl': 'exploracionFisica',
+      'exploracion_fisica': 'exploracionFisica',
+      // antecedentes inner keys
+      'no_patologicos': 'personalesNoPatologicos',
+      'patologicos': 'personalesPatologicos',
+      'medicamentos_habituales': 'medicamentosHabituales',
+      'gineco_obstetricos': 'ginecoObstetricos',
+      // Keys that stay the same
+      'antecedentes': 'antecedentes',
+      'diagnostico': 'diagnostico',
+      'metadata': 'metadata',
+      'heredofamiliares': 'heredofamiliares',
+      'negations': 'negations',
+      'alergias': 'alergias',
+    };
+
+    if (reverseMap.containsKey(key)) {
+      return reverseMap[key]!;
+    }
+
+    // 2. Generic snake_to_camel
+    // Matches: letter_letter → letterLetter
+    final parts = key.split('_');
+    if (parts.length == 1) return key;
+    return parts.first +
+        parts
+            .skip(1)
+            .map(
+              (p) => p.isEmpty ? '' : '${p[0].toUpperCase()}${p.substring(1)}',
+            )
+            .join();
+  }
 }
