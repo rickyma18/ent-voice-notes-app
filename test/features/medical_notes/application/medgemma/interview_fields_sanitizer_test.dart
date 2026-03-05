@@ -3748,4 +3748,127 @@ void main() {
       expect(pat.contains('asma'), isTrue);
     });
   });
+
+  group('bare symptom-token list stripper', () {
+    test(
+        'strips bare symptom-token list from padecimiento_actual '
+        'but keeps narrative and negation sentence', () {
+      final input = <String, dynamic>{
+        'padecimiento_actual':
+            'Otalgia izquierda de 3 días, empeora al masticar.\n'
+            'escalofríos. tos. gripe. mareos. náuseas o vómito.\n'
+            'Niega fiebre, tos, mareo, náuseas, vómito y gripe.',
+        'negaciones': [
+          'tos',
+          'gripe',
+          'mareo',
+          'náuseas',
+          'vómito',
+          'fiebre',
+        ],
+      };
+
+      final result = sanitizeInterviewFields(input);
+      final pa = result['padecimiento_actual'] as String?;
+
+      expect(pa, isNotNull, reason: 'PA should not be null');
+
+      // Bare token list must be gone.
+      expect(pa!.contains('escalofríos. tos.'), isFalse,
+          reason: 'bare symptom-token list should be stripped');
+      expect(pa.contains('gripe. mareos.'), isFalse,
+          reason: 'bare symptom-token list should be stripped');
+
+      // Narrative content must be preserved.
+      expect(pa.toLowerCase().contains('otalgia'), isTrue,
+          reason: 'narrative sentence should remain');
+      expect(pa.toLowerCase().contains('empeora'), isTrue,
+          reason: 'narrative sentence should remain');
+
+      // Negation sentence must be preserved.
+      expect(
+        RegExp(r'niega\s', caseSensitive: false).hasMatch(pa),
+        isTrue,
+        reason: 'explicit negation sentence should remain',
+      );
+    });
+  });
+
+  group('terminology correction — otinofagia STT typo', () {
+    test(
+        'A) "Otinofagia izquierda" + ear context in PA → otalgia',
+        () {
+      final input = <String, dynamic>{
+        'motivo_consulta': 'Otinofagia izquierda de 3 días',
+        'padecimiento_actual':
+            'Paciente con oído tapado y acúfeno desde hace una semana.',
+      };
+
+      final result = sanitizeInterviewFields(input);
+      final motivo = (result['motivo_consulta'] as String?) ?? '';
+
+      expect(
+        motivo.toLowerCase().contains('otinofagia'),
+        isFalse,
+        reason: 'STT typo "otinofagia" must not survive',
+      );
+      expect(
+        motivo.toLowerCase().contains('odinofagia'),
+        isFalse,
+        reason: 'with ear context odinofagia should become otalgia',
+      );
+      expect(
+        motivo.toLowerCase().contains('otalgia'),
+        isTrue,
+        reason: 'should be corrected to otalgia',
+      );
+    });
+
+    test(
+        'B) "Odinofagia de 3 días" + throat PA → stays odinofagia',
+        () {
+      final input = <String, dynamic>{
+        'motivo_consulta': 'Odinofagia de 3 días',
+        'padecimiento_actual': 'Dolor al deglutir alimentos sólidos.',
+      };
+
+      final result = sanitizeInterviewFields(input);
+      final motivo = (result['motivo_consulta'] as String?) ?? '';
+
+      expect(
+        motivo.toLowerCase().contains('odinofagia'),
+        isTrue,
+        reason:
+            'without ear context, odinofagia should stay as-is',
+      );
+      expect(
+        motivo.toLowerCase().contains('otalgia'),
+        isFalse,
+        reason: 'must NOT convert to otalgia without ear context',
+      );
+    });
+
+    test(
+        'C) "Otinofagia" + empty PA → normalize spelling only',
+        () {
+      final input = <String, dynamic>{
+        'motivo_consulta': 'Otinofagia bilateral',
+      };
+
+      final result = sanitizeInterviewFields(input);
+      final motivo = (result['motivo_consulta'] as String?) ?? '';
+
+      expect(
+        motivo.toLowerCase().contains('otinofagia'),
+        isFalse,
+        reason: 'STT typo must be normalized',
+      );
+      expect(
+        motivo.toLowerCase().contains('odinofagia'),
+        isTrue,
+        reason:
+            'without ear context, should normalize to odinofagia only',
+      );
+    });
+  });
 }

@@ -37,6 +37,7 @@ import '../widgets/clinical_history_wizard/orl_accordion.dart';
 import '../widgets/clinical_history_wizard/vitals_card.dart';
 import 'clinical_history_voice_wizard_ai_feedback.dart';
 import '../../../../ui/docsoft_ui.dart';
+import '../debug/debug_transcript_panel.dart';
 
 /// Voice-first wizard for creating clinical history notes in 4 steps.
 ///
@@ -126,6 +127,10 @@ class _ClinicalHistoryVoiceWizardPageState
   bool _isDictationSheetOpen = false;
   bool _isUploading = false;
   PatientEntity? _patient;
+
+  // Debug QA harness state (debug builds only)
+  bool _showDebugPanel = false;
+  String? _lastVoiceTranscript;
 
   late final PageController _pageController;
 
@@ -319,6 +324,11 @@ class _ClinicalHistoryVoiceWizardPageState
 
         Log.info('[VoiceWizard] Dictation saved for scope=$_currentScope');
 
+        // Debug: capture last voice transcript for QA harness comparison.
+        if (kDebugMode && _currentScope == 'interview') {
+          _lastVoiceTranscript = _stepTranscripts[_currentScope];
+        }
+
         DocsoftSnackBar.show(
           context,
           message: 'Dictado guardado para ${_stepTitles[_currentStep]}',
@@ -336,6 +346,30 @@ class _ClinicalHistoryVoiceWizardPageState
   // ─────────────────────────────────────────────────────────────────────────
   // AI Processing
   // ─────────────────────────────────────────────────────────────────────────
+
+  /// Debug-only: processes a pasted/fixture transcript through the same
+  /// pipeline used after STT completes. Injects the text into
+  /// _stepTranscripts and calls the real _processWithAI.
+  Future<void> _processTranscriptText(
+    String transcript, {
+    required String source,
+  }) async {
+    assert(kDebugMode);
+    Log.info(
+      '[DEBUG-QA] _processTranscriptText source=$source '
+      'len=${transcript.length}',
+    );
+    setState(() {
+      _stepTranscripts['interview'] = transcript.trim();
+      _aiAppliedByScope['interview'] = false;
+      // Ensure we're on the interview step so _currentScope == 'interview'.
+      if (_currentScope != 'interview') {
+        _currentStep = 0;
+        _pageController.jumpToPage(0);
+      }
+    });
+    await _processWithAI();
+  }
 
   Future<void> _processWithAI() async {
     if (!_hasTranscriptForCurrentStep) {
@@ -1828,12 +1862,24 @@ class _ClinicalHistoryVoiceWizardPageState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GuidedTextArea(
-            controller: _motivoController,
-            label: 'Motivo de consulta',
-            hintText: 'Ej: Dolor de oído derecho desde hace 3 días...',
-            maxLines: 4,
-            minLines: 2,
+          // Debug QA harness: long-press "Motivo de consulta" label to toggle.
+          if (kDebugMode && _showDebugPanel)
+            DebugTranscriptPanel(
+              onProcess: _processTranscriptText,
+              lastVoiceTranscript: _lastVoiceTranscript,
+              isProcessing: _isProcessingAI,
+            ),
+          GestureDetector(
+            onLongPress: kDebugMode
+                ? () => setState(() => _showDebugPanel = !_showDebugPanel)
+                : null,
+            child: GuidedTextArea(
+              controller: _motivoController,
+              label: 'Motivo de consulta',
+              hintText: 'Ej: Dolor de oído derecho desde hace 3 días...',
+              maxLines: 4,
+              minLines: 2,
+            ),
           ),
           const SizedBox(height: 16),
           GuidedTextArea(

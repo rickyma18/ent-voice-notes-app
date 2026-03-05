@@ -50,6 +50,13 @@ CLINICAL RULES (anti-hallucination):
    - "DESCONOCIDO" means not mentioned OR ambiguous/unclear; however do NOT create negation items for concepts not mentioned.
      Use DESCONOCIDO only when the concept is mentioned but unclear.
 
+PADECIMIENTO_ACTUAL QUALITY RULES:
+1) NEVER output bare symptom token lists separated by periods (e.g. "tos. fiebre. mareo."). Symptoms without narrative context are meaningless.
+2) A symptom is positive ONLY when the transcript explicitly affirms it with context (e.g. "tiene tos desde hace 3 días"). Bare mentions in a negation list do NOT count as positive.
+3) If a symptom is negated (e.g. "niega fiebre"), it MUST appear ONLY in a negation sentence (e.g. "Niega fiebre."), NEVER as a standalone positive token.
+4) If the only information about symptoms is negation, write a single consolidated negation sentence (e.g. "Niega fiebre, tos y mareo.").
+5) NEVER contradict within padecimientoActual: do not list a symptom as positive AND negated in the same field.
+
 MISSING INPUT HANDLING:
 - Empty or missing transcript:
   - Return structured = reduce_draft (no clinical modifications; minimal sanitation allowed such as trimming whitespace).
