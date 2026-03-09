@@ -33,6 +33,19 @@ const _kNoPatKeywords = [
   'sustancias',
 ];
 
+/// Medication-context keywords. When any of these appear alongside a
+/// "toma/bebe" match, the line is about medication use, NOT a habit.
+const _kMedicationContextKeywords = [
+  'medicament',
+  'pastill',
+  'tratamient',
+  'fármac',
+  'farmac',
+  'tableta',
+  'cápsula',
+  'capsula',
+];
+
 /// Keywords that classify a negation line as "patológicos"
 /// (chronic diseases and significant medical history events).
 const _kPatKeywords = [
@@ -57,6 +70,22 @@ const _kPatKeywords = [
   'hospitaliz',
   'transfus',
   'cirug',
+];
+
+/// Keywords that classify a negation line as an **allergy** entry.
+/// Matched BEFORE _kPatKeywords so "alerg" routes to the alergias
+/// bucket instead of patologicos.
+const _kAllergyKeywords = [
+  'alergia',
+  'alergias',
+  'alérgic',
+  'alergic',
+  'penicil',
+  'beta lactam',
+  'betalactam',
+  'latex',
+  'látex',
+  'sulfa',
 ];
 
 /// Keywords that classify a negation line as a **symptom**.
@@ -88,6 +117,7 @@ const _kSymptomsKeywords = [
   'secrecion',
   'secreción',
   'sangre',
+  'sangrad',
   'zumbido',
 ];
 
@@ -140,6 +170,7 @@ const _kGarbageNegationBodies = <String>{
   'he',
   'tenido',
   'he tenido',
+  'he notado',
   'había',
   'habia',
   'había tenido',
@@ -156,7 +187,29 @@ const _kGarbageNegationBodies = <String>{
   'tenia',
   'presentado',
   'sufrido',
+  'notado',
+  // Multi-word conversational garbage that may contain a medical noun
+  // substring but are not valid clinical negation topics.
+  'tengo problemas',
+  'tengo problema',
+  'estoy tomando',
+  'estoy consumiendo',
 };
+
+/// Leading particles that make a negation body garbage when they start
+/// the body and are NOT followed by a recognized medical noun root.
+/// E.g. "Niega de medicamentos." → body "de medicamentos" starts with "de ".
+/// But "Niega de alergias medicamentosas." is valid (contains 'alerg').
+const _kGarbageLeadingParticles = [
+  'he ',
+  'tengo ',
+  'de ',
+  'que ',
+  'me ',
+  'lo ',
+  'la ',
+  'estoy ',
+];
 
 /// Words that indicate the token is a conversational fragment or verb phrase
 /// rather than a medical noun phrase. Their presence anywhere in the body
@@ -272,6 +325,20 @@ bool _isGarbageNegationToken(String body) {
   final words = norm.split(RegExp(r'\s+'));
   if (words.length <= 3 && words.every(_kGarbageNegationBodies.contains)) {
     return true;
+  }
+  // Garbage if body starts with a particle ("he ", "tengo ", "de ", etc.)
+  // AND does not contain any recognized medical noun root.
+  for (final p in _kGarbageLeadingParticles) {
+    if (norm.startsWith(p)) {
+      final hasValidNoun =
+          _matchesAny(norm, _kPatKeywords) ||
+          _matchesAny(norm, _kNoPatKeywords) ||
+          _matchesAny(norm, _kSymptomsKeywords) ||
+          _matchesAny(norm, _kMedicalNounRoots) ||
+          _matchesAny(norm, _kAllergyKeywords) ||
+          _matchesAny(norm, _kPreservableKeywords);
+      if (!hasValidNoun) return true;
+    }
   }
   return false;
 }
@@ -603,9 +670,14 @@ String normalizeForcedNegation({
   return trimmed;
 }
 
-/// Result of classifying negation entries into two buckets.
+/// Result of classifying negation entries into four buckets.
 class ClassifiedNegations {
-  const ClassifiedNegations({this.noPat = const [], this.pat = const []});
+  const ClassifiedNegations({
+    this.noPat = const [],
+    this.pat = const [],
+    this.alergias = const [],
+    this.family = const [],
+  });
 
   /// Lines for antecedentes no patológicos (habit negations).
   final List<String> noPat;
@@ -613,7 +685,14 @@ class ClassifiedNegations {
   /// Lines for antecedentes patológicos (chronic-disease negations).
   final List<String> pat;
 
-  bool get isEmpty => noPat.isEmpty && pat.isEmpty;
+  /// Lines for antecedentes alergias (allergy negations).
+  final List<String> alergias;
+
+  /// Lines for antecedentes heredofamiliares (family history).
+  final List<String> family;
+
+  bool get isEmpty =>
+      noPat.isEmpty && pat.isEmpty && alergias.isEmpty && family.isEmpty;
 }
 
 /// Classifies [negations] into `noPat` and `pat` buckets
@@ -642,8 +721,12 @@ class ClassifiedNegations {
 ClassifiedNegations classifyNegations(List<String> negations) {
   final noPat = <String>[];
   final pat = <String>[];
+  final alergias = <String>[];
+  final family = <String>[];
   final seenNoPat = <String>{};
   final seenPat = <String>{};
+  final seenAlergias = <String>{};
+  final seenFamily = <String>{};
 
   for (final entry in negations) {
     // Normalize: trim, strip trailing colon/semicolon.
@@ -701,23 +784,45 @@ ClassifiedNegations classifyNegations(List<String> negations) {
       t = _stripTrailingConnectors(t).trim();
       if (t.isEmpty) continue;
 
+      // Strip leading prepositions/articles so keyword matching
+      // works on the bare noun (e.g. "de medicamentos" → "medicamentos").
+      t = _stripLeadingStopWords(t).trim();
+      if (t.isEmpty) continue;
+
       // Classify BEFORE forcing prefix so we choose the
       // appropriate prefix per bucket:
       //   habits → "No", diseases → "Niega".
       final l = t.toLowerCase();
 
-      if (_matchesAny(l, _kNoPatKeywords)) {
+      if (_matchesAny(l, _kFamilyKeywords)) {
+        // ── Bucket 0: family history → heredofamiliares ──
+        // Preserve original phrasing (e.g. "Madre con HTA.").
+        t = _formatSegment(t);
+        if (t.isEmpty) continue;
+        final dk = _dedupKey(t);
+        if (seenFamily.add(dk)) family.add(t);
+      } else if (_matchesAny(l, _kNoPatKeywords) &&
+          !_matchesAny(l, _kMedicationContextKeywords)) {
         // ── Bucket 1: habits → noPat ──
+        // Guard: skip when medication context present (e.g. "tomando
+        // medicamentos" matched via "toma" but is NOT a habit).
         if (!_hasNegPrefix(t)) t = 'No $t';
         t = _formatSegment(t);
         if (t.isEmpty) continue;
         final dk = _dedupKey(t);
         if (seenNoPat.add(_habitCanonical(t) ?? dk)) noPat.add(t);
+      } else if (_matchesAny(l, _kAllergyKeywords)) {
+        // ── Bucket 2a: allergies → alergias ──
+        if (!_hasNegPrefix(t)) t = 'Niega $t';
+        t = _formatSegment(t);
+        if (t.isEmpty) continue;
+        final dk = _dedupKey(t);
+        if (seenAlergias.add(dk)) alergias.add(t);
       } else if (_matchesAny(l, _kPatKeywords) ||
           l.contains('enfermedad') ||
           l.contains('crónica') ||
           l.contains('cronica')) {
-        // ── Bucket 2: diseases → pat ──
+        // ── Bucket 2b: diseases → pat ──
         if (!_hasNegPrefix(t)) t = 'Niega $t';
         t = _formatSegment(t);
         if (t.isEmpty) continue;
@@ -736,6 +841,8 @@ ClassifiedNegations classifyNegations(List<String> negations) {
   return ClassifiedNegations(
     noPat: _removeSubsumedLines(noPat),
     pat: _removeSubsumedLines(pat),
+    alergias: _removeSubsumedLines(alergias),
+    family: _removeSubsumedLines(family),
   );
 }
 
@@ -934,6 +1041,16 @@ Map<String, dynamic> sanitizeInterviewFields(Map<String, dynamic> raw) {
   _copyIfPresent(out, data, 'motivo_consulta');
   _copyIfPresent(out, data, 'padecimiento_actual');
 
+  // Stash raw versions for cross-reference by later passes.
+  final rawMotivo = data['motivo_consulta'];
+  final rawPa = data['padecimiento_actual'];
+  if (rawMotivo is String && rawMotivo.trim().isNotEmpty) {
+    out['_raw_motivo_consulta'] = rawMotivo;
+  }
+  if (rawPa is String && rawPa.trim().isNotEmpty) {
+    out['_raw_padecimiento_actual'] = rawPa;
+  }
+
   // 3. Resolve antecedentes.
   final hasFlat =
       data.containsKey('antecedentes_heredofamiliares') ||
@@ -953,6 +1070,7 @@ Map<String, dynamic> sanitizeInterviewFields(Map<String, dynamic> raw) {
     _copyIfPresent(anteOut, ante, 'heredofamiliares');
     _copyIfPresent(anteOut, ante, 'patologicos');
     _copyIfPresent(anteOut, ante, 'no_patologicos');
+    _copyIfPresent(anteOut, ante, 'alergias');
     if (anteOut.isEmpty) out.remove('antecedentes');
   }
 
@@ -989,6 +1107,47 @@ Map<String, dynamic> sanitizeInterviewFields(Map<String, dynamic> raw) {
   // 9. ENT terminology corrections (padecimiento_actual + motivo_consulta).
   _applyTerminologyCorrections(out);
 
+  // 10. Fix laterality gender agreement (e.g. "Otalgia derecho" → "derecha").
+  _fixLateralityGender(out);
+
+  // 10a. Ear-vs-throat disambiguation: force otalgia when ear context.
+  _disambiguateEarVsThroat(out);
+
+  // 10b. Rescue thin padecimiento_actual from raw data.
+  _rescueThinPadecimiento(out);
+
+  // 10c. Normalize uncertain surgery history in patologicos.
+  _normalizeUncertainSurgery(out);
+
+  // 11. Filter vague no_patologicos lines (e.g. "No estoy tomando.").
+  _filterVagueNoPatLines(out);
+
+  // 12. Remove garbage negation tokens from patologicos post-merge.
+  _removeGarbageFromPat(out);
+
+  // 13. Infer no_patologicos from transcript when empty.
+  _inferNoPatFromTranscript(raw, data, out);
+
+  // 14. Remove "Niega medicamentos" from patologicos when transcript
+  //     evidence shows medication use.
+  _removeFalseMedicationNegation(out);
+
+  // 15. Normalize generic motivo_consulta using PA context.
+  _normalizeGenericMotivo(out);
+
+  // 16. Deduplicate semantic duplicates in heredofamiliares.
+  _dedupHeredofamiliares(out);
+
+  // 17. Filter neurological/systemic negations from patologicos.
+  _filterNeurologicalNegationsFromPat(out);
+
+  // 17a. Remove garbage pat lines and collapse surgical duplicates.
+  _cleanGarbageAndCollapseSurgicalPat(out);
+
+  // Final: remove internal stash keys before returning.
+  out.remove('_raw_motivo_consulta');
+  out.remove('_raw_padecimiento_actual');
+
   return out;
 }
 
@@ -1000,13 +1159,21 @@ Map<String, dynamic> sanitizeInterviewFields(Map<String, dynamic> raw) {
 /// phrase when padecimiento_actual mentions an anatomical site.
 const _kGenericMotivoWords = {'dolor', 'molestia', 'problema'};
 
+/// Spanish stop words and laterality modifiers ignored when counting
+/// motivo tokens.
+const _kMotivoStopWords = {
+  'de', 'del', 'la', 'el', 'los', 'las', 'en',
+  // Laterality — metadata, not topic words.
+  'derecho', 'derecha', 'izquierdo', 'izquierda', 'bilateral',
+};
+
 /// Anatomical-site rules: if padecimiento_actual mentions the site,
 /// the generic motivo is replaced with the specific phrase.
 ///
 /// Order matters — first match wins.
 const _kSiteReplacements = <(List<String>, String)>[
-  (['oído', 'oido'], 'Dolor de oído'),
-  (['garganta', 'faringe', 'amígdala', 'amigdala'], 'Dolor de garganta'),
+  (['oído', 'oido'], 'Otalgia'),
+  (['garganta', 'faringe', 'amígdala', 'amigdala'], 'Odinofagia'),
   (['nariz', 'nasal', 'senos paranasales'], 'Congestión nasal'),
 ];
 
@@ -1024,23 +1191,44 @@ void _specifyMotivoFromPadecimiento(Map<String, dynamic> out) {
   final padecimiento = out['padecimiento_actual'];
   if (padecimiento is! String || padecimiento.trim().isEmpty) return;
 
-  // Check if motivo is entirely generic words (1-2 words).
+  // Check if motivo is generic (≤2 content words, ignoring stop words).
+  // Accepted words: generic motivo words (dolor, molestia, problema)
+  // AND anatomical-site keywords from _kSiteReplacements.
+  // At least one content word must be a generic motivo word.
   final motivoWords = motivo
       .trim()
       .toLowerCase()
       .replaceAll(RegExp(r'[.,;:]+$'), '')
       .split(RegExp(r'\s+'));
-  if (motivoWords.length > 2) return;
-  if (!motivoWords.every(_kGenericMotivoWords.contains)) return;
+  final contentWords = motivoWords
+      .where((w) => !_kMotivoStopWords.contains(w))
+      .toList();
+  if (contentWords.length > 2) return;
+  final siteWords = _kSiteReplacements.expand((e) => e.$1).toSet();
+  final accepted = {..._kGenericMotivoWords, ...siteWords};
+  if (!contentWords.every(accepted.contains)) return;
+  if (!contentWords.any(_kGenericMotivoWords.contains)) return;
 
   final padLower = padecimiento.toLowerCase();
+  final motivoLower = motivo.toLowerCase();
 
   for (final (sites, replacement) in _kSiteReplacements) {
     if (sites.any(padLower.contains)) {
-      out['motivo_consulta'] = replacement;
+      // Append laterality if present in motivo or padecimiento_actual.
+      final laterality =
+          _extractLaterality(motivoLower) ?? _extractLaterality(padLower);
+      out['motivo_consulta'] = laterality != null
+          ? '$replacement $laterality'
+          : replacement;
       return;
     }
   }
+}
+
+/// Extracts laterality from text: "derecho/a" or "izquierdo/a".
+String? _extractLaterality(String lower) {
+  final m = RegExp(r'\b(derech[oa]|izquierd[oa])\b').firstMatch(lower);
+  return m?.group(1);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1083,6 +1271,11 @@ const _kEarSignalTerms = [
   'otorragia',
   'secreción ótica',
   'secrecion otica',
+  // Broader context signals (triggers/associations for ear complaints).
+  'alberca',
+  'nadar',
+  'agua en el oído',
+  'agua en el oido',
 ];
 
 /// ENT-specific terminology corrections.
@@ -1102,10 +1295,7 @@ const _kEarSignalTerms = [
 /// Case-insensitive. Preserves original casing of surrounding text.
 ///
 /// PHI-safe: operates on structure only, never logs content.
-String _correctMedicalTerminology(
-  String text, {
-  Map<String, dynamic>? fields,
-}) {
+String _correctMedicalTerminology(String text, {Map<String, dynamic>? fields}) {
   var result = text;
 
   // Step 1: Normalize STT typo "otinofagia" → "odinofagia".
@@ -1124,12 +1314,21 @@ String _correctMedicalTerminology(
       caseSensitive: false,
     ).hasMatch(result);
 
-    // Cross-field: check padecimiento_actual for ear-signal terms.
+    // Cross-field: check all available fields for ear-signal terms.
     if (!hasEarContext && fields != null) {
-      final pa = fields['padecimiento_actual'];
-      if (pa is String && pa.trim().isNotEmpty) {
-        final paLower = pa.toLowerCase();
-        hasEarContext = _kEarSignalTerms.any(paLower.contains);
+      for (final key in [
+        'padecimiento_actual',
+        'motivo_consulta',
+        '_raw_padecimiento_actual',
+        '_raw_motivo_consulta',
+      ]) {
+        final val = fields[key];
+        if (val is String && val.trim().isNotEmpty) {
+          if (_kEarSignalTerms.any(val.toLowerCase().contains)) {
+            hasEarContext = true;
+            break;
+          }
+        }
       }
     }
 
@@ -1172,6 +1371,149 @@ String _correctMedicalTerminology(
   );
 
   return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Laterality gender agreement
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Feminine medical terms that require feminine laterality adjectives.
+/// "Otalgia derecho" → "Otalgia derecha", etc.
+const _kFeminineMedicalTerms = [
+  'otalgia',
+  'odinofagia',
+  'cefalea',
+  'rinorrea',
+  'otorrea',
+  'otorragia',
+  'hipoacusia',
+  'congestión',
+  'congestion',
+];
+
+/// Fixes laterality gender agreement in motivo_consulta.
+///
+/// After terminology corrections, motivo may contain e.g. "Otalgia derecho"
+/// because the original was "Dolor de oído derecho" and laterality was
+/// extracted verbatim. This helper corrects the adjective gender.
+void _fixLateralityGender(Map<String, dynamic> out) {
+  final motivo = out['motivo_consulta'];
+  if (motivo is! String || motivo.trim().isEmpty) return;
+
+  final lower = motivo.toLowerCase();
+
+  // Only apply when motivo starts with a known feminine term.
+  final isFeminine = _kFeminineMedicalTerms.any((t) => lower.startsWith(t));
+  if (!isFeminine) return;
+
+  // Replace masculine laterality with feminine.
+  var fixed = motivo;
+  fixed = fixed.replaceAll(
+    RegExp(r'\bderecho\b', caseSensitive: false),
+    'derecha',
+  );
+  fixed = fixed.replaceAll(
+    RegExp(r'\bizquierdo\b', caseSensitive: false),
+    'izquierda',
+  );
+  if (fixed != motivo) out['motivo_consulta'] = fixed;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vague no_patologicos line filter
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Verb stems that indicate a vague habit negation when NOT followed by
+/// an explicit habit object (alcohol, tabaco, drogas, etc.).
+const _kVagueHabitVerbs = [
+  'tomando',
+  'tomo',
+  'consumo',
+  'consumiendo',
+  'ingiero',
+  'ingiriendo',
+];
+
+/// Explicit habit objects that make a line non-vague.
+const _kExplicitHabitObjects = [
+  'alcohol',
+  'tabaco',
+  'cigarro',
+  'droga',
+  'sustancia',
+  'marihuana',
+  'cocaína',
+  'cocaina',
+];
+
+/// Removes vague lines from no_patologicos.
+///
+/// Lines like "No estoy tomando." without an explicit habit object are
+/// clinically meaningless in no_patologicos. If they mention medication
+/// context (medicament/pastill/medicina), they are also vague for this
+/// field — the medication guard in classifyNegations already blocks
+/// them, but this catches any that slip through via other paths.
+void _filterVagueNoPatLines(Map<String, dynamic> out) {
+  final noPatText = _readAnteField(out, 'no_patologicos');
+  if (noPatText == null || noPatText.isEmpty) return;
+
+  final lines = noPatText.split('\n');
+  final kept = <String>[];
+
+  for (final line in lines) {
+    final lower = line.trim().toLowerCase();
+    if (lower.isEmpty) continue;
+
+    // Check if the line contains a vague verb.
+    final hasVagueVerb = _kVagueHabitVerbs.any(lower.contains);
+    if (hasVagueVerb) {
+      // Keep only if line also has an explicit habit object.
+      final hasObject = _kExplicitHabitObjects.any(lower.contains);
+      if (!hasObject) continue; // Drop vague line.
+    }
+
+    kept.add(line);
+  }
+
+  final ante = _ensureAntecedentes(out);
+  if (kept.isEmpty) {
+    ante.remove('no_patologicos');
+  } else {
+    ante['no_patologicos'] = kept.join('\n');
+  }
+  if (ante.isEmpty) out.remove('antecedentes');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Garbage negation post-filter for patologicos
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Removes garbage negation lines from patologicos after all merges.
+///
+/// Catches lines like "Niega de medicamentos.", "Niega he notado.",
+/// "Niega tengo problemas." that survived earlier filtering.
+void _removeGarbageFromPat(Map<String, dynamic> out) {
+  final patText = _readAnteField(out, 'patologicos');
+  if (patText == null || patText.isEmpty) return;
+
+  final lines = patText.split('\n');
+  final kept = <String>[];
+
+  for (final line in lines) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) continue;
+    final body = _stripNegPrefixLower(trimmed);
+    if (_isGarbageNegationToken(body)) continue;
+    kept.add(trimmed);
+  }
+
+  final ante = _ensureAntecedentes(out);
+  if (kept.isEmpty) {
+    ante.remove('patologicos');
+  } else {
+    ante['patologicos'] = kept.join('\n');
+  }
+  if (ante.isEmpty) out.remove('antecedentes');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1387,6 +1729,14 @@ void _applyNegationFallbacks(
     _ensureAntecedentes(out)['patologicos'] = classified.pat.join('\n');
   }
 
+  if (classified.alergias.isNotEmpty && !_hasAnteField(out, 'alergias')) {
+    _ensureAntecedentes(out)['alergias'] = classified.alergias.join('\n');
+  }
+
+  if (classified.family.isNotEmpty && !_hasAnteField(out, 'heredofamiliares')) {
+    _ensureAntecedentes(out)['heredofamiliares'] = classified.family.join('\n');
+  }
+
   // Merge recovered negations into patologicos. Run AFTER classified.pat
   // so dedup prevents double entries for items in both (e.g. "diabetes").
   if (discardedNegs.isNotEmpty) {
@@ -1403,9 +1753,10 @@ void _applyNegationFallbacks(
   _deduplicateAnteField(out, 'patologicos');
   _deduplicateAnteField(out, 'no_patologicos');
 
-  // Safety filter: remove any symptom negations that leaked into
+  // Safety filter: remove any symptom/allergy negations that leaked into
   // patologicos via preserved-line reinjection or other merge paths.
   _removeSymptomLinesFromPat(out);
+  _removeAllergyLinesFromPat(out);
 
   // Route symptom negations to padecimiento_actual.
   _appendSymptomNegationsToPadecimiento(negList, out);
@@ -1428,8 +1779,10 @@ void _removeSymptomLinesFromPat(Map<String, dynamic> out) {
         // Strip Unicode combining diacritics (e.g. "to\u0301s" → "tos").
         clean = clean.replaceAll(RegExp(r'[\u0300-\u036f]'), '');
         // Direct word-boundary check for "tos".
-        final hasTos = RegExp(r'(^|\s)tos(\s|$)', caseSensitive: false)
-            .hasMatch(clean);
+        final hasTos = RegExp(
+          r'(^|\s)tos(\s|$)',
+          caseSensitive: false,
+        ).hasMatch(clean);
         if (hasTos) return false;
         return !_matchesAny(clean, _kSymptomsKeywords);
       })
@@ -1443,26 +1796,70 @@ void _removeSymptomLinesFromPat(Map<String, dynamic> out) {
   }
 }
 
+/// Removes lines matching allergy keywords from antecedentes.patologicos.
+/// Allergy negations belong in antecedentes.alergias, not patologicos.
+void _removeAllergyLinesFromPat(Map<String, dynamic> out) {
+  final patText = _readAnteField(out, 'patologicos');
+  if (patText == null || patText.isEmpty) return;
+
+  final filtered = patText
+      .split('\n')
+      .where((line) {
+        final clean = line
+            .trim()
+            .toLowerCase()
+            .replaceAll(RegExp(r'[^\p{L}\p{N}\s]', unicode: true), '')
+            .trim();
+        if (clean.isEmpty) return false;
+        return !_matchesAny(clean, _kAllergyKeywords);
+      })
+      .join('\n');
+
+  final ante = _ensureAntecedentes(out);
+  if (filtered.isEmpty) {
+    ante.remove('patologicos');
+  } else {
+    ante['patologicos'] = filtered;
+  }
+}
+
+/// Pain-related keyword roots. When motivo_consulta or padecimiento_actual
+/// contains a positive mention of pain, symptom negations matching these
+/// roots are suppressed from the appended "Niega …" sentence.
+const _kPainKeywords = [
+  'dolor',
+  'otalgia',
+  'otodinia',
+  'algia',
+];
+
 /// Extracts unique symptom topics from [negList] and appends a
 /// natural-language negation sentence to padecimiento_actual.
 ///
 /// Only topics matching [_kSymptomsKeywords] are collected.
 /// Skips topics already present in padecimiento_actual (case-insensitive).
+/// Skips pain-related negations when positive pain is mentioned in
+/// motivo_consulta or padecimiento_actual.
 ///
 /// PHI-safe: never logs clinical content.
 void _appendSymptomNegationsToPadecimiento(
   List<String> negList,
   Map<String, dynamic> out,
 ) {
+  // Detect positive pain in motivo_consulta / padecimiento_actual.
+  final hasPositivePain = _fieldsContainPain(out);
+
   final symptoms = <String>[];
   final seen = <String>{};
   for (final entry in negList) {
-    final stripped = _stripNegPrefixLower(entry.trim())
-        .replaceAll(RegExp(r'[^\p{L}\p{N}\s]', unicode: true), '')
-        .trim();
+    final stripped = _stripNegPrefixLower(
+      entry.trim(),
+    ).replaceAll(RegExp(r'[^\p{L}\p{N}\s]', unicode: true), '').trim();
     if (stripped.isEmpty) continue;
     if (!_matchesAny(stripped, _kSymptomsKeywords)) continue;
     if (!seen.add(stripped)) continue;
+    // Suppress pain negations when positive pain exists.
+    if (hasPositivePain && _matchesAny(stripped, _kPainKeywords)) continue;
     symptoms.add(stripped);
   }
   if (symptoms.isEmpty) return;
@@ -1470,14 +1867,16 @@ void _appendSymptomNegationsToPadecimiento(
   final sentence = _createSymptomNegationSentence(symptoms);
 
   final existing = out['padecimiento_actual'];
-  final existingText =
-      (existing is String && existing.trim().isNotEmpty) ? existing.trim() : '';
+  final existingText = (existing is String && existing.trim().isNotEmpty)
+      ? existing.trim()
+      : '';
 
   // Avoid appending if the sentence is already present.
   if (existingText.toLowerCase().contains(sentence.toLowerCase())) return;
 
-  out['padecimiento_actual'] =
-      existingText.isEmpty ? sentence : '$existingText\n$sentence';
+  out['padecimiento_actual'] = existingText.isEmpty
+      ? sentence
+      : '$existingText\n$sentence';
 }
 
 /// Builds a natural-language negation sentence from [symptoms].
@@ -1491,6 +1890,18 @@ String _createSymptomNegationSentence(List<String> symptoms) {
   if (symptoms.length == 1) return 'Niega ${symptoms.first}.';
   final allButLast = symptoms.sublist(0, symptoms.length - 1).join(', ');
   return 'Niega $allButLast y ${symptoms.last}.';
+}
+
+/// Returns `true` when motivo_consulta or padecimiento_actual contains a
+/// positive mention of pain (dolor, otalgia, otodinia, *algia variants).
+bool _fieldsContainPain(Map<String, dynamic> out) {
+  for (final key in ['motivo_consulta', 'padecimiento_actual']) {
+    final val = out[key];
+    if (val is String && _matchesAny(val.toLowerCase(), _kPainKeywords)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /// Clears the nested or flat antecedentes [field] if it looks
@@ -1962,6 +2373,9 @@ String _formatSegment(String seg) {
   if (s.toLowerCase().startsWith('niego ')) {
     s = 'niega ${s.substring(6)}';
   }
+  // Strip leading prepositions/articles from the negation body.
+  s = _stripLeadingStopWords(s);
+  if (s.isEmpty) return s;
   s = s[0].toUpperCase() + s.substring(1);
   // Normalize trailing punctuation (periods, colons, spaces).
   s = s.replaceAll(RegExp(r'[.:\s]+$'), '');
@@ -2034,6 +2448,30 @@ String _stripTrailingPrepositions(String s) {
     if (result == before) break;
   }
   return result;
+}
+
+/// Leading Spanish prepositions/articles to strip from negation bodies.
+/// E.g. "de medicamentos" → "medicamentos", "del corazón" → "corazón".
+final _kLeadingStopWordRe = RegExp(
+  r'^(?:de|del|la|el|los|las|un|una)\s+',
+  caseSensitive: false,
+);
+
+/// Strips leading stop words from a negation segment.
+/// If the segment has a negation prefix (e.g. "Niega de X"), strips from
+/// the body after the prefix. Otherwise strips from the start.
+String _stripLeadingStopWords(String s) {
+  // Try stripping after a negation prefix.
+  for (final p in _kNegPrefixes) {
+    if (s.toLowerCase().startsWith(p)) {
+      final body = s.substring(p.length);
+      final cleaned = body.replaceFirst(_kLeadingStopWordRe, '');
+      if (cleaned != body) return '${s.substring(0, p.length)}$cleaned';
+      return s;
+    }
+  }
+  // No negation prefix — strip from start directly.
+  return s.replaceFirst(_kLeadingStopWordRe, '');
 }
 
 /// Strips trailing colon (with optional surrounding spaces).
@@ -2189,14 +2627,17 @@ List<String> _recoverDiscardedNegations(
   // prefix in the cleared dump field(s). Only these warrant recovery.
   final explicitNegTopics = <String>{};
   for (final text in dumpTexts) {
-    for (final token in text
-        .split(RegExp(r'[.;\n]+'))
-        .map((t) => t.trim())
-        .where((t) => t.isNotEmpty)) {
+    for (final token
+        in text
+            .split(RegExp(r'[.;\n]+'))
+            .map((t) => t.trim())
+            .where((t) => t.isNotEmpty)) {
       if (_isExplicitNegationToken(token)) {
-        explicitNegTopics.add(_stripNegPrefixLower(token)
-            .replaceAll(RegExp(r'[^\p{L}\p{N}\s]', unicode: true), '')
-            .trim());
+        explicitNegTopics.add(
+          _stripNegPrefixLower(
+            token,
+          ).replaceAll(RegExp(r'[^\p{L}\p{N}\s]', unicode: true), '').trim(),
+        );
       }
     }
   }
@@ -2238,8 +2679,7 @@ List<String> _recoverDiscardedNegations(
     // chief complaint IS dolor (e.g. motivo = "Dolor de oído").
     // Scoped to "dolor" only — other terms are not ambiguous enough
     // to warrant cross-field contradiction checks.
-    final isDolorTopic =
-        stripped == 'dolor' || stripped.startsWith('dolor ');
+    final isDolorTopic = stripped == 'dolor' || stripped.startsWith('dolor ');
     if (isDolorTopic && _conflictsWithPositiveFields('dolor', out)) {
       continue;
     }
@@ -2287,15 +2727,17 @@ void _mergeNegationLines(
   final existing = ante[field];
   final existingKeys = <String>{};
   if (existing is String && existing.trim().isNotEmpty) {
-    for (final l in existing
-        .split('\n')
-        .map((l) => l.trim())
-        .where((l) => l.isNotEmpty)) {
+    for (final l
+        in existing
+            .split('\n')
+            .map((l) => l.trim())
+            .where((l) => l.isNotEmpty)) {
       existingKeys.add(_dedupKey(l));
     }
   }
-  final toAdd =
-      negLines.where((l) => !existingKeys.contains(_dedupKey(l))).toList();
+  final toAdd = negLines
+      .where((l) => !existingKeys.contains(_dedupKey(l)))
+      .toList();
   if (toAdd.isEmpty) return;
   if (existing is String && existing.trim().isNotEmpty) {
     ante[field] = '$existing\n${toAdd.join('\n')}';
@@ -2316,10 +2758,8 @@ void _deduplicateAnteField(Map<String, dynamic> out, String field) {
   if (val is! String || val.trim().isEmpty) return;
   final seen = <String>{};
   final deduped = <String>[];
-  for (final line in val
-      .split('\n')
-      .map((l) => l.trim())
-      .where((l) => l.isNotEmpty)) {
+  for (final line
+      in val.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty)) {
     if (seen.add(_dedupKey(line))) deduped.add(line);
   }
   ante[field] = deduped.join('\n');
@@ -2420,8 +2860,9 @@ bool _isBareSymptomTokenList(String line, Set<String> negTokens) {
         .map((t) => t.trim())
         .where((t) => t.isNotEmpty)
         .toList();
-    final allMatch = subTokens.every((t) =>
-        _matchesAny(t, _kSymptomsKeywords) || negTokens.contains(t));
+    final allMatch = subTokens.every(
+      (t) => _matchesAny(t, _kSymptomsKeywords) || negTokens.contains(t),
+    );
     if (allMatch) symptomHits++;
   }
 
@@ -2450,9 +2891,9 @@ void _stripBareSymptomTokenList(
   final negList = _extractNegationsList(raw, data);
   final negTokens = <String>{};
   for (final n in negList) {
-    final stripped = _stripNegPrefixLower(n.trim())
-        .replaceAll(RegExp(r'[^\p{L}\p{N}\s]', unicode: true), '')
-        .trim();
+    final stripped = _stripNegPrefixLower(
+      n.trim(),
+    ).replaceAll(RegExp(r'[^\p{L}\p{N}\s]', unicode: true), '').trim();
     if (stripped.isNotEmpty) negTokens.add(stripped);
   }
 
@@ -2555,8 +2996,9 @@ void _cleanPadecimientoForInterview(Map<String, dynamic> out) {
             .toSet()
       : <String>{};
 
-  final toAdd =
-      formatted.where((l) => !existingKeys.contains(_dedupKey(l))).toList();
+  final toAdd = formatted
+      .where((l) => !existingKeys.contains(_dedupKey(l)))
+      .toList();
   if (toAdd.isEmpty) return;
 
   if (existing is String && existing.trim().isNotEmpty) {
@@ -2564,6 +3006,1018 @@ void _cleanPadecimientoForInterview(Map<String, dynamic> out) {
   } else {
     ante['patologicos'] = toAdd.join('\n');
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ear-vs-throat disambiguation
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Extended ear-context signals checked in raw data for disambiguation.
+/// Includes anatomical terms, triggers, and associated symptoms.
+const _kBroadEarContextTerms = [
+  // Core ear terms (same as _kEarSignalTerms).
+  'oído', 'oido', 'oreja', 'otalgia', 'acúfeno', 'acufeno',
+  'tinnitus', 'zumbido', 'tapado', 'hipoacusia', 'otitis',
+  'otorrea', 'otorragia',
+  // Triggers / associations for ear complaints.
+  'alberca', 'nadar', 'piscina',
+  // Pain modifiers strongly associated with ear.
+  'masticar', 'bostezo', 'mandíbula', 'mandibula',
+];
+
+/// Guards motivo_consulta against "odinofagia" when strong ear context
+/// exists across all available fields (current + raw).
+///
+/// When motivo contains "odinofagia" and ear context is detected,
+/// replaces with "Otalgia" (preserving laterality).
+///
+/// PHI-safe: never logs clinical content.
+void _disambiguateEarVsThroat(Map<String, dynamic> out) {
+  final motivo = out['motivo_consulta'];
+  if (motivo is! String) return;
+  if (!motivo.toLowerCase().contains('odinofagia')) return;
+
+  // Check all available text sources for ear context.
+  bool hasEarContext = false;
+  for (final key in [
+    'padecimiento_actual',
+    'motivo_consulta',
+    '_raw_padecimiento_actual',
+    '_raw_motivo_consulta',
+  ]) {
+    final val = out[key];
+    if (val is String && val.trim().isNotEmpty) {
+      final lower = val.toLowerCase();
+      if (_kBroadEarContextTerms.any(lower.contains)) {
+        hasEarContext = true;
+        break;
+      }
+    }
+  }
+  if (!hasEarContext) return;
+
+  // Replace odinofagia with otalgia, preserve laterality.
+  final laterality = _extractLaterality(motivo.toLowerCase());
+  out['motivo_consulta'] = laterality != null
+      ? 'Otalgia $laterality'
+      : 'Otalgia';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Thin padecimiento_actual rescue
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Clinical fact patterns to rescue from raw PA/motivo when current PA
+/// is too thin. Each entry is (regex, label-prefix for the rescued fact).
+final _kRescuePatterns = <(RegExp, String)>[
+  // Duration: "3 días", "una semana", etc.
+  (
+    RegExp(
+      r'(?:desde\s+)?(?:hace\s+)?(\d+\s+(?:d[ií]as?|semanas?|horas?|meses?))',
+      caseSensitive: false,
+    ),
+    '',
+  ),
+  // Water/pool trigger.
+  (
+    RegExp(
+      r'(?:posterior\s+a\s+|después\s+de\s+|tras\s+)?'
+      r'(?:nadar|alberca|piscina|agua\s+en\s+el\s+o[ií]do)',
+      caseSensitive: false,
+    ),
+    '',
+  ),
+  // Ear-specific symptoms.
+  (
+    RegExp(
+      r'o[ií]do\s+tapado|tapado\s+(?:del?\s+)?o[ií]do|sensaci[oó]n\s+de\s+tapado',
+      caseSensitive: false,
+    ),
+    'Oído tapado',
+  ),
+  (RegExp(r'zumbido|ac[uú]feno|tinnitus', caseSensitive: false), ''),
+  // Pain modifiers.
+  (
+    RegExp(
+      r'dolor\s+(?:al\s+)?(?:masticar|bostezo|bostezar)',
+      caseSensitive: false,
+    ),
+    '',
+  ),
+  (
+    RegExp(r'dolor\s+nocturno|peor\s+(?:de|por\s+la)\s+noche',
+        caseSensitive: false),
+    'Dolor nocturno',
+  ),
+  // Pain location (ear-specific).
+  (
+    RegExp(
+      r'dolor\s+(?:de\s+|en\s+el?\s+)?o[ií]do\s*(?:derech[oa]|izquierd[oa])?',
+      caseSensitive: false,
+    ),
+    '',
+  ),
+];
+
+/// Rescues clinical facts from raw PA/motivo when current PA is too thin.
+///
+/// "Too thin" = PA has ZERO non-negation lines (e.g. only "Niega tos y vómito.")
+/// or PA is entirely absent.
+///
+/// Rescued facts are prepended to PA so the negation sentence stays at the end.
+///
+/// PHI-safe: never logs clinical content.
+void _rescueThinPadecimiento(Map<String, dynamic> out) {
+  final pa = out['padecimiento_actual'];
+  final paText = (pa is String && pa.trim().isNotEmpty) ? pa.trim() : '';
+
+  // Count non-negation content lines.
+  final paLines = paText
+      .split('\n')
+      .map((l) => l.trim())
+      .where((l) => l.isNotEmpty)
+      .toList();
+  final contentLines = paLines.where((l) => !_hasNegPrefix(l)).toList();
+
+  // Only rescue if PA has ZERO substantive content lines.
+  if (contentLines.isNotEmpty) return;
+
+  // Gather source text from raw stash.
+  final sources = <String>[];
+  for (final key in ['_raw_padecimiento_actual', '_raw_motivo_consulta']) {
+    final val = out[key];
+    if (val is String && val.trim().isNotEmpty) sources.add(val);
+  }
+  if (sources.isEmpty) return;
+
+  final allRaw = sources.join(' ');
+  final allRawLower = allRaw.toLowerCase();
+  final paLower = paText.toLowerCase();
+
+  final rescued = <String>[];
+  final seen = <String>{};
+
+  for (final (pattern, label) in _kRescuePatterns) {
+    final match = pattern.firstMatch(allRaw);
+    if (match == null) continue;
+
+    var fact = label.isNotEmpty ? label : match.group(0)!.trim();
+    // Capitalize first letter.
+    if (fact.isNotEmpty) fact = fact[0].toUpperCase() + fact.substring(1);
+    // Ensure trailing period.
+    if (!fact.endsWith('.')) fact = '$fact.';
+
+    // Skip if already in PA.
+    if (paLower.contains(fact.toLowerCase().replaceAll('.', ''))) continue;
+
+    final dk = fact.toLowerCase();
+    if (seen.add(dk)) rescued.add(fact);
+  }
+
+  if (rescued.isEmpty) return;
+
+  // Compose rescued fragments into a narrative sentence.
+  final narrative = _composeNarrative(rescued, out);
+
+  // Prepend composed narrative before negation lines.
+  final negLines = paLines.where((l) => _hasNegPrefix(l)).toList();
+
+  final parts = <String>[
+    if (narrative.isNotEmpty) narrative,
+    ...negLines,
+  ];
+
+  out['padecimiento_actual'] = parts.where((l) => l.isNotEmpty).join('\n');
+}
+
+/// Composes multiple short rescued fact fragments into a compact clinical
+/// narrative sentence.
+///
+/// Uses motivo_consulta as the lead phrase when available, then appends
+/// rescued facts joined with commas and "con".
+///
+/// Example:
+///   motivo = "Otalgia derecha"
+///   rescued = ["3 días.", "Posterior a nadar en alberca.", "Oído tapado.",
+///              "Zumbido.", "Dolor al masticar.", "Dolor nocturno."]
+///   → "Otalgia derecha de 3 días de evolución, posterior a nadar en
+///      alberca, con oído tapado, zumbido, dolor al masticar y dolor
+///      nocturno."
+///
+/// PHI-safe: never logs clinical content.
+String _composeNarrative(List<String> rescued, Map<String, dynamic> out) {
+  if (rescued.isEmpty) return '';
+
+  // Strip trailing periods from fragments for joining.
+  final fragments = rescued
+      .map((f) => f.replaceAll(RegExp(r'\.\s*$'), '').trim())
+      .where((f) => f.isNotEmpty)
+      .toList();
+  if (fragments.isEmpty) return '';
+
+  // Try to use motivo as the lead.
+  final motivo = out['motivo_consulta'];
+  final lead = (motivo is String && motivo.trim().isNotEmpty)
+      ? motivo.trim()
+      : null;
+
+  // Separate duration from other fragments.
+  String? duration;
+  final others = <String>[];
+  final durationRe = RegExp(
+    r'^\d+\s+(?:d[ií]as?|semanas?|horas?|meses?)',
+    caseSensitive: false,
+  );
+  for (final f in fragments) {
+    if (duration == null && durationRe.hasMatch(f)) {
+      duration = f.toLowerCase();
+    } else {
+      // Lowercase first letter for mid-sentence joining.
+      others.add(f[0].toLowerCase() + f.substring(1));
+    }
+  }
+
+  final buf = StringBuffer();
+  if (lead != null) {
+    buf.write(lead);
+    if (duration != null) {
+      buf.write(' de $duration de evolución');
+    }
+  } else if (duration != null) {
+    buf.write('Cuadro de $duration de evolución');
+  }
+
+  if (others.isNotEmpty) {
+    if (buf.isNotEmpty) buf.write(', ');
+    // Use "con" before symptom list, then comma-join with "y" for last.
+    if (buf.isNotEmpty) buf.write('con ');
+    if (others.length == 1) {
+      buf.write(others.first);
+    } else {
+      final allButLast = others.sublist(0, others.length - 1).join(', ');
+      buf.write('$allButLast y ${others.last}');
+    }
+  }
+
+  if (buf.isEmpty) return '';
+  var result = buf.toString().trim();
+  if (!result.endsWith('.')) result = '$result.';
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Uncertain surgery normalization
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Colloquial uncertainty markers in Spanish.
+final _kUncertaintyRe = RegExp(
+  r'(?:creo|no me acuerdo|no recuerdo|mi mam[aá] dec[ií]a|'
+  r'me dijeron|de ni[ñn]o|de peque[ñn]o|no s[eé] bien|'
+  r'me parece|seg[uú]n me dijeron)',
+  caseSensitive: false,
+);
+
+/// Procedure names for normalization.
+const _kProcedureNorms = <String, String>{
+  'apendicect': 'apendicectomía',
+  'apéndice': 'apendicectomía',
+  'apendice': 'apendicectomía',
+  'amígdal': 'amigdalectomía',
+  'amigdal': 'amigdalectomía',
+  'colecist': 'colecistectomía',
+  'vesícula': 'colecistectomía',
+  'vesicula': 'colecistectomía',
+  'hernia': 'herniorrafia',
+  'cesárea': 'cesárea',
+  'cesarea': 'cesárea',
+};
+
+/// Normalizes colloquial uncertain-surgery lines in patologicos.
+///
+/// Lines like "Creo que de niño me operaron del apéndice, no me acuerdo bien"
+/// become "Antecedente quirúrgico incierto: probable apendicectomía en infancia."
+///
+/// Only processes lines that contain BOTH a surgical keyword AND an
+/// uncertainty marker. Other lines are left unchanged.
+///
+/// PHI-safe: never logs clinical content.
+void _normalizeUncertainSurgery(Map<String, dynamic> out) {
+  final patText = _readAnteField(out, 'patologicos');
+  if (patText == null || patText.isEmpty) return;
+
+  final lines = patText.split('\n');
+  final result = <String>[];
+  bool changed = false;
+
+  for (final line in lines) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) continue;
+
+    final lower = trimmed.toLowerCase();
+
+    // Only process lines with BOTH surgical keywords AND uncertainty.
+    final hasSurgical = _matchesAny(lower, const [
+      'cirug', 'operad', 'operar', 'operó', 'operaci', 'operación',
+      'intervenc', 'intervención', 'apendicect', 'colecist', 'amigdal',
+      'apéndice', 'apendice', 'vesícula', 'vesicula', 'hernia',
+      'cesárea', 'cesarea',
+    ]);
+    if (!hasSurgical || !_kUncertaintyRe.hasMatch(lower)) {
+      result.add(trimmed);
+      continue;
+    }
+
+    // Determine procedure name.
+    String? procedure;
+    for (final entry in _kProcedureNorms.entries) {
+      if (lower.contains(entry.key)) {
+        procedure = entry.value;
+        break;
+      }
+    }
+    procedure ??= 'cirugía';
+
+    // Determine age context.
+    final inChildhood = lower.contains('niño') ||
+        lower.contains('niña') ||
+        lower.contains('pequeño') ||
+        lower.contains('pequeña') ||
+        lower.contains('infancia');
+
+    final ageSuffix = inChildhood ? ' en infancia' : '';
+    final normalized =
+        'Antecedente quirúrgico incierto: probable $procedure$ageSuffix.';
+    result.add(normalized);
+    changed = true;
+  }
+
+  if (!changed) return;
+
+  final ante = _ensureAntecedentes(out);
+  if (result.isEmpty) {
+    ante.remove('patologicos');
+  } else {
+    ante['patologicos'] = result.join('\n');
+  }
+  if (ante.isEmpty) out.remove('antecedentes');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// No-patologicos transcript inference
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Tobacco-related patterns for transcript inference.
+final _kTabacoInferenceRe = RegExp(
+  r'no\s+fum[oa]|niega\s+tabaquismo|niega\s+tabaco|no\s+tabaquismo',
+  caseSensitive: false,
+);
+
+/// Alcohol-denial patterns.
+final _kAlcoholDenialRe = RegExp(
+  r'no\s+(?:tomo?|bebo?)\s+alcohol|niega\s+alcohol|no\s+alcohol',
+  caseSensitive: false,
+);
+
+/// Social-drinking patterns.
+final _kAlcoholSocialRe = RegExp(
+  r'(?:social(?:mente)?|s[aá]bado|fin\s+de\s+semana|chela|cerveza|copa|ocasional)',
+  caseSensitive: false,
+);
+
+/// Social-drinking patterns (extended for transcript inference).
+final _kAlcoholSocialExtendedRe = RegExp(
+  r'(?:social(?:mente)?|s[aá]bado|fin\s+de\s+semana|chela|cerveza|copa|'
+  r'ocasional|de\s+vez\s+en\s+cuando|no\s+tomo?\s+diario|'
+  r'no\s+(?:tomo?|bebo?)\s+(?:seguido|mucho))',
+  caseSensitive: false,
+);
+
+/// Infers no_patologicos from negation list and transcript fields when
+/// the field is empty or missing alcohol info after all sanitization.
+///
+/// Conservative: only writes when strong keyword match is found.
+/// Also checks raw stash fields for social-drinking cues.
+/// PHI-safe: never logs clinical content.
+void _inferNoPatFromTranscript(
+  Map<String, dynamic> raw,
+  Map<String, dynamic> data,
+  Map<String, dynamic> out,
+) {
+  final existingNoPat = _readAnteField(out, 'no_patologicos');
+  final alreadyHasAlcohol = existingNoPat != null &&
+      existingNoPat.toLowerCase().contains('alcohol');
+  final fieldIsEmpty = !_hasAnteField(out, 'no_patologicos');
+
+  // If field already has both tobacco AND alcohol, nothing to do.
+  if (!fieldIsEmpty && alreadyHasAlcohol) return;
+
+  final negList = _extractNegationsList(raw, data);
+
+  // Collect all text sources for inference (including raw stash).
+  final sources = <String>[];
+  for (final n in negList) {
+    sources.add(n.toLowerCase());
+  }
+  for (final key in [
+    'motivo_consulta',
+    'padecimiento_actual',
+    '_raw_padecimiento_actual',
+    '_raw_motivo_consulta',
+  ]) {
+    final val = out[key];
+    if (val is String && val.trim().isNotEmpty) {
+      sources.add(val.toLowerCase());
+    }
+  }
+  if (sources.isEmpty) return;
+
+  final allText = sources.join(' ');
+
+  final lines = <String>[];
+
+  // Tobacco inference (only when field is empty).
+  if (fieldIsEmpty) {
+    final hasTabacoNeg = negList.any(
+      (n) {
+        final l = n.toLowerCase();
+        return l.contains('tabaco') ||
+            l.contains('tabaquismo') ||
+            l.contains('fumo') ||
+            l.contains('fuma');
+      },
+    );
+    if (hasTabacoNeg || _kTabacoInferenceRe.hasMatch(allText)) {
+      lines.add('No tabaquismo.');
+    }
+  }
+
+  // Alcohol inference.
+  // When field already exists (tobacco only), only append alcohol if
+  // there's explicit social-drinking evidence — NOT from plain denial.
+  if (!alreadyHasAlcohol) {
+    final hasAlcoholNeg = negList.any(
+      (n) {
+        final l = n.toLowerCase();
+        return l.contains('alcohol') ||
+            l.contains('bebo') ||
+            l.contains('bebe');
+      },
+    );
+    final hasSocialEvidence = _kAlcoholSocialExtendedRe.hasMatch(allText);
+
+    if (fieldIsEmpty) {
+      // Field is empty → full inference (denial or social).
+      if (hasAlcoholNeg || _kAlcoholDenialRe.hasMatch(allText)) {
+        lines.add(hasSocialEvidence ? 'Alcohol social.' : 'No alcohol.');
+      } else if (hasSocialEvidence) {
+        lines.add('Alcohol social.');
+      }
+    } else if (hasSocialEvidence) {
+      // Field exists but missing alcohol → only append with social evidence.
+      lines.add('Alcohol social.');
+    }
+  }
+
+  if (lines.isEmpty) return;
+
+  if (fieldIsEmpty) {
+    _ensureAntecedentes(out)['no_patologicos'] = lines.join('\n');
+  } else {
+    // Append alcohol line to existing no_patologicos.
+    final ante = _ensureAntecedentes(out);
+    ante['no_patologicos'] = '$existingNoPat\n${lines.join('\n')}';
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// False medication-negation removal
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Medication names whose presence in motivo_consulta or
+/// padecimiento_actual contradicts "Niega medicamentos."
+const _kMedicationEvidence = [
+  'ibuprofeno',
+  'paracetamol',
+  'naproxeno',
+  'diclofenaco',
+  'aspirina',
+  'amoxicilina',
+  'azitromicina',
+  'ciprofloxacin',
+  'gotas',
+  'gotitas',
+  'pomada',
+  'crema',
+  'antibiótic',
+  'antibiotico',
+  'antiinflamatori',
+  'analgésic',
+  'analgesic',
+  'omeprazol',
+  'loratadina',
+  'cetirizina',
+  'clindamicina',
+  'dexametasona',
+  'prednisona',
+  'pastilla',
+  'medicina',
+];
+
+/// Removes "Niega medicamentos." from patologicos when motivo_consulta
+/// or padecimiento_actual mentions a specific medication.
+///
+/// PHI-safe: never logs clinical content.
+void _removeFalseMedicationNegation(Map<String, dynamic> out) {
+  final patText = _readAnteField(out, 'patologicos');
+  if (patText == null || patText.isEmpty) return;
+
+  // Check if any line is "Niega medicamentos."
+  final lines = patText.split('\n');
+  final hasMedNeg = lines.any((l) {
+    final lower = l.trim().toLowerCase().replaceAll(RegExp(r'[.\s]+$'), '');
+    return lower == 'niega medicamentos' || lower == 'no medicamentos';
+  });
+  if (!hasMedNeg) return;
+
+  // Check for medication evidence in clinical fields AND raw stash.
+  bool hasMedEvidence = false;
+  for (final key in [
+    'motivo_consulta',
+    'padecimiento_actual',
+    '_raw_padecimiento_actual',
+    '_raw_motivo_consulta',
+  ]) {
+    final val = out[key];
+    if (val is String) {
+      final lower = val.toLowerCase();
+      if (_kMedicationEvidence.any(lower.contains)) {
+        hasMedEvidence = true;
+        break;
+      }
+    }
+  }
+  if (!hasMedEvidence) return;
+
+  // Remove the false negation line.
+  final kept = lines.where((l) {
+    final lower = l.trim().toLowerCase().replaceAll(RegExp(r'[.\s]+$'), '');
+    return lower != 'niega medicamentos' && lower != 'no medicamentos';
+  }).toList();
+
+  final ante = _ensureAntecedentes(out);
+  if (kept.isEmpty) {
+    ante.remove('patologicos');
+  } else {
+    ante['patologicos'] = kept.join('\n');
+  }
+  if (ante.isEmpty) out.remove('antecedentes');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Generic motivo normalization
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Context-based normalization rules for single-word generic motivo_consulta.
+///
+/// Each entry: (motivo word, PA context keywords, normalized output).
+const _kGenericMotivoNormRules = <(String, List<String>, String)>[
+  ('congestión', ['nariz', 'rinorrea', 'nasal', 'moco'], 'Congestión nasal'),
+  ('congestion', ['nariz', 'rinorrea', 'nasal', 'moco'], 'Congestión nasal'),
+  (
+    'disminución',
+    ['audición', 'audicion', 'oído', 'oido', 'escuchar', 'hipoacusia'],
+    'Hipoacusia',
+  ),
+  (
+    'disminucion',
+    ['audición', 'audicion', 'oído', 'oido', 'escuchar', 'hipoacusia'],
+    'Hipoacusia',
+  ),
+  (
+    'mareo',
+    ['vueltas', 'gira', 'vértigo', 'vertigo', 'rotatorio'],
+    'Vértigo',
+  ),
+];
+
+/// Multiword motivo normalization rules.
+///
+/// Each entry: (motivo keyword to match, PA context keywords, normalized output).
+/// When motivo *contains* the keyword (not exact match) and PA contains
+/// at least one context keyword, motivo is replaced.
+const _kMultiwordMotivoNormRules = <(String, List<String>, String)>[
+  // "Mareo desde ayer..." + rotational PA → "Vértigo"
+  (
+    'mareo',
+    [
+      'vueltas', 'gira', 'al acostarse', 'mueve la cabeza',
+      'vértigo', 'vertigo', 'rotatorio', 'posicional',
+    ],
+    'Vértigo',
+  ),
+  // "Dolor de oído derecho" → "Otalgia derecha/izquierda"
+  (
+    'dolor de oído',
+    ['oído', 'oido', 'otalgia'],
+    'Otalgia',
+  ),
+  (
+    'dolor de oido',
+    ['oído', 'oido', 'otalgia'],
+    'Otalgia',
+  ),
+];
+
+/// Normalizes generic motivo_consulta using context from
+/// padecimiento_actual.
+///
+/// Handles both single-word motivos (exact match against
+/// [_kGenericMotivoNormRules]) and short multiword motivos
+/// (keyword match against [_kMultiwordMotivoNormRules]).
+///
+/// Appends laterality from PA when applicable.
+///
+/// PHI-safe: never logs clinical content.
+void _normalizeGenericMotivo(Map<String, dynamic> out) {
+  final motivo = out['motivo_consulta'];
+  if (motivo is! String || motivo.trim().isEmpty) return;
+
+  final cleaned = motivo
+      .trim()
+      .replaceAll(RegExp(r'[.,;:]+$'), '')
+      .trim();
+
+  final pa = out['padecimiento_actual'];
+  final paLower = (pa is String && pa.trim().isNotEmpty)
+      ? pa.toLowerCase()
+      : '';
+
+  final motivoLower = cleaned.toLowerCase();
+
+  // Single-word exact match.
+  if (cleaned.split(RegExp(r'\s+')).length == 1 && paLower.isNotEmpty) {
+    for (final (word, contextKws, replacement) in _kGenericMotivoNormRules) {
+      if (motivoLower != word) continue;
+      if (contextKws.any(paLower.contains)) {
+        // Append laterality if applicable and replacement supports it.
+        final laterality = _extractLaterality(paLower);
+        if (laterality != null &&
+            const ['Hipoacusia', 'Vértigo'].contains(replacement)) {
+          out['motivo_consulta'] = '$replacement $laterality';
+        } else {
+          out['motivo_consulta'] = replacement;
+        }
+        return;
+      }
+    }
+  }
+
+  // Multiword keyword match (only for short motivos ≤4 content words).
+  final motivoWords = cleaned
+      .split(RegExp(r'\s+'))
+      .where((w) => !_kMotivoStopWords.contains(w.toLowerCase()))
+      .toList();
+  if (motivoWords.length <= 4 && paLower.isNotEmpty) {
+    for (final (keyword, contextKws, replacement)
+        in _kMultiwordMotivoNormRules) {
+      if (!motivoLower.contains(keyword)) continue;
+      // Context must come from PA, not motivo itself.
+      if (!contextKws.any(paLower.contains)) continue;
+
+      // Append laterality.
+      final laterality =
+          _extractLaterality(motivoLower) ?? _extractLaterality(paLower);
+      if (laterality != null) {
+        // Feminize if needed.
+        final isFem = const ['Otalgia', 'Hipoacusia'].contains(replacement);
+        final lat = isFem
+            ? laterality
+                  .replaceAll('derecho', 'derecha')
+                  .replaceAll('izquierdo', 'izquierda')
+            : laterality;
+        out['motivo_consulta'] = '$replacement $lat';
+      } else {
+        out['motivo_consulta'] = replacement;
+      }
+      return;
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Heredofamiliares semantic deduplication
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Disease synonym groups for family-history deduplication.
+/// Each group maps to a canonical key used for dedup.
+const _kFamilyDiseaseGroups = <String, List<String>>{
+  'hipertensión': [
+    'hipertenso',
+    'hipertensa',
+    'hipertensión',
+    'hipertension',
+    'hta',
+    'hipertensión arterial',
+    'hipertension arterial',
+  ],
+  'diabetes': [
+    'diabetes',
+    'diabético',
+    'diabetico',
+    'diabética',
+    'diabetica',
+    'dm',
+    'dm2',
+    'diabetes mellitus',
+  ],
+  'cáncer': [
+    'cáncer', 'cancer',
+    'ca ', // abbreviation with trailing space
+    'neoplasia', 'tumor',
+  ],
+  'asma': ['asma', 'asmático', 'asmatico', 'asmática', 'asmatica'],
+};
+
+/// Family-member roots for extraction.
+const _kFamilyMemberRoots = [
+  'padre', 'madre', 'hermano', 'hermana', 'abuelo', 'abuela',
+  'tío', 'tio', 'tía', 'tia', 'primo', 'prima', 'hijo', 'hija',
+  'familiar',
+];
+
+/// Returns canonical (member, disease) key for a family-history line,
+/// or `null` if extraction fails.
+(String, String)? _canonicalizeFamilyEntry(String line) {
+  final lower = line.toLowerCase().trim();
+
+  // Extract family member.
+  String? member;
+  for (final root in _kFamilyMemberRoots) {
+    if (lower.contains(root)) {
+      member = root;
+      break;
+    }
+  }
+  if (member == null) return null;
+
+  // Extract canonical disease.
+  for (final entry in _kFamilyDiseaseGroups.entries) {
+    for (final synonym in entry.value) {
+      if (lower.contains(synonym)) {
+        return (member, entry.key);
+      }
+    }
+  }
+  return null;
+}
+
+/// Deduplicates heredofamiliares lines by (member, canonical disease).
+///
+/// Splits on newlines, periods, and semicolons so compound entries like
+/// "Padre hipertenso, madre con diabetes. Padre con hipertensión arterial."
+/// are properly separated before dedup.
+///
+/// Keeps the longest entry for each unique (member, disease) pair.
+/// Lines that cannot be canonicalized are always kept.
+///
+/// PHI-safe: never logs clinical content.
+void _dedupHeredofamiliares(Map<String, dynamic> out) {
+  final text = _readAnteField(out, 'heredofamiliares');
+  if (text == null || text.isEmpty) return;
+
+  // Split on newlines, periods, and semicolons for robust parsing.
+  final lines = text
+      .split(RegExp(r'[\n;.]+'))
+      .map((l) => l.trim())
+      .where((l) => l.length > 2)
+      .toList();
+  if (lines.length <= 1) return;
+
+  final seen = <(String, String)>{};
+  final kept = <String>[];
+
+  // Sort longest first so the most complete entry wins.
+  final sorted = List<String>.from(lines)
+    ..sort((a, b) => b.length.compareTo(a.length));
+
+  for (final line in sorted) {
+    final key = _canonicalizeFamilyEntry(line);
+    if (key == null || seen.add(key)) {
+      kept.add(line);
+    }
+  }
+
+  // Restore original order among kept lines.
+  final keptSet = kept.toSet();
+  final ordered = lines.where(keptSet.contains).toList();
+
+  if (ordered.length == lines.length) return; // No change.
+
+  final ante = _ensureAntecedentes(out);
+  if (ordered.isEmpty) {
+    ante.remove('heredofamiliares');
+  } else {
+    // Format each line with capitalization and trailing period.
+    final formatted = ordered
+        .map(_formatSegment)
+        .where((l) => l.isNotEmpty)
+        .toList();
+    ante['heredofamiliares'] = formatted.join('\n');
+  }
+  if (ante.isEmpty) out.remove('antecedentes');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Neurological/systemic negation filter for patologicos
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Neurological/systemic symptom keywords that do NOT belong in
+/// antecedentes.patologicos. These are symptom negations that should
+/// route to padecimiento_actual instead.
+const _kNeurologicalSymptomKeywords = [
+  'debilidad',
+  'visión doble',
+  'vision doble',
+  'pérdida de la conciencia',
+  'perdida de la conciencia',
+  'pérdida del conocimiento',
+  'perdida del conocimiento',
+  'síncope',
+  'sincope',
+  'parálisis',
+  'paralisis',
+  'parestesia',
+  'entumecimiento',
+  'adormecimiento',
+  'disfagia',
+  'disartria',
+  'convulsión',
+  'convulsion',
+  'temblor',
+];
+
+/// Removes neurological/systemic symptom negation lines from
+/// antecedentes.patologicos and optionally appends them to the
+/// padecimiento_actual negation sentence.
+///
+/// PHI-safe: never logs clinical content.
+void _filterNeurologicalNegationsFromPat(Map<String, dynamic> out) {
+  final patText = _readAnteField(out, 'patologicos');
+  if (patText == null || patText.isEmpty) return;
+
+  final lines = patText.split('\n');
+  final kept = <String>[];
+  final removed = <String>[];
+
+  for (final line in lines) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) continue;
+
+    final lower = trimmed
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^\p{L}\p{N}\s]', unicode: true), '')
+        .trim();
+
+    // Only filter negation lines (Niega/No ...).
+    if (!_hasNegPrefix(trimmed)) {
+      kept.add(trimmed);
+      continue;
+    }
+
+    if (_kNeurologicalSymptomKeywords.any(lower.contains)) {
+      // Extract the symptom topic for PA routing.
+      final topic = _stripNegPrefixLower(trimmed)
+          .replaceAll(RegExp(r'[.\s]+$'), '')
+          .trim();
+      if (topic.isNotEmpty) removed.add(topic);
+    } else {
+      kept.add(trimmed);
+    }
+  }
+
+  if (removed.isEmpty) return;
+
+  // Update patologicos.
+  final ante = _ensureAntecedentes(out);
+  if (kept.isEmpty) {
+    ante.remove('patologicos');
+  } else {
+    ante['patologicos'] = kept.join('\n');
+  }
+  if (ante.isEmpty) out.remove('antecedentes');
+
+  // Append removed neuro negations to padecimiento_actual.
+  final existing = out['padecimiento_actual'];
+  final existingText = (existing is String && existing.trim().isNotEmpty)
+      ? existing.trim()
+      : '';
+  final existingLower = existingText.toLowerCase();
+
+  // Filter out topics already mentioned in PA.
+  final toAppend = removed
+      .where((t) => !existingLower.contains(t.toLowerCase()))
+      .toList();
+  if (toAppend.isEmpty) return;
+
+  final sentence = _createSymptomNegationSentence(toAppend);
+  if (existingLower.contains(sentence.toLowerCase())) return;
+
+  out['padecimiento_actual'] = existingText.isEmpty
+      ? sentence
+      : '$existingText\n$sentence';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Garbage/redundant patologicos cleanup
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Negation bodies that are clinically meaningless as antecedentes.
+/// These are bare-word negations that lack a specific disease target.
+const _kGarbagePatBodies = <String>{
+  'pérdida',
+  'perdida',
+  'patológicos',
+  'patologicos',
+  'antecedentes',
+  'enfermedades',
+  'enfermedad',
+  'problemas',
+  'nada',
+  'algo',
+  'todo',
+};
+
+/// Surgical negation root keywords for collapse detection.
+const _kSurgicalNegRoots = [
+  'cirugía',
+  'cirugia',
+  'cirugías',
+  'cirugias',
+  'operación',
+  'operacion',
+  'operaciones',
+  'intervención',
+  'intervencion',
+  'intervenciones',
+];
+
+/// Removes garbage negation lines from patologicos and collapses
+/// duplicate surgical negations into a single canonical line.
+///
+/// Garbage lines: "Niega pérdida.", "Niega patológicos.", etc.
+/// Surgical collapse: "Niega cirugías recientes." + "Niega cirugías previas."
+/// → "Niega cirugías."
+///
+/// PHI-safe: never logs clinical content.
+void _cleanGarbageAndCollapseSurgicalPat(Map<String, dynamic> out) {
+  final patText = _readAnteField(out, 'patologicos');
+  if (patText == null || patText.isEmpty) return;
+
+  final lines = patText.split('\n');
+  final kept = <String>[];
+  var surgicalNegCount = 0;
+  bool changed = false;
+
+  for (final line in lines) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) continue;
+
+    final body = _stripNegPrefixLower(trimmed)
+        .replaceAll(RegExp(r'[.\s]+$'), '')
+        .trim();
+
+    // Remove garbage bodies.
+    if (_hasNegPrefix(trimmed) && _kGarbagePatBodies.contains(body)) {
+      changed = true;
+      continue;
+    }
+
+    // Detect surgical negation lines for collapse.
+    if (_hasNegPrefix(trimmed) &&
+        _kSurgicalNegRoots.any(body.contains)) {
+      surgicalNegCount++;
+      if (surgicalNegCount > 1) {
+        changed = true;
+        continue; // Drop duplicates; first one already kept.
+      }
+      // Normalize the first surgical negation to canonical form.
+      kept.add('Niega cirugías.');
+      changed = true;
+      continue;
+    }
+
+    kept.add(trimmed);
+  }
+
+  if (!changed) return;
+
+  final ante = _ensureAntecedentes(out);
+  if (kept.isEmpty) {
+    ante.remove('patologicos');
+  } else {
+    ante['patologicos'] = kept.join('\n');
+  }
+  if (ante.isEmpty) out.remove('antecedentes');
 }
 
 /// Copies [key] from [src] to [dst] only if non-null,

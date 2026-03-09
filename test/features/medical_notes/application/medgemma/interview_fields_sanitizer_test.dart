@@ -209,14 +209,15 @@ void main() {
 
     test('compound entry with colon: '
         '"alergias, diabetes y alergias:" '
-        '→ deduplicated lines in pat', () {
+        '→ alergias routed to alergias bucket, diabetes to pat', () {
       final c = classifyNegations(['alergias, diabetes y alergias:']);
-      // "alergias" matches _kPatKeywords via "alerg"
-      // "diabetes" matches _kPatKeywords
+      // "alergias" matches _kAllergyKeywords → alergias bucket
+      // "diabetes" matches _kPatKeywords → pat bucket
       // Duplicate "alergias" is removed.
-      expect(c.pat, hasLength(2));
-      expect(c.pat, contains('No alergias.'));
+      expect(c.pat, hasLength(1));
       expect(c.pat, contains('No diabetes.'));
+      expect(c.alergias, hasLength(1));
+      expect(c.alergias, contains('No alergias.'));
       expect(c.noPat, isEmpty);
     });
 
@@ -280,10 +281,11 @@ void main() {
 
     // ── Dangling prepositions stripped ─────────────────────────────
 
-    test('"alergias a" → pat ["Niega alergias."] '
+    test('"alergias a" → alergias ["Niega alergias."] '
         '(dangling preposition stripped)', () {
       final c = classifyNegations(['alergias a']);
-      expect(c.pat, ['Niega alergias.']);
+      expect(c.alergias, ['Niega alergias.']);
+      expect(c.pat, isEmpty);
     });
 
     // ── Fix B2: "niego" normalized to "niega" ─────────────────────
@@ -309,8 +311,8 @@ void main() {
     test('subsumption: shorter line removed when longer '
         'exists in same bucket', () {
       final c = classifyNegations(['No alergias', 'No alergias conocidas']);
-      expect(c.pat, hasLength(1));
-      expect(c.pat.first, 'No alergias conocidas.');
+      expect(c.alergias, hasLength(1));
+      expect(c.alergias.first, 'No alergias conocidas.');
     });
 
     test('subsumption does not remove across buckets', () {
@@ -408,7 +410,8 @@ void main() {
       expect(ante['heredofamiliares'], 'DM2');
       expect(ante['patologicos'], 'Cirugia previa.');
       expect(ante['no_patologicos'], 'sedentarismo');
-      expect(ante.containsKey('alergias'), isFalse);
+      // 'alergias' is now an allowed antecedentes key.
+      expect(ante.containsKey('alergias'), isTrue);
       expect(ante.containsKey('quirurgicos'), isFalse);
     });
 
@@ -612,9 +615,10 @@ void main() {
       final result = sanitizeInterviewFields(input);
 
       final ante = result['antecedentes'] as Map<String, dynamic>;
-      // "alergias a medicamentos" keeps the preposition (not dangling).
-      // "diabetes" gets "No " prefix.
-      expect(ante['patologicos'], 'No alergias a medicamentos.\nNo diabetes.');
+      // "alergias a medicamentos" → alergias bucket (not dangling).
+      // "diabetes" → pat bucket with "No " prefix.
+      expect(ante['alergias'], 'No alergias a medicamentos.');
+      expect(ante['patologicos'], 'No diabetes.');
     });
 
     test('reads negaciones (Spanish key) as well', () {
@@ -962,18 +966,19 @@ void main() {
     test('"alergias, diabetes y alergias:" '
         '→ deduplicated pat lines', () {
       final c = classifyNegations(['alergias, diabetes y alergias:']);
-      // alergias matches via "alerg" keyword → pat
+      // alergias matches via "alerg" keyword → alergias bucket
       // diabetes → pat
       // Duplicate alergias removed.
-      expect(c.pat, hasLength(2));
-      expect(c.pat.any((l) => l.contains('alergias')), isTrue);
+      expect(c.pat, hasLength(1));
       expect(c.pat.any((l) => l.contains('diabetes')), isTrue);
+      expect(c.alergias, hasLength(1));
+      expect(c.alergias.any((l) => l.contains('alergias')), isTrue);
       expect(c.noPat, isEmpty);
     });
 
     test('each resulting line ends with period', () {
       final c = classifyNegations(['alergias, diabetes y alergias:']);
-      for (final line in [...c.pat, ...c.noPat]) {
+      for (final line in [...c.pat, ...c.noPat, ...c.alergias]) {
         expect(
           line.endsWith('.'),
           isTrue,
@@ -984,7 +989,7 @@ void main() {
 
     test('no resulting line contains trailing colon', () {
       final c = classifyNegations(['niega diabetes:', 'alergias:']);
-      for (final line in [...c.pat, ...c.noPat]) {
+      for (final line in [...c.pat, ...c.noPat, ...c.alergias]) {
         expect(
           line.contains(':'),
           isFalse,
@@ -2660,18 +2665,25 @@ void main() {
       );
 
       // Disease negation from negations list is still present.
-      expect(pat.contains('Niega diabetes.'), isTrue,
-          reason: 'Diabetes negation must be in patologicos');
+      expect(
+        pat.contains('Niega diabetes.'),
+        isTrue,
+        reason: 'Diabetes negation must be in patologicos',
+      );
 
       // Symptom negations are never recovered into patologicos, even
       // when the backend dump had an explicit "Niega" prefix. The
       // recovery guards now filter symptoms and habits.
-      expect(pat.contains('fiebre'), isFalse,
-          reason: 'Symptom "fiebre" must not be recovered into patologicos');
       expect(
-          RegExp(r'\bniega\s+tos\b', caseSensitive: false).hasMatch(pat),
-          isFalse,
-          reason: 'Symptom "tos" must not be recovered into patologicos');
+        pat.contains('fiebre'),
+        isFalse,
+        reason: 'Symptom "fiebre" must not be recovered into patologicos',
+      );
+      expect(
+        RegExp(r'\bniega\s+tos\b', caseSensitive: false).hasMatch(pat),
+        isFalse,
+        reason: 'Symptom "tos" must not be recovered into patologicos',
+      );
     });
 
     test('preserved lines without negation prefix stay unchanged', () {
@@ -2799,10 +2811,7 @@ void main() {
       expect(result, contains('Rinoplastia en 2021.'));
       expect(result, contains('Colecistectomía hace 8 años.'));
       expect(result.any((l) => l.toLowerCase().contains('niega')), isFalse);
-      expect(
-        result.any((l) => l.toLowerCase().contains('no he')),
-        isFalse,
-      );
+      expect(result.any((l) => l.toLowerCase().contains('no he')), isFalse);
     });
 
     // ── Case D: integration — pipeline never produces "Otras cirugías." ─
@@ -2901,7 +2910,10 @@ void main() {
         reason: '"otras cirugías" must not be preserved as affirmative',
       );
       // Real affirmative surgery still preserved.
-      expect(result.any((l) => l.toLowerCase().contains('septoplastia')), isTrue);
+      expect(
+        result.any((l) => l.toLowerCase().contains('septoplastia')),
+        isTrue,
+      );
     });
 
     test('A: "cirugías previas" (bare) is NOT preserved', () {
@@ -3093,8 +3105,14 @@ void main() {
         negations: ['fiebre'],
       );
       expect(result, hasLength(2));
-      expect(result.any((l) => l.toLowerCase().contains('septoplastia')), isTrue);
-      expect(result.any((l) => l.toLowerCase().contains('colecistectomía')), isTrue);
+      expect(
+        result.any((l) => l.toLowerCase().contains('septoplastia')),
+        isTrue,
+      );
+      expect(
+        result.any((l) => l.toLowerCase().contains('colecistectomía')),
+        isTrue,
+      );
     });
 
     test('regression: "cirugía de rodilla" is NOT a placeholder', () {
@@ -3117,77 +3135,96 @@ void main() {
     // with real surgical history (including a composite "y una" token).
     // Expected: all explicit negations from negList appear, composite
     // token is split into two separate lines, no duplicates.
-    test('full target scenario: medicamentos, tos, surgeries, no duplicates',
-        () {
-      final input = <String, dynamic>{
-        'motivo_consulta': 'control',
-        'antecedentes': {
-          'patologicos':
-              'Niega medicamentos. Niega tos. Niega otras cirugías. '
-              'Niega diabetes. Niega problemas de tiroides. '
-              'Septoplastia hace 4 años y una cirugía de rodilla cuando '
-              'tenía 20. '
-              'Cirugía de rodilla cuando tenía 20.',
-        },
-        'negaciones': [
-          'medicamentos',
-          'tos',
-          'otras cirugías',
-          'diabetes',
-          'problemas de tiroides',
-        ],
-      };
+    test(
+      'full target scenario: medicamentos, tos, surgeries, no duplicates',
+      () {
+        final input = <String, dynamic>{
+          'motivo_consulta': 'control',
+          'antecedentes': {
+            'patologicos':
+                'Niega medicamentos. Niega tos. Niega otras cirugías. '
+                'Niega diabetes. Niega problemas de tiroides. '
+                'Septoplastia hace 4 años y una cirugía de rodilla cuando '
+                'tenía 20. '
+                'Cirugía de rodilla cuando tenía 20.',
+          },
+          'negaciones': [
+            'medicamentos',
+            'tos',
+            'otras cirugías',
+            'diabetes',
+            'problemas de tiroides',
+          ],
+        };
 
-      final result = sanitizeInterviewFields(input);
-      final ante = result['antecedentes'] as Map<String, dynamic>;
-      final pat = ante['patologicos'] as String;
-      final lines = pat.split('\n').map((l) => l.trim()).toList();
+        final result = sanitizeInterviewFields(input);
+        final ante = result['antecedentes'] as Map<String, dynamic>;
+        final pat = ante['patologicos'] as String;
+        final lines = pat.split('\n').map((l) => l.trim()).toList();
 
-      // Unrecognised negations (medicamentos) are still recovered because
-      // they match no keyword list. Symptom negations (tos) are now
-      // blocked by the recovery guard.
-      expect(pat.toLowerCase().contains('medicamentos'), isTrue,
-          reason: '"Niega medicamentos." must not be dropped');
-      expect(
-          RegExp(r'\bniega\s+tos\b', caseSensitive: false)
-              .hasMatch(pat.toLowerCase()),
+        // Unrecognised negations (medicamentos) are still recovered because
+        // they match no keyword list. Symptom negations (tos) are now
+        // blocked by the recovery guard.
+        expect(
+          pat.toLowerCase().contains('medicamentos'),
+          isTrue,
+          reason: '"Niega medicamentos." must not be dropped',
+        );
+        expect(
+          RegExp(
+            r'\bniega\s+tos\b',
+            caseSensitive: false,
+          ).hasMatch(pat.toLowerCase()),
           isFalse,
-          reason: 'Symptom "tos" must not be recovered into patologicos');
-      expect(pat.toLowerCase().contains('diabetes'), isTrue,
-          reason: '"Niega diabetes." must be present');
-      expect(pat.toLowerCase().contains('tiroides'), isTrue,
-          reason: '"Niega problemas de tiroides." must be present');
+          reason: 'Symptom "tos" must not be recovered into patologicos',
+        );
+        expect(
+          pat.toLowerCase().contains('diabetes'),
+          isTrue,
+          reason: '"Niega diabetes." must be present',
+        );
+        expect(
+          pat.toLowerCase().contains('tiroides'),
+          isTrue,
+          reason: '"Niega problemas de tiroides." must be present',
+        );
 
-      // "otras cirugías" must never appear as an affirmative.
-      expect(
-        pat.toLowerCase().contains('otras cirugías'),
-        isFalse,
-        reason: '"Otras cirugías." must never appear as affirmative',
-      );
+        // "otras cirugías" must never appear as an affirmative.
+        expect(
+          pat.toLowerCase().contains('otras cirugías'),
+          isFalse,
+          reason: '"Otras cirugías." must never appear as affirmative',
+        );
 
-      // Composite token split into two separate surgical lines.
-      expect(
-        pat.toLowerCase().contains('septoplastia'),
-        isTrue,
-        reason: '"Septoplastia hace 4 años." must be present',
-      );
-      expect(
-        pat.toLowerCase().contains('rodilla'),
-        isTrue,
-        reason: '"Cirugía de rodilla…" must be present',
-      );
+        // Composite token split into two separate surgical lines.
+        expect(
+          pat.toLowerCase().contains('septoplastia'),
+          isTrue,
+          reason: '"Septoplastia hace 4 años." must be present',
+        );
+        expect(
+          pat.toLowerCase().contains('rodilla'),
+          isTrue,
+          reason: '"Cirugía de rodilla…" must be present',
+        );
 
-      // No duplicate lines (final dedupe pass).
-      final rodillaLines =
-          lines.where((l) => l.toLowerCase().contains('rodilla')).toList();
-      expect(rodillaLines, hasLength(1),
-          reason: '"Cirugía de rodilla" must appear exactly once');
-    });
+        // No duplicate lines (final dedupe pass).
+        final rodillaLines = lines
+            .where((l) => l.toLowerCase().contains('rodilla'))
+            .toList();
+        expect(
+          rodillaLines,
+          hasLength(1),
+          reason: '"Cirugía de rodilla" must appear exactly once',
+        );
+      },
+    );
 
     // Composite split: standalone test for extractPreservableLines.
     test('extractPreservableLines splits "y una" composite token', () {
       final result = extractPreservableLines(
-        text: 'fiebre. tos. '
+        text:
+            'fiebre. tos. '
             'Septoplastia hace 4 años y una cirugía de rodilla cuando '
             'tenía 20. '
             'Cirugía de rodilla cuando tenía 20.',
@@ -3196,8 +3233,10 @@ void main() {
 
       // Two procedures, no duplicates.
       expect(result, hasLength(2));
-      expect(result.any((l) => l.toLowerCase().contains('septoplastia')),
-          isTrue);
+      expect(
+        result.any((l) => l.toLowerCase().contains('septoplastia')),
+        isTrue,
+      );
       expect(result.any((l) => l.toLowerCase().contains('rodilla')), isTrue);
     });
   });
@@ -3216,8 +3255,11 @@ void main() {
 
     test('classifyNegations: bare "he tenido" → neither pat nor noPat', () {
       final classified = classifyNegations(['he tenido']);
-      expect(classified.pat, isEmpty,
-          reason: '"he tenido" has no clinical noun → must be discarded');
+      expect(
+        classified.pat,
+        isEmpty,
+        reason: '"he tenido" has no clinical noun → must be discarded',
+      );
       expect(classified.noPat, isEmpty);
     });
 
@@ -3241,7 +3283,9 @@ void main() {
         'No he tenido hospitalizaciones recientes',
       ]);
       expect(
-        classified.pat.any((l) => l.toLowerCase().contains('hospitalizaciones')),
+        classified.pat.any(
+          (l) => l.toLowerCase().contains('hospitalizaciones'),
+        ),
         isTrue,
         reason: '"hospitalizaciones" must reach the pat bucket',
       );
@@ -3259,7 +3303,9 @@ void main() {
         'he tenido hospitalizaciones recientes',
       ]);
       expect(
-        classified.pat.any((l) => l.toLowerCase().contains('hospitalizaciones')),
+        classified.pat.any(
+          (l) => l.toLowerCase().contains('hospitalizaciones'),
+        ),
         isTrue,
         reason: 'Implicit form must also be normalized',
       );
@@ -3272,7 +3318,9 @@ void main() {
       ]);
       // "hospitalizaciones" → pat keyword
       expect(
-        classified.pat.any((l) => l.toLowerCase().contains('hospitalizaciones')),
+        classified.pat.any(
+          (l) => l.toLowerCase().contains('hospitalizaciones'),
+        ),
         isTrue,
       );
       // Both items present (no single garbage line).
@@ -3291,8 +3339,7 @@ void main() {
       final input = <String, dynamic>{
         'motivo_consulta': 'otalgia',
         'antecedentes': {
-          'patologicos':
-              'fiebre. dolor. tos. Niega he tenido. Niega diabetes.',
+          'patologicos': 'fiebre. dolor. tos. Niega he tenido. Niega diabetes.',
         },
         'negations': ['he tenido', 'fiebre', 'dolor', 'tos', 'diabetes'],
       };
@@ -3324,9 +3371,7 @@ void main() {
         'in negations → "Niega hospitalizaciones recientes." in pat', () {
       final input = <String, dynamic>{
         'motivo_consulta': 'otalgia',
-        'antecedentes': {
-          'patologicos': 'fiebre. dolor. tos.',
-        },
+        'antecedentes': {'patologicos': 'fiebre. dolor. tos.'},
         'negations': [
           'No he tenido hospitalizaciones recientes',
           'fiebre',
@@ -3517,23 +3562,38 @@ void main() {
       final pat = ante['patologicos'] as String? ?? '';
 
       // (a) No garbage token.
-      expect(pat.contains('Niega he tenido.'), isFalse,
-          reason: 'Garbage "Niega he tenido." must not appear');
+      expect(
+        pat.contains('Niega he tenido.'),
+        isFalse,
+        reason: 'Garbage "Niega he tenido." must not appear',
+      );
       expect(pat.contains('Niega he.'), isFalse);
 
       // (b) "No he tenido hospitalizaciones" not in PA.
-      expect(pa.toLowerCase().contains('no he tenido'), isFalse,
-          reason: '"No he tenido hospitalizaciones" must leave PA');
+      expect(
+        pa.toLowerCase().contains('no he tenido'),
+        isFalse,
+        reason: '"No he tenido hospitalizaciones" must leave PA',
+      );
 
       // (c) "hospitalizaciones" negation in pat.
-      expect(pat.toLowerCase().contains('hospitalizaciones'), isTrue,
-          reason: '"hospitalizaciones" must appear in patologicos');
+      expect(
+        pat.toLowerCase().contains('hospitalizaciones'),
+        isTrue,
+        reason: '"hospitalizaciones" must appear in patologicos',
+      );
 
       // (d) "hace años" sentence moved out of PA.
-      expect(pa.toLowerCase().contains('hace años'), isFalse,
-          reason: '"hace años" sentence must leave PA');
-      expect(pat.toLowerCase().contains('hace años'), isTrue,
-          reason: '"hace años" sentence must be in patologicos');
+      expect(
+        pa.toLowerCase().contains('hace años'),
+        isFalse,
+        reason: '"hace años" sentence must leave PA',
+      );
+      expect(
+        pat.toLowerCase().contains('hace años'),
+        isTrue,
+        reason: '"hace años" sentence must be in patologicos',
+      );
     });
   });
 
@@ -3550,12 +3610,13 @@ void main() {
       // If _kTrailingConnectorRe still used \bo\b, the trailing 'o'
       // would be stripped because 'ñ' is not ASCII (non-word char),
       // creating a \b boundary between 'ñ' and 'o'.
-      final result = splitNegationStringToLines(
-        'operado cuando era niño',
-      );
+      final result = splitNegationStringToLines('operado cuando era niño');
       // Non-negation string → returned unchanged (no truncation).
-      expect(result, 'operado cuando era niño',
-          reason: '"niño" must not be truncated to "niñ"');
+      expect(
+        result,
+        'operado cuando era niño',
+        reason: '"niño" must not be truncated to "niñ"',
+      );
       expect(result.endsWith('niño'), isTrue);
       // 'niñ.' (period appended after truncation) must not appear.
       expect(result.contains('niñ.'), isFalse);
@@ -3579,10 +3640,7 @@ void main() {
     });
 
     test('"no fuma ni" still strips trailing connector', () {
-      expect(
-        splitNegationStringToLines('no fuma ni'),
-        'No fuma.',
-      );
+      expect(splitNegationStringToLines('no fuma ni'), 'No fuma.');
     });
 
     test('"cirugía de amígdalas cuando era niño" preserved in '
@@ -3624,13 +3682,7 @@ void main() {
               'Niega fiebre. Niega tos. Niega dolor. Niega mareo. '
               'Niega diabetes.',
         },
-        'negations': [
-          'fiebre',
-          'tos',
-          'dolor',
-          'mareo',
-          'diabetes',
-        ],
+        'negations': ['fiebre', 'tos', 'dolor', 'mareo', 'diabetes'],
       };
 
       final result = sanitizeInterviewFields(input);
@@ -3653,8 +3705,7 @@ void main() {
       final input = <String, dynamic>{
         'motivo_consulta': 'Rinorrea',
         'antecedentes': {
-          'patologicos':
-              'Niega fiebre. Niega tos. Niega fumo. Niega diabetes.',
+          'patologicos': 'Niega fiebre. Niega tos. Niega fumo. Niega diabetes.',
         },
         'negations': ['fiebre', 'tos', 'fumo', 'diabetes'],
       };
@@ -3664,32 +3715,37 @@ void main() {
 
       // "fumo" in no_patologicos.
       final noPat = ante['no_patologicos'] as String;
-      expect(noPat.contains('fumo'), isTrue,
-          reason: '"fumo" must be classified as habit → no_patologicos');
+      expect(
+        noPat.contains('fumo'),
+        isTrue,
+        reason: '"fumo" must be classified as habit → no_patologicos',
+      );
 
       // "fumo" NOT in patologicos.
       final pat = ante['patologicos'] as String;
-      expect(pat.contains('fumo'), isFalse,
-          reason: '"fumo" must not be in patologicos');
+      expect(
+        pat.contains('fumo'),
+        isFalse,
+        reason: '"fumo" must not be in patologicos',
+      );
     });
 
     test('"transfusiones" and "cirugías" classified into patologicos', () {
       // 'transfus' and 'cirug' were added to _kPatKeywords.
       final input = <String, dynamic>{
         'motivo_consulta': 'Cefalea',
-        'negations': [
-          'transfusiones',
-          'cirugías previas',
-          'diabetes',
-        ],
+        'negations': ['transfusiones', 'cirugías previas', 'diabetes'],
       };
 
       final result = sanitizeInterviewFields(input);
       final ante = result['antecedentes'] as Map<String, dynamic>;
       final pat = ante['patologicos'] as String;
 
-      expect(pat.contains('transfusiones'), isTrue,
-          reason: '"transfusiones" must be in patologicos');
+      expect(
+        pat.contains('transfusiones'),
+        isTrue,
+        reason: '"transfusiones" must be in patologicos',
+      );
       expect(pat.contains('diabetes'), isTrue);
     });
 
@@ -3702,8 +3758,7 @@ void main() {
         'motivo_consulta': 'Dolor de oído',
         'padecimiento_actual': 'Dolor intenso desde ayer',
         'antecedentes': {
-          'patologicos':
-              'Niega fiebre. Niega dolor. Niega diabetes.',
+          'patologicos': 'Niega fiebre. Niega dolor. Niega diabetes.',
         },
         'negations': ['fiebre', 'dolor', 'diabetes'],
       };
@@ -3713,8 +3768,11 @@ void main() {
 
       // Collect ALL text in antecedentes to check for contradiction.
       final allAnteText = ante.values.whereType<String>().join('\n');
-      expect(allAnteText.contains('Niega dolor'), isFalse,
-          reason: '"Niega dolor" contradicts positive motivo/padecimiento');
+      expect(
+        allAnteText.contains('Niega dolor'),
+        isFalse,
+        reason: '"Niega dolor" contradicts positive motivo/padecimiento',
+      );
 
       // Disease negation unaffected.
       final pat = ante['patologicos'] as String;
@@ -3738,10 +3796,16 @@ void main() {
       final pat = ante['patologicos'] as String;
 
       // Symptoms must NOT be in patologicos.
-      expect(pat.contains('gripe'), isFalse,
-          reason: '"gripe" is a symptom → must not be in patologicos');
-      expect(pat.contains('secreción'), isFalse,
-          reason: '"secreción" is a symptom → must not be in patologicos');
+      expect(
+        pat.contains('gripe'),
+        isFalse,
+        reason: '"gripe" is a symptom → must not be in patologicos',
+      );
+      expect(
+        pat.contains('secreción'),
+        isFalse,
+        reason: '"secreción" is a symptom → must not be in patologicos',
+      );
       expect(pat.contains('fiebre'), isFalse);
 
       // Disease negation unaffected.
@@ -3750,22 +3814,14 @@ void main() {
   });
 
   group('bare symptom-token list stripper', () {
-    test(
-        'strips bare symptom-token list from padecimiento_actual '
+    test('strips bare symptom-token list from padecimiento_actual '
         'but keeps narrative and negation sentence', () {
       final input = <String, dynamic>{
         'padecimiento_actual':
             'Otalgia izquierda de 3 días, empeora al masticar.\n'
             'escalofríos. tos. gripe. mareos. náuseas o vómito.\n'
             'Niega fiebre, tos, mareo, náuseas, vómito y gripe.',
-        'negaciones': [
-          'tos',
-          'gripe',
-          'mareo',
-          'náuseas',
-          'vómito',
-          'fiebre',
-        ],
+        'negaciones': ['tos', 'gripe', 'mareo', 'náuseas', 'vómito', 'fiebre'],
       };
 
       final result = sanitizeInterviewFields(input);
@@ -3774,16 +3830,28 @@ void main() {
       expect(pa, isNotNull, reason: 'PA should not be null');
 
       // Bare token list must be gone.
-      expect(pa!.contains('escalofríos. tos.'), isFalse,
-          reason: 'bare symptom-token list should be stripped');
-      expect(pa.contains('gripe. mareos.'), isFalse,
-          reason: 'bare symptom-token list should be stripped');
+      expect(
+        pa!.contains('escalofríos. tos.'),
+        isFalse,
+        reason: 'bare symptom-token list should be stripped',
+      );
+      expect(
+        pa.contains('gripe. mareos.'),
+        isFalse,
+        reason: 'bare symptom-token list should be stripped',
+      );
 
       // Narrative content must be preserved.
-      expect(pa.toLowerCase().contains('otalgia'), isTrue,
-          reason: 'narrative sentence should remain');
-      expect(pa.toLowerCase().contains('empeora'), isTrue,
-          reason: 'narrative sentence should remain');
+      expect(
+        pa.toLowerCase().contains('otalgia'),
+        isTrue,
+        reason: 'narrative sentence should remain',
+      );
+      expect(
+        pa.toLowerCase().contains('empeora'),
+        isTrue,
+        reason: 'narrative sentence should remain',
+      );
 
       // Negation sentence must be preserved.
       expect(
@@ -3795,9 +3863,7 @@ void main() {
   });
 
   group('terminology correction — otinofagia STT typo', () {
-    test(
-        'A) "Otinofagia izquierda" + ear context in PA → otalgia',
-        () {
+    test('A) "Otinofagia izquierda" + ear context in PA → otalgia', () {
       final input = <String, dynamic>{
         'motivo_consulta': 'Otinofagia izquierda de 3 días',
         'padecimiento_actual':
@@ -3824,9 +3890,7 @@ void main() {
       );
     });
 
-    test(
-        'B) "Odinofagia de 3 días" + throat PA → stays odinofagia',
-        () {
+    test('B) "Odinofagia de 3 días" + throat PA → stays odinofagia', () {
       final input = <String, dynamic>{
         'motivo_consulta': 'Odinofagia de 3 días',
         'padecimiento_actual': 'Dolor al deglutir alimentos sólidos.',
@@ -3838,8 +3902,7 @@ void main() {
       expect(
         motivo.toLowerCase().contains('odinofagia'),
         isTrue,
-        reason:
-            'without ear context, odinofagia should stay as-is',
+        reason: 'without ear context, odinofagia should stay as-is',
       );
       expect(
         motivo.toLowerCase().contains('otalgia'),
@@ -3848,9 +3911,7 @@ void main() {
       );
     });
 
-    test(
-        'C) "Otinofagia" + empty PA → normalize spelling only',
-        () {
+    test('C) "Otinofagia" + empty PA → normalize spelling only', () {
       final input = <String, dynamic>{
         'motivo_consulta': 'Otinofagia bilateral',
       };
@@ -3866,8 +3927,1164 @@ void main() {
       expect(
         motivo.toLowerCase().contains('odinofagia'),
         isTrue,
+        reason: 'without ear context, should normalize to odinofagia only',
+      );
+    });
+  });
+
+  group('symptom keyword coverage — sangrado', () {
+    test('"Niega sangrado." must not appear in antecedentes.patologicos', () {
+      final input = <String, dynamic>{
+        'motivo_consulta': 'Dolor de oído derecho',
+        'padecimiento_actual': 'Otalgia de 3 días de evolución.',
+        'negaciones': ['sangrado', 'diabetes', 'hipertensión'],
+      };
+
+      final result = sanitizeInterviewFields(input);
+      final ante = result['antecedentes'] as Map<String, dynamic>? ?? {};
+      final pat = (ante['patologicos'] as String?)?.toLowerCase() ?? '';
+
+      expect(
+        pat.contains('sangrado'),
+        isFalse,
+        reason: '"sangrado" is a symptom and must not leak into patologicos',
+      );
+      expect(
+        RegExp(r'niega\s+sangrado', caseSensitive: false).hasMatch(pat),
+        isFalse,
+        reason: '"Niega sangrado." must not appear in patologicos',
+      );
+
+      // Disease negations should still be present.
+      expect(
+        pat.contains('diabetes'),
+        isTrue,
+        reason: 'disease negation should be in patologicos',
+      );
+    });
+  });
+
+  group('allergy negation routing', () {
+    test(
+      '"Niega alergias." routes to antecedentes.alergias, not patologicos',
+      () {
+        final input = <String, dynamic>{
+          'motivo_consulta': 'Dolor de oído',
+          'padecimiento_actual': 'Otalgia de 3 días.',
+          'negaciones': ['alergias', 'diabetes', 'hipertensión'],
+        };
+
+        final result = sanitizeInterviewFields(input);
+        final ante = result['antecedentes'] as Map<String, dynamic>? ?? {};
+        final pat = (ante['patologicos'] as String?)?.toLowerCase() ?? '';
+        final alergias = (ante['alergias'] as String?)?.toLowerCase() ?? '';
+
+        // Allergy negation must be in alergias field.
+        expect(
+          alergias.contains('alerg'),
+          isTrue,
+          reason: 'allergy negation should be routed to antecedentes.alergias',
+        );
+
+        // Allergy negation must NOT be in patologicos.
+        expect(
+          pat.contains('alerg'),
+          isFalse,
+          reason: 'allergy negation must not appear in patologicos',
+        );
+
+        // Disease negations still in patologicos.
+        expect(
+          pat.contains('diabetes'),
+          isTrue,
+          reason: 'diabetes should be in patologicos',
+        );
+        expect(
+          pat.contains('hipertens'),
+          isTrue,
+          reason: 'hipertensión should be in patologicos',
+        );
+      },
+    );
+  });
+
+  group('leading stop-word stripping', () {
+    test(
+      '"de medicamentos" → "Niega medicamentos." (no dangling preposition)',
+      () {
+        final result = sanitizeInterviewFields({
+          'motivo_consulta': 'Otalgia derecha',
+          'padecimiento_actual': 'Dolor de oído derecho.',
+          'antecedentes': {
+            'patologicos': 'Niega de medicamentos.\nNiega diabetes.',
+          },
+        });
+
+        final pat =
+            (result['antecedentes'] as Map<String, dynamic>)['patologicos']
+                as String;
+        expect(
+          pat.contains('medicamentos'),
+          isTrue,
+          reason: 'medicamentos should be present',
+        );
+        expect(
+          pat.contains('de medicamentos'),
+          isFalse,
+          reason: '"de medicamentos" should have leading "de" stripped',
+        );
+      },
+    );
+
+    test('classifyNegations strips leading stop words from body', () {
+      final c = classifyNegations(['de diabetes', 'del asma']);
+      final all = [...c.pat, ...c.noPat, ...c.alergias];
+      for (final line in all) {
+        expect(
+          line,
+          isNot(startsWith('Niega de ')),
+          reason: 'should strip leading "de"',
+        );
+        expect(
+          line,
+          isNot(startsWith('Niega del ')),
+          reason: 'should strip leading "del"',
+        );
+      }
+      expect(all.any((l) => l.contains('diabetes')), isTrue);
+      expect(all.any((l) => l.contains('asma')), isTrue);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Golden regression tests (RCA fixes)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  group('RCA fix: heredofamiliares bucket', () {
+    test('"Madre con HTA" routes to heredofamiliares, not patologicos', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia',
+        'padecimiento_actual': 'Dolor de oído derecho.',
+        'negations': ['Madre con HTA', 'Padre con diabetes', 'Niega diabetes'],
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>;
+
+      // Family history routed to heredofamiliares.
+      expect(
+        ante.containsKey('heredofamiliares'),
+        isTrue,
+        reason: 'heredofamiliares should be populated',
+      );
+      final hf = ante['heredofamiliares'] as String;
+      expect(hf.contains('Madre'), isTrue);
+      expect(hf.contains('Padre'), isTrue);
+
+      // Family lines must NOT leak into patologicos.
+      final pat = (ante['patologicos'] as String?) ?? '';
+      expect(
+        pat.contains('Madre'),
+        isFalse,
+        reason: 'family line must not be in patologicos',
+      );
+      expect(
+        pat.contains('Padre'),
+        isFalse,
+        reason: 'family line must not be in patologicos',
+      );
+
+      // Disease negation still in patologicos.
+      expect(pat.contains('diabetes'), isTrue);
+    });
+  });
+
+  group('RCA fix: "toma" medication guard', () {
+    test('"No estoy tomando medicamentos" does NOT go to no_patologicos', () {
+      final c = classifyNegations([
+        'No estoy tomando medicamentos',
+        'No tomo alcohol',
+      ]);
+
+      // "tomando medicamentos" has medication context → NOT noPat.
+      expect(
+        c.noPat.any((l) => l.toLowerCase().contains('medicament')),
+        isFalse,
+        reason: '"tomando medicamentos" must not be classified as habit',
+      );
+
+      // "No tomo alcohol" is a real habit → stays in noPat.
+      expect(
+        c.noPat.any((l) => l.toLowerCase().contains('alcohol')),
+        isTrue,
+        reason: '"No tomo alcohol" should remain in no_patologicos',
+      );
+    });
+  });
+
+  group('RCA fix: motivo "Dolor de oído" → "Otalgia"', () {
+    test('"Dolor de oído" normalizes to "Otalgia" with laterality', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Dolor de oído',
+        'padecimiento_actual': 'Dolor de oído derecho de 3 días.',
+      });
+
+      final motivo = result['motivo_consulta'] as String;
+      expect(
+        motivo,
+        startsWith('Otalgia'),
+        reason: 'should normalize to Otalgia',
+      );
+      expect(
+        motivo.contains('derech'),
+        isTrue,
+        reason: 'should preserve laterality from padecimiento_actual',
+      );
+    });
+
+    test('"Dolor de oído izquierdo" preserves laterality from motivo', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Dolor de oído izquierdo',
+        'padecimiento_actual': 'Dolor intenso en oído.',
+      });
+
+      final motivo = result['motivo_consulta'] as String;
+      expect(motivo, startsWith('Otalgia'));
+      // Gender agreement: feminine "Otalgia" requires "izquierda".
+      expect(
+        motivo.contains('izquierda'),
+        isTrue,
+        reason: 'laterality should be gender-corrected to feminine',
+      );
+    });
+  });
+
+  // ═════════════════════════════════════════════════════════════════
+  // Golden regression tests — full pipeline (sanitizeInterviewFields)
+  //
+  // These three tests FAILED before the RCA fixes and now PASS.
+  // ═════════════════════════════════════════════════════════════════
+
+  group('golden: heredofamiliares populated from negations', () {
+    test('family-history negations route to heredofamiliares, '
+        'not patologicos', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia derecha',
+        'padecimiento_actual': 'Dolor de oído derecho de 3 días.',
+        'negations': [
+          'Madre con hipertensión',
+          'Padre con diabetes',
+          'Niega diabetes',
+          'No fuma',
+        ],
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>;
+
+      // heredofamiliares must exist and contain the family lines.
+      expect(
+        ante.containsKey('heredofamiliares'),
+        isTrue,
+        reason: 'heredofamiliares field must be created',
+      );
+      final hf = ante['heredofamiliares'] as String;
+      expect(
+        hf.contains('Madre'),
+        isTrue,
+        reason: '"Madre con hipertensión" must be in heredofamiliares',
+      );
+      expect(
+        hf.contains('Padre'),
+        isTrue,
+        reason: '"Padre con diabetes" must be in heredofamiliares',
+      );
+
+      // Family lines must NOT leak into patologicos.
+      final pat = (ante['patologicos'] as String?) ?? '';
+      expect(
+        pat.contains('Madre'),
+        isFalse,
+        reason: 'family line must not leak into patologicos',
+      );
+      expect(
+        pat.contains('Padre'),
+        isFalse,
+        reason: 'family line must not leak into patologicos',
+      );
+
+      // Non-family negations still routed correctly.
+      expect(
+        pat.toLowerCase().contains('diabetes'),
+        isTrue,
+        reason: 'disease negation must remain in patologicos',
+      );
+      final noPat = (ante['no_patologicos'] as String?) ?? '';
+      expect(
+        noPat.toLowerCase().contains('fuma'),
+        isTrue,
+        reason: 'habit negation must remain in no_patologicos',
+      );
+    });
+  });
+
+  group('golden: "tomando medicamentos" blocked from no_patologicos', () {
+    test('"No estoy tomando medicamentos" does NOT contaminate '
+        'no_patologicos via full pipeline', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia',
+        'padecimiento_actual': 'Dolor de oído.',
+        'negations': ['No estoy tomando medicamentos', 'No tomo alcohol'],
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>? ?? {};
+      final noPat = (ante['no_patologicos'] as String?) ?? '';
+
+      // "tomando medicamentos" must NOT appear in no_patologicos.
+      expect(
+        noPat.toLowerCase().contains('tomando'),
+        isFalse,
+        reason: '"tomando" must not be in no_patologicos',
+      );
+      expect(
+        noPat.toLowerCase().contains('medicament'),
+        isFalse,
+        reason: '"medicamentos" must not be in no_patologicos',
+      );
+
+      // Real habit negation must still be present.
+      expect(
+        noPat.toLowerCase().contains('alcohol'),
+        isTrue,
+        reason: '"No tomo alcohol" should remain in no_patologicos',
+      );
+    });
+  });
+
+  group('golden: "Dolor de oído" normalizes to "Otalgia derecha"', () {
+    test('motivo "Dolor de oído" + padecimiento "oído derecho" '
+        '→ "Otalgia derecha"', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Dolor de oído',
+        'padecimiento_actual':
+            'Paciente con dolor en oído derecho de 3 días de evolución.',
+      });
+
+      final motivo = result['motivo_consulta'] as String;
+
+      // Must normalize to Otalgia.
+      expect(
+        motivo,
+        startsWith('Otalgia'),
+        reason: '"Dolor de oído" must normalize to "Otalgia"',
+      );
+      expect(
+        motivo.contains('Dolor'),
+        isFalse,
+        reason: 'generic "Dolor" must be replaced',
+      );
+
+      // Must include laterality from padecimiento_actual.
+      expect(
+        motivo.toLowerCase().contains('derech'),
+        isTrue,
+        reason: 'laterality "derecha" must be appended from PA',
+      );
+    });
+  });
+
+  // ═════════════════════════════════════════════════════════════════
+  // Hardening regression tests
+  // ═════════════════════════════════════════════════════════════════
+
+  group('hardening: heredofamiliares recovered from negations', () {
+    test('family-history lines in negations populate heredofamiliares '
+        'when backend omitted it', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Cefalea',
+        'padecimiento_actual': 'Cefalea tensional de 2 días.',
+        'negations': [
+          'Padre con hipertensión',
+          'Madre con diabetes',
+          'Niega asma',
+          'No fuma',
+        ],
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>;
+
+      // heredofamiliares must be created from family negation lines.
+      expect(
+        ante.containsKey('heredofamiliares'),
+        isTrue,
+        reason: 'heredofamiliares must be populated from negations',
+      );
+      final hf = ante['heredofamiliares'] as String;
+      expect(hf.contains('Padre'), isTrue);
+      expect(hf.contains('Madre'), isTrue);
+
+      // Family lines must NOT appear in patologicos.
+      final pat = (ante['patologicos'] as String?) ?? '';
+      expect(pat.contains('Padre'), isFalse);
+      expect(pat.contains('Madre'), isFalse);
+
+      // Other negations correctly routed.
+      expect(pat.toLowerCase().contains('asma'), isTrue);
+      final noPat = (ante['no_patologicos'] as String?) ?? '';
+      expect(noPat.toLowerCase().contains('fuma'), isTrue);
+    });
+  });
+
+  group('hardening: vague no_patologicos filtered', () {
+    test('"No estoy tomando medicamentos." removed from no_patologicos', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia',
+        'padecimiento_actual': 'Dolor de oído.',
+        'antecedentes': {
+          'no_patologicos':
+              'No fuma.\nNo estoy tomando medicamentos.\nNo tomo alcohol.',
+        },
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>;
+      final noPat = (ante['no_patologicos'] as String?) ?? '';
+
+      // Vague medication line must be gone.
+      expect(
+        noPat.contains('tomando'),
+        isFalse,
+        reason: '"No estoy tomando medicamentos." is vague, must drop',
+      );
+      expect(noPat.contains('medicamentos'), isFalse);
+
+      // Real habit negations preserved.
+      expect(
+        noPat.toLowerCase().contains('fuma'),
+        isTrue,
+        reason: '"No fuma." must remain',
+      );
+      expect(
+        noPat.toLowerCase().contains('alcohol'),
+        isTrue,
+        reason: '"No tomo alcohol." must remain',
+      );
+    });
+
+    test('"No tomo." without object removed, '
+        '"No tomo alcohol." preserved', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Rinorrea',
+        'padecimiento_actual': 'Rinorrea desde ayer.',
+        'antecedentes': {'no_patologicos': 'No tomo.\nNo tomo alcohol.'},
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>;
+      final noPat = (ante['no_patologicos'] as String?) ?? '';
+
+      // "No tomo." is vague → removed.
+      // "No tomo alcohol." has explicit object → preserved.
+      expect(
+        noPat.toLowerCase().contains('alcohol'),
+        isTrue,
+        reason: '"No tomo alcohol." must remain',
+      );
+      // Count lines: only the alcohol line should survive.
+      final lines = noPat
+          .split('\n')
+          .where((l) => l.trim().isNotEmpty)
+          .toList();
+      for (final line in lines) {
+        expect(
+          line.toLowerCase().contains('alcohol') ||
+              line.toLowerCase().contains('fuma') ||
+              line.toLowerCase().contains('tabaco') ||
+              line.toLowerCase().contains('droga'),
+          isTrue,
+          reason: 'only lines with explicit objects should remain: "$line"',
+        );
+      }
+    });
+  });
+
+  group('hardening: Otalgia gender agreement', () {
+    test('"Otalgia derecho" becomes "Otalgia derecha"', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia derecho',
+        'padecimiento_actual': 'Dolor en oído derecho de 2 días.',
+      });
+
+      final motivo = result['motivo_consulta'] as String;
+      expect(
+        motivo.contains('derecha'),
+        isTrue,
+        reason: 'masculine "derecho" must be corrected to "derecha"',
+      );
+      expect(
+        motivo.contains('derecho'),
+        isFalse,
+        reason: 'masculine form must not remain',
+      );
+      expect(motivo, startsWith('Otalgia'));
+    });
+
+    test('"Odinofagia izquierdo" becomes "Odinofagia izquierda"', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Odinofagia izquierdo',
+        'padecimiento_actual': 'Dolor de garganta izquierdo.',
+      });
+
+      final motivo = result['motivo_consulta'] as String;
+      expect(
+        motivo.contains('izquierda'),
+        isTrue,
+        reason: 'masculine "izquierdo" must be corrected to "izquierda"',
+      );
+    });
+  });
+
+  group('hardening: garbage tokens removed from patologicos', () {
+    test('"Niega he notado." and "Niega de medicamentos." removed '
+        'without affecting valid negations', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia bilateral',
+        'padecimiento_actual': 'Dolor de oído bilateral.',
+        'antecedentes': {
+          'patologicos':
+              'Niega diabetes.\n'
+              'Niega he notado.\n'
+              'Niega de medicamentos.\n'
+              'Niega hipertensión.',
+        },
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>;
+      final pat = (ante['patologicos'] as String?) ?? '';
+
+      // Garbage tokens must be gone.
+      expect(
+        pat.contains('he notado'),
+        isFalse,
+        reason: '"Niega he notado." is garbage',
+      );
+      expect(
+        pat.contains('de medicamentos'),
+        isFalse,
+        reason: '"Niega de medicamentos." is garbage',
+      );
+
+      // Valid disease negations must remain.
+      expect(
+        pat.toLowerCase().contains('diabetes'),
+        isTrue,
+        reason: '"Niega diabetes." is valid',
+      );
+      expect(
+        pat.toLowerCase().contains('hipertens'),
+        isTrue,
+        reason: '"Niega hipertensión." is valid',
+      );
+    });
+
+    test('"Niega tengo problemas." removed, '
+        '"Niega alergias medicamentosas." preserved', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Cefalea',
+        'padecimiento_actual': 'Cefalea intensa.',
+        'antecedentes': {
+          'patologicos': 'Niega diabetes.\nNiega tengo problemas.',
+          'alergias': 'Niega alergias medicamentosas.',
+        },
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>;
+      final pat = (ante['patologicos'] as String?) ?? '';
+
+      // Garbage removed.
+      expect(
+        pat.contains('tengo problemas'),
+        isFalse,
+        reason: '"Niega tengo problemas." is garbage',
+      );
+
+      // Valid negation preserved.
+      expect(pat.toLowerCase().contains('diabetes'), isTrue);
+
+      // Allergy line stays in alergias (unaffected by pat filter).
+      final alergias = (ante['alergias'] as String?) ?? '';
+      expect(
+        alergias.toLowerCase().contains('alergias'),
+        isTrue,
+        reason: '"Niega alergias medicamentosas." is valid',
+      );
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Bug fix: pain negation suppressed when positive pain exists
+  // ─────────────────────────────────────────────────────────────────────────
+
+  group('pain negation vs positive pain', () {
+    test('positive pain in PA => "Niega dolor" suppressed from output', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia derecha',
+        'padecimiento_actual':
+            'Otalgia derecha de 3 días, punzadas, dolor al masticar.',
+        'negations': ['dolor', 'tos', 'vómito'],
+      });
+
+      final pa = result['padecimiento_actual'] as String? ?? '';
+      // Pain negation must NOT appear.
+      expect(
+        pa.toLowerCase().contains('niega dolor'),
+        isFalse,
         reason:
-            'without ear context, should normalize to odinofagia only',
+            'Should not negate dolor when PA describes positive pain',
+      );
+      // Other negations are still allowed.
+      expect(
+        pa.toLowerCase().contains('tos'),
+        isTrue,
+        reason: 'Non-pain negations should remain',
+      );
+    });
+
+    test('no positive pain => "Niega dolor" is allowed', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Prurito nasal',
+        'padecimiento_actual': 'Prurito nasal de 5 días.',
+        'negations': ['dolor', 'fiebre'],
+      });
+
+      final pa = result['padecimiento_actual'] as String? ?? '';
+      expect(
+        pa.toLowerCase().contains('niega dolor'),
+        isTrue,
+        reason: '"Niega dolor" is valid when no positive pain exists',
+      );
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Bug fix: empty no_patologicos inferred from transcript
+  // ─────────────────────────────────────────────────────────────────────────
+
+  group('no_patologicos transcript inference', () {
+    test('PA text "no fumo" => no_patologicos inferred with tabaquismo', () {
+      // No habit keywords in negations — inference must come from PA text.
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia',
+        'padecimiento_actual':
+            'Otalgia de 2 días, refiere que no fumo.',
+        'negations': ['diabetes'],
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>?;
+      final noPat = (ante?['no_patologicos'] as String?) ?? '';
+      expect(
+        noPat.toLowerCase().contains('tabaquismo'),
+        isTrue,
+        reason:
+            'Should infer "No tabaquismo." from "no fumo" in PA text',
+      );
+    });
+
+    test('PA "sábado chelas" => no_patologicos contains "Alcohol social."',
+        () {
+      // No habit keywords in negations — inference must come from PA text.
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia',
+        'padecimiento_actual':
+            'Otalgia de 2 días. El sábado unas chelas pero no diario.',
+        'negations': ['diabetes'],
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>?;
+      final noPat = (ante?['no_patologicos'] as String?) ?? '';
+      expect(
+        noPat.contains('Alcohol social.'),
+        isTrue,
+        reason: 'Should infer "Alcohol social." from social-drinking cues',
+      );
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Bug fix: "Niega medicamentos" removed when meds mentioned
+  // ─────────────────────────────────────────────────────────────────────────
+
+  group('false medication negation removal', () {
+    test('PA mentions ibuprofeno => "Niega medicamentos" removed', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia',
+        'padecimiento_actual':
+            'Otalgia de 2 días. Se tomó un ibuprofeno sin mejoría.',
+        'antecedentes': {
+          'patologicos': 'Niega diabetes.\nNiega medicamentos.',
+        },
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>?;
+      final pat = (ante?['patologicos'] as String?) ?? '';
+      expect(
+        pat.toLowerCase().contains('niega medicamentos'),
+        isFalse,
+        reason: 'Must remove "Niega medicamentos" when ibuprofeno is '
+            'mentioned in PA',
+      );
+      // Other negations preserved.
+      expect(pat.toLowerCase().contains('diabetes'), isTrue);
+    });
+
+    test('truly denies meds and none mentioned => "Niega medicamentos" stays',
+        () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia',
+        'padecimiento_actual': 'Otalgia de 2 días sin tratamiento previo.',
+        'antecedentes': {
+          'patologicos': 'Niega diabetes.\nNiega medicamentos.',
+        },
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>?;
+      final pat = (ante?['patologicos'] as String?) ?? '';
+      expect(
+        pat.toLowerCase().contains('niega medicamentos'),
+        isTrue,
+        reason: '"Niega medicamentos." is valid when no meds mentioned',
+      );
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Long ear-conversation hardening
+  // ─────────────────────────────────────────────────────────────────────────
+
+  group('long ear-conversation hardening', () {
+    test('A) ear context forces otalgia, not odinofagia in motivo', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Odinofagia derecha de 3 días',
+        'padecimiento_actual':
+            'Dolor de oído derecho de 3 días, posterior a nadar en alberca. '
+            'Oído tapado, zumbido. Dolor al masticar y bostezo.',
+        'negations': ['fiebre', 'tos', 'vómito', 'mareo'],
+      });
+
+      final motivo = (result['motivo_consulta'] as String?) ?? '';
+      expect(
+        motivo.toLowerCase().contains('odinofagia'),
+        isFalse,
+        reason: 'Motivo must NOT be odinofagia when ear context is strong',
+      );
+      expect(
+        motivo.toLowerCase().contains('otalgia'),
+        isTrue,
+        reason: 'Motivo should be otalgia for an ear complaint',
+      );
+    });
+
+    test('B) PA collapsed to only negations => rescued with ear facts', () {
+      // Simulate a case where extraction collapsed PA to only
+      // a negation sentence, but raw data has ear facts.
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia derecha',
+        // PA is ONLY a negation sentence — all real content was lost.
+        'padecimiento_actual': 'Niega tos y vómito.',
+        'negations': ['fiebre', 'tos', 'vómito'],
+        // Raw structured_fields with the original rich PA.
+        'structured_fields': {
+          'motivo_consulta': 'Otalgia derecha',
+          'padecimiento_actual':
+              'Dolor de oído derecho de 3 días, posterior a nadar en '
+              'alberca. Oído tapado y zumbido. Dolor nocturno.',
+          'negations': ['fiebre', 'tos', 'vómito'],
+        },
+      });
+
+      final pa = (result['padecimiento_actual'] as String?) ?? '';
+      // PA must now have substantive content beyond negations.
+      final lines = pa.split('\n').where((l) => l.trim().isNotEmpty).toList();
+      final nonNegLines = lines.where(
+        (l) => !l.trim().toLowerCase().startsWith('niega'),
+      ).toList();
+      expect(
+        nonNegLines.isNotEmpty,
+        isTrue,
+        reason: 'PA must have substantive content rescued from raw data',
+      );
+    });
+
+    test('C) ibuprofen + drops => no "Niega medicamentos"', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia derecha',
+        'padecimiento_actual':
+            'Dolor de oído derecho de 3 días. '
+            'Se tomó ibuprofeno y se puso gotas sin mejoría.',
+        'antecedentes': {
+          'patologicos': 'Niega diabetes.\nNiega medicamentos.',
+        },
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>?;
+      final pat = (ante?['patologicos'] as String?) ?? '';
+      expect(
+        pat.toLowerCase().contains('niega medicamentos'),
+        isFalse,
+        reason: '"Niega medicamentos" contradicts ibuprofeno + gotas in PA',
+      );
+      expect(pat.toLowerCase().contains('diabetes'), isTrue);
+    });
+
+    test('D) uncertain appendectomy => normalized, not raw colloquial', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia',
+        'padecimiento_actual': 'Dolor de oído derecho.',
+        'antecedentes': {
+          'patologicos':
+              'Niega diabetes.\n'
+              'Creo que de niño me operaron del apéndice, '
+              'no me acuerdo bien.',
+        },
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>?;
+      final pat = (ante?['patologicos'] as String?) ?? '';
+
+      // Must NOT contain raw colloquial text.
+      expect(
+        pat.contains('Creo que'),
+        isFalse,
+        reason: 'Raw colloquial text must not remain in patologicos',
+      );
+      expect(
+        pat.contains('no me acuerdo'),
+        isFalse,
+        reason: 'Uncertainty hedging must not remain verbatim',
+      );
+
+      // Must contain a normalized uncertain-surgery line.
+      expect(
+        pat.toLowerCase().contains('incierto') ||
+            pat.toLowerCase().contains('probable'),
+        isTrue,
+        reason: 'Should have normalized uncertain surgery line',
+      );
+      expect(
+        pat.toLowerCase().contains('apendicectomía') ||
+            pat.toLowerCase().contains('apendicectomia'),
+        isTrue,
+        reason: 'Should identify the procedure as apendicectomía',
+      );
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Long conversation output quality
+  // ─────────────────────────────────────────────────────────────────────────
+
+  group('long conversation output quality', () {
+    test('1) medication in raw stash => "Niega medicamentos" removed', () {
+      final result = sanitizeInterviewFields({
+        'structured_fields': {
+          'motivo_consulta': 'Otalgia derecha',
+          'padecimiento_actual':
+              'Dolor de oído derecho de 3 días. '
+              'Se tomó ibuprofeno y se puso gotitas sin mejoría.',
+          'negations': ['fiebre', 'tos', 'vómito'],
+        },
+        // Simulate: sanitizer output PA was collapsed, but raw stash
+        // still has medication mentions.
+        'motivo_consulta': 'Otalgia derecha',
+        'padecimiento_actual': 'Niega tos y vómito.',
+        'antecedentes': {
+          'patologicos': 'Niega diabetes.\nNiega medicamentos.',
+        },
+        'negations': ['fiebre', 'tos', 'vómito'],
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>?;
+      final pat = (ante?['patologicos'] as String?) ?? '';
+      expect(
+        pat.toLowerCase().contains('niega medicamentos'),
+        isFalse,
+        reason: '"Niega medicamentos" must be removed when raw stash '
+            'mentions ibuprofeno + gotitas',
+      );
+    });
+
+    test('2) rescued PA fragments composed into narrative sentence', () {
+      final result = sanitizeInterviewFields({
+        'structured_fields': {
+          'motivo_consulta': 'Otalgia derecha',
+          'padecimiento_actual':
+              'Dolor de oído derecho de 3 días, posterior a nadar en '
+              'alberca. Oído tapado y zumbido. Dolor al masticar. '
+              'Dolor nocturno.',
+          'negations': ['tos', 'vómito'],
+        },
+        'motivo_consulta': 'Otalgia derecha',
+        'padecimiento_actual': 'Niega tos y vómito.',
+        'negations': ['tos', 'vómito'],
+      });
+
+      final pa = (result['padecimiento_actual'] as String?) ?? '';
+      final paLines = pa.split('\n').where((l) => l.trim().isNotEmpty).toList();
+
+      // Non-negation content should be a single composed narrative,
+      // NOT multiple telegraphic fragment lines.
+      final contentLines = paLines
+          .where((l) => !l.trim().toLowerCase().startsWith('niega'))
+          .toList();
+
+      expect(
+        contentLines.length,
+        equals(1),
+        reason: 'Rescued facts should be composed into ONE narrative '
+            'sentence, not separate fragment lines. '
+            'Got: $contentLines',
+      );
+
+      // The narrative should mention key facts.
+      final narrative = contentLines.first.toLowerCase();
+      expect(narrative.contains('3 días'), isTrue,
+          reason: 'Duration should be in narrative');
+    });
+
+    test('3) "unas chelas" / "no tomo diario" => "Alcohol social." inferred',
+        () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia',
+        'padecimiento_actual':
+            'Dolor de oído derecho de 3 días.',
+        // Raw stash has social drinking cues.
+        'structured_fields': {
+          'motivo_consulta': 'Otalgia',
+          'padecimiento_actual':
+              'Dolor de oído derecho de 3 días. '
+              'Unas chelas el sábado, no tomo diario.',
+          'negations': ['diabetes'],
+        },
+        'negations': ['diabetes'],
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>?;
+      final noPat = (ante?['no_patologicos'] as String?) ?? '';
+      expect(
+        noPat.contains('Alcohol social.'),
+        isTrue,
+        reason: 'Should infer "Alcohol social." from "unas chelas" '
+            'and "no tomo diario" in raw stash. Got: "$noPat"',
+      );
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Output quality polish
+  // ─────────────────────────────────────────────────────────────────────────
+
+  group('output quality polish', () {
+    test('1) generic motivo "Congestión" normalized to "Congestión nasal"',
+        () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Congestión',
+        'padecimiento_actual':
+            'Rinorrea hialina de 5 días con obstrucción nasal.',
+      });
+
+      expect(
+        result['motivo_consulta'],
+        'Congestión nasal',
+        reason: '"Congestión" + PA with "rinorrea"/"nasal" '
+            '=> "Congestión nasal"',
+      );
+    });
+
+    test('2) heredofamiliares semantic duplicates deduplicated', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia',
+        'padecimiento_actual': 'Dolor de oído derecho.',
+        'antecedentes': {
+          'heredofamiliares':
+              'Padre hipertenso.\nPadre con hipertensión arterial.',
+        },
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>?;
+      final hf = (ante?['heredofamiliares'] as String?) ?? '';
+      final hfLines = hf
+          .split('\n')
+          .map((l) => l.trim())
+          .where((l) => l.isNotEmpty)
+          .toList();
+
+      expect(
+        hfLines.length,
+        equals(1),
+        reason: '"Padre hipertenso" and "Padre con hipertensión arterial" '
+            'are semantic duplicates. Got: $hfLines',
+      );
+    });
+
+    test('3) neurological negations removed from patologicos', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia',
+        'padecimiento_actual': 'Dolor de oído derecho.',
+        'antecedentes': {
+          'patologicos':
+              'Niega diabetes.\nNiega debilidad.\nNiega visión doble.',
+        },
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>?;
+      final pat = (ante?['patologicos'] as String?) ?? '';
+
+      // Neurological negations must NOT be in patologicos.
+      expect(
+        pat.toLowerCase().contains('debilidad'),
+        isFalse,
+        reason: '"Niega debilidad" is neurological, not an antecedente',
+      );
+      expect(
+        pat.toLowerCase().contains('visión doble'),
+        isFalse,
+        reason: '"Niega visión doble" is neurological, not an antecedente',
+      );
+
+      // Disease negation stays.
+      expect(pat.toLowerCase().contains('diabetes'), isTrue);
+
+      // Neurological negations should route to PA.
+      final pa = (result['padecimiento_actual'] as String?) ?? '';
+      expect(
+        pa.toLowerCase().contains('debilidad') ||
+            pa.toLowerCase().contains('visión doble'),
+        isTrue,
+        reason: 'Neurological negations should appear in PA',
+      );
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Output quality hardening pass 2
+  // ─────────────────────────────────────────────────────────────────────────
+
+  group('output quality hardening pass 2', () {
+    test('1) "Mareo desde ayer" + rotational PA => "Vértigo"', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Mareo desde ayer en la tarde',
+        'padecimiento_actual':
+            'Sensación de que todo da vueltas al acostarse '
+            'y al mover la cabeza. Desde ayer.',
+      });
+
+      final motivo = (result['motivo_consulta'] as String?) ?? '';
+      expect(
+        motivo,
+        'Vértigo',
+        reason: 'Multiword "Mareo..." + rotational PA => "Vértigo"',
+      );
+    });
+
+    test('2) heredofamiliares punctuation-separated duplicates deduplicated',
+        () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia',
+        'padecimiento_actual': 'Dolor de oído derecho.',
+        'antecedentes': {
+          'heredofamiliares':
+              'Padre hipertenso, madre con diabetes mellitus tipo 2. '
+              'Padre con hipertensión arterial.',
+        },
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>?;
+      final hf = (ante?['heredofamiliares'] as String?) ?? '';
+      final hfLines = hf
+          .split('\n')
+          .map((l) => l.trim())
+          .where((l) => l.isNotEmpty)
+          .toList();
+
+      // "Padre hipertenso" and "Padre con hipertensión arterial" are
+      // semantic duplicates — only one should remain. "Madre con diabetes"
+      // is different and must be kept.
+      final padreLines = hfLines
+          .where((l) => l.toLowerCase().contains('padre'))
+          .toList();
+      expect(
+        padreLines.length,
+        equals(1),
+        reason: 'Duplicate padre+hypertension entries should collapse. '
+            'Got: $hfLines',
+      );
+      // Mother entry preserved.
+      expect(
+        hfLines.any((l) => l.toLowerCase().contains('madre')),
+        isTrue,
+        reason: '"Madre con diabetes" should be preserved',
+      );
+    });
+
+    test('3) garbage pat lines removed + surgical duplicates collapsed', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia',
+        'padecimiento_actual': 'Dolor de oído derecho.',
+        'antecedentes': {
+          'patologicos':
+              'Niega diabetes.\n'
+              'Niega pérdida.\n'
+              'Niega patológicos.\n'
+              'Niega cirugías recientes.\n'
+              'Niega cirugías previas.',
+        },
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>?;
+      final pat = (ante?['patologicos'] as String?) ?? '';
+      final patLower = pat.toLowerCase();
+
+      // Garbage removed.
+      expect(patLower.contains('niega pérdida'), isFalse,
+          reason: '"Niega pérdida." is garbage');
+      expect(patLower.contains('niega patológicos'), isFalse,
+          reason: '"Niega patológicos." is garbage');
+
+      // Surgical duplicates collapsed.
+      final surgicalLines = pat
+          .split('\n')
+          .where((l) => l.toLowerCase().contains('cirugía') ||
+              l.toLowerCase().contains('cirugia'))
+          .toList();
+      expect(
+        surgicalLines.length,
+        equals(1),
+        reason: 'Multiple surgical negations should collapse to one. '
+            'Got: $surgicalLines',
+      );
+
+      // Valid negation preserved.
+      expect(patLower.contains('diabetes'), isTrue);
+    });
+
+    test('4) transcript "unas chelas / no tomo diario" => Alcohol social.',
+        () {
+      final result = sanitizeInterviewFields({
+        'structured_fields': {
+          'motivo_consulta': 'Otalgia',
+          'padecimiento_actual':
+              'Dolor de oído derecho. '
+              'Unas chelas los fines de semana, no tomo diario.',
+          'negations': ['fumo'],
+        },
+        'motivo_consulta': 'Otalgia',
+        'padecimiento_actual': 'Dolor de oído derecho.',
+        'negations': ['fumo'],
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>?;
+      final noPat = (ante?['no_patologicos'] as String?) ?? '';
+      expect(
+        noPat.contains('Alcohol social.'),
+        isTrue,
+        reason: 'Should infer "Alcohol social." from "unas chelas" + '
+            '"no tomo diario" in raw stash. Got: "$noPat"',
       );
     });
   });
