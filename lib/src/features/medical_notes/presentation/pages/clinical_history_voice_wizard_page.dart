@@ -14,6 +14,7 @@ import '../../../../core/base/result.dart';
 import '../../../../core/logger/log.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 import '../../../patients/patients_providers.dart';
+import '../../application/medgemma/assessment_fields_sanitizer.dart';
 import '../../application/medgemma/exam_fields_sanitizer.dart';
 import '../../application/medgemma/interview_fields_sanitizer.dart';
 import '../../application/scribe/finalize_service.dart';
@@ -519,6 +520,8 @@ class _ClinicalHistoryVoiceWizardPageState
       effectiveData = sanitizeInterviewFields(v1Data);
     } else if (scope == 'exam') {
       effectiveData = sanitizeExamFields(v1Data);
+    } else if (scope == 'assessment') {
+      effectiveData = sanitizeAssessmentFields(v1Data);
     } else {
       effectiveData = v1Data;
     }
