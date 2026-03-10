@@ -14,6 +14,7 @@ import '../../../../core/base/result.dart';
 import '../../../../core/logger/log.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 import '../../../patients/patients_providers.dart';
+import '../../application/medgemma/exam_fields_sanitizer.dart';
 import '../../application/medgemma/interview_fields_sanitizer.dart';
 import '../../application/scribe/finalize_service.dart';
 import '../../application/structured_fields_schema_v1.dart';
@@ -426,6 +427,12 @@ class _ClinicalHistoryVoiceWizardPageState
         );
 
         effectiveData = out;
+      } else if (_currentScope == 'exam') {
+        effectiveData = sanitizeExamFields(structuredV1);
+        Log.info(
+          '[MEDGEMMA-V1] exam sanitize '
+          'keys_out=${effectiveData.keys.toList()}',
+        );
       } else {
         effectiveData = structuredV1;
       }
@@ -507,9 +514,14 @@ class _ClinicalHistoryVoiceWizardPageState
   ) {
     // For Interview scope, strip negations/metadata/extra keys
     // so only the 5 supported fields reach the UI.
-    final effectiveData = scope == 'interview'
-        ? sanitizeInterviewFields(v1Data)
-        : v1Data;
+    final Map<String, dynamic> effectiveData;
+    if (scope == 'interview') {
+      effectiveData = sanitizeInterviewFields(v1Data);
+    } else if (scope == 'exam') {
+      effectiveData = sanitizeExamFields(v1Data);
+    } else {
+      effectiveData = v1Data;
+    }
     Log.info(
       '[AI] interview effective_keys='
       '${effectiveData.keys.toList()} scope=$scope',
