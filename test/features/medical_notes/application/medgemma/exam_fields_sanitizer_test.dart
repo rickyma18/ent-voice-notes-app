@@ -45,6 +45,26 @@ void main() {
       expect(vitals, contains('SatO2 98 %'));
     });
 
+    test('extracts vital signs from written-number phrasing in Spanish', () {
+      final raw = {
+        'transcript':
+            'Signos vitales: presión arterial ciento veinte sobre ochenta, '
+            'frecuencia cardiaca setenta y ocho por minuto, frecuencia '
+            'respiratoria dieciocho por minuto y temperatura treinta y seis '
+            'punto ocho grados. Saturación de oxígeno noventa y ocho por ciento.',
+      };
+
+      final result = sanitizeExamFields(raw);
+
+      expect(result.containsKey('signos_vitales'), isTrue);
+      final vitals = result['signos_vitales'] as String;
+      expect(vitals, contains('TA 120/80 mmHg'));
+      expect(vitals, contains('FC 78 lpm'));
+      expect(vitals, contains('FR 18 rpm'));
+      expect(vitals, contains('Temp 36.8'));
+      expect(vitals, contains('SatO2 98 %'));
+    });
+
     // ─────────────────────────────────────────────────────────────────────
     // 3. Nose / throat findings
     // ─────────────────────────────────────────────────────────────────────

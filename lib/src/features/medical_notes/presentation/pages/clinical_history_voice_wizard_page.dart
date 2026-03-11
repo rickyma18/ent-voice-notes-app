@@ -15,8 +15,10 @@ import '../../../../core/logger/log.dart';
 import '../../../patients/domain/entities/patient_entity.dart';
 import '../../../patients/patients_providers.dart';
 import '../../application/medgemma/assessment_fields_sanitizer.dart';
+import '../../application/medgemma/clinical_consistency_engine.dart';
 import '../../application/medgemma/exam_fields_sanitizer.dart';
 import '../../application/medgemma/interview_fields_sanitizer.dart';
+import '../../application/medgemma/quality_score_engine.dart';
 import '../../application/scribe/finalize_service.dart';
 import '../../application/structured_fields_schema_v1.dart';
 import '../../data/medgemma/config/medgemma_config.dart';
@@ -39,6 +41,7 @@ import '../widgets/clinical_history_wizard/orl_accordion.dart';
 import '../widgets/clinical_history_wizard/vitals_card.dart';
 import 'clinical_history_voice_wizard_ai_feedback.dart';
 import '../../../../ui/docsoft_ui.dart';
+import '../debug/debug_quality_panel.dart';
 import '../debug/debug_transcript_panel.dart';
 
 /// Voice-first wizard for creating clinical history notes in 4 steps.
@@ -133,6 +136,11 @@ class _ClinicalHistoryVoiceWizardPageState
   // Debug QA harness state (debug builds only)
   bool _showDebugPanel = false;
   String? _lastVoiceTranscript;
+
+  // Debug quality/consistency results (debug builds only)
+  Map<String, dynamic>? _debugQuality;
+  Map<String, dynamic>? _debugConsistency;
+  final Map<String, Map<String, dynamic>> _debugSanitizedByScope = {};
 
   late final PageController _pageController;
 
@@ -529,6 +537,21 @@ class _ClinicalHistoryVoiceWizardPageState
       '[AI] interview effective_keys='
       '${effectiveData.keys.toList()} scope=$scope',
     );
+
+    // Debug: compute quality + consistency after sanitization.
+    if (kDebugMode) {
+      _debugSanitizedByScope[scope] = effectiveData;
+      _debugQuality = evaluateClinicalOutputQuality(
+        scope: scope,
+        structured: effectiveData,
+      );
+      _debugConsistency = evaluateClinicalConsistency(
+        interview: _debugSanitizedByScope['interview'],
+        exam: _debugSanitizedByScope['exam'],
+        assessment: _debugSanitizedByScope['assessment'],
+      );
+    }
+
     final structured = StructuredFieldsV1(effectiveData);
 
     // DEBUG ONLY – REMOVE BEFORE PRODUCTION
@@ -2375,6 +2398,12 @@ class _ClinicalHistoryVoiceWizardPageState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (kDebugMode &&
+              (_debugQuality != null || _debugConsistency != null))
+            DebugQualityPanel(
+              quality: _debugQuality,
+              consistency: _debugConsistency,
+            ),
           GuidedTextArea(
             controller: _diagnosticoController,
             label: 'Diagnóstico',

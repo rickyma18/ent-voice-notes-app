@@ -196,6 +196,24 @@ void main() {
       expect(result['pronostico'], equals('Bueno.'));
     });
 
+    test('rescues "el pronóstico es bueno" as canonical Bueno.', () {
+      final raw = {
+        'transcript': 'el pronóstico es bueno con el tratamiento indicado',
+      };
+      final result = sanitizeAssessmentFields(raw);
+
+      expect(result['pronostico'], equals('Bueno.'));
+    });
+
+    test('rescues "pronóstico favorable" as canonical Favorable.', () {
+      final raw = {
+        'transcript': 'Se documenta pronóstico favorable para la recuperación.',
+      };
+      final result = sanitizeAssessmentFields(raw);
+
+      expect(result['pronostico'], equals('Favorable.'));
+    });
+
     // ─────────────────────────────────────────────────────────────────────
     // 15. Impresión diagnóstica prefix stripped
     // ─────────────────────────────────────────────────────────────────────

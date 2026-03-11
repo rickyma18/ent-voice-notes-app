@@ -142,7 +142,7 @@ final _kPlanRescuePatterns = [
 
 /// Patterns to rescue pronóstico from transcript.
 final _kPronosticoRescuePattern = RegExp(
-  r'pron[óo]stico\s+(\w+)',
+  r'pron[óo]stico\s+(?:es\s+)?(\w+)',
   caseSensitive: false,
 );
 

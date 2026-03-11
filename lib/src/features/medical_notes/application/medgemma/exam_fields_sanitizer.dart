@@ -386,23 +386,85 @@ String _extractSignosVitales(Map<String, dynamic> normalized) {
   if (text.trim().isEmpty) return '';
 
   final vitals = <String>[];
+  final taWordsPattern = RegExp(
+    r'(?:presi[oó]n\s*(?:arterial)?|ta)\s*(?:de\s+)?([a-záéíóúñ\s]+?)\s+sobre\s+([a-záéíóúñ\s]+?)(?:,|\.|$)',
+    caseSensitive: false,
+  );
+  final fcWordsPattern = RegExp(
+    r'(?:frecuencia\s*card[ií]aca?|fc)\s*(?:de\s+)?([a-záéíóúñ\s]+?)(?:\s+por\s+minuto|\s+lpm|,|\.|$)',
+    caseSensitive: false,
+  );
+  final frWordsPattern = RegExp(
+    r'(?:frecuencia\s*respiratoria|fr)\s*(?:de\s+)?([a-záéíóúñ\s]+?)(?:\s+por\s+minuto|\s+rpm|\s+y|,|\.|$)',
+    caseSensitive: false,
+  );
+  final tempWordsPattern = RegExp(
+    r'(?:temperatura|temp)\s*(?:de\s+)?([a-záéíóúñ\s]+?)(?:\s+grados|,|\.|$)',
+    caseSensitive: false,
+  );
+  final satWordsPattern = RegExp(
+    r'(?:saturaci[oó]n\s+de\s+ox[ií]geno|saturaci[oó]n|sato2|sat)\s*(?:de\s+)?([a-záéíóúñ\s]+?)(?:\s+por\s+ciento|\s*%|,|\.|$)',
+    caseSensitive: false,
+  );
 
   // TA
   final taMatch = _kTaPattern.firstMatch(text);
   if (taMatch != null) {
     vitals.add('TA ${taMatch.group(1)}/${taMatch.group(2)} mmHg');
+  } else {
+    final taWords = taWordsPattern.firstMatch(text);
+    if (taWords != null) {
+      final sist = _parseSpanishNumberWords(taWords.group(1) ?? '');
+      final diast = _parseSpanishNumberWords(taWords.group(2) ?? '');
+      if (sist != null && diast != null) {
+        vitals.add('TA $sist/$diast mmHg');
+      }
+    }
   }
 
   // FC
   final fcMatch = _kFcPattern.firstMatch(text);
   if (fcMatch != null) {
     vitals.add('FC ${fcMatch.group(1)} lpm');
+  } else {
+    final fcWords = fcWordsPattern.firstMatch(text);
+    if (fcWords != null) {
+      final fc = _parseSpanishNumberWords(fcWords.group(1) ?? '');
+      if (fc != null) vitals.add('FC $fc lpm');
+    }
   }
 
   // FR
   final frMatch = _kFrPattern.firstMatch(text);
   if (frMatch != null) {
     vitals.add('FR ${frMatch.group(1)} rpm');
+  } else {
+    final frWords = frWordsPattern.firstMatch(text);
+    if (frWords != null) {
+      final frRaw = (frWords.group(1) ?? '').replaceFirst(
+        RegExp(r'\s+(?:por\s+minuto|rpm)\b.*$', caseSensitive: false),
+        '',
+      );
+      final fr = _parseSpanishNumberWords(frRaw);
+      if (fr != null) {
+        vitals.add('FR $fr rpm');
+      } else {
+        final frFallback = _extractNumberAfterLabel(
+          text,
+          labelPattern: RegExp(
+            r'frecuencia\s*respiratoria',
+            caseSensitive: false,
+          ),
+        );
+        if (frFallback != null) vitals.add('FR $frFallback rpm');
+      }
+    } else {
+      final frFallback = _extractNumberAfterLabel(
+        text,
+        labelPattern: RegExp(r'frecuencia\s*respiratoria', caseSensitive: false),
+      );
+      if (frFallback != null) vitals.add('FR $frFallback rpm');
+    }
   }
 
   // Temp
@@ -410,15 +472,161 @@ String _extractSignosVitales(Map<String, dynamic> normalized) {
   if (tempMatch != null) {
     final val = tempMatch.group(1)!.replaceAll(',', '.');
     vitals.add('Temp $val °C');
+  } else {
+    final tempWords = tempWordsPattern.firstMatch(text);
+    if (tempWords != null) {
+      final temp = _parseSpanishNumberWords(tempWords.group(1) ?? '');
+      if (temp != null) vitals.add('Temp $temp °C');
+    }
   }
 
   // SatO2
   final satMatch = _kSatPattern.firstMatch(text);
   if (satMatch != null) {
     vitals.add('SatO2 ${satMatch.group(1)} %');
+  } else {
+    final satWords = satWordsPattern.firstMatch(text);
+    if (satWords != null) {
+      final sat = _parseSpanishNumberWords(satWords.group(1) ?? '');
+      if (sat != null) vitals.add('SatO2 $sat %');
+    }
   }
 
   return vitals.join('\n');
+}
+
+String? _parseSpanishNumberWords(String raw) {
+  final normalized = _normalizeNumberWords(raw);
+  if (normalized.isEmpty) return null;
+
+  if (normalized.contains(' punto ')) {
+    final parts = normalized.split(' punto ');
+    if (parts.length != 2) return null;
+    final intPart = _parseSpanishIntegerWords(parts[0]);
+    final decPart = _parseSpanishIntegerWords(parts[1]);
+    if (intPart == null || decPart == null) return null;
+    return '$intPart.$decPart';
+  }
+
+  final value = _parseSpanishIntegerWords(normalized);
+  return value?.toString();
+}
+
+int? _parseSpanishIntegerWords(String raw) {
+  final words = raw
+      .split(RegExp(r'\s+'))
+      .where((w) => w.isNotEmpty && w != 'y')
+      .toList();
+  if (words.isEmpty) return null;
+
+  const units = <String, int>{
+    'cero': 0,
+    'un': 1,
+    'uno': 1,
+    'dos': 2,
+    'tres': 3,
+    'cuatro': 4,
+    'cinco': 5,
+    'seis': 6,
+    'siete': 7,
+    'ocho': 8,
+    'nueve': 9,
+    'diez': 10,
+    'once': 11,
+    'doce': 12,
+    'trece': 13,
+    'catorce': 14,
+    'quince': 15,
+    'dieciseis': 16,
+    'diecisiete': 17,
+    'dieciocho': 18,
+    'diecinueve': 19,
+    'veinte': 20,
+    'veintiuno': 21,
+    'veintidos': 22,
+    'veintitres': 23,
+    'veinticuatro': 24,
+    'veinticinco': 25,
+    'veintiseis': 26,
+    'veintisiete': 27,
+    'veintiocho': 28,
+    'veintinueve': 29,
+  };
+  const tens = <String, int>{
+    'treinta': 30,
+    'cuarenta': 40,
+    'cincuenta': 50,
+    'sesenta': 60,
+    'setenta': 70,
+    'ochenta': 80,
+    'noventa': 90,
+  };
+  const hundreds = <String, int>{
+    'cien': 100,
+    'ciento': 100,
+    'doscientos': 200,
+    'trescientos': 300,
+    'cuatrocientos': 400,
+    'quinientos': 500,
+    'seiscientos': 600,
+    'setecientos': 700,
+    'ochocientos': 800,
+    'novecientos': 900,
+  };
+
+  var total = 0;
+  for (final w in words) {
+    if (hundreds.containsKey(w)) {
+      total += hundreds[w]!;
+      continue;
+    }
+    if (tens.containsKey(w)) {
+      total += tens[w]!;
+      continue;
+    }
+    if (units.containsKey(w)) {
+      total += units[w]!;
+      continue;
+    }
+    return null;
+  }
+  return total;
+}
+
+String _normalizeNumberWords(String raw) {
+  return raw
+      .toLowerCase()
+      .replaceAll('á', 'a')
+      .replaceAll('é', 'e')
+      .replaceAll('í', 'i')
+      .replaceAll('ó', 'o')
+      .replaceAll('ú', 'u')
+      .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
+String? _extractNumberAfterLabel(
+  String text, {
+  required RegExp labelPattern,
+}) {
+  final label = labelPattern.firstMatch(text);
+  if (label == null) return null;
+  final tail = text.substring(label.end);
+  final normalizedTail = _normalizeNumberWords(tail);
+  if (normalizedTail.isEmpty) return null;
+
+  final tokens = normalizedTail.split(RegExp(r'\s+'));
+  if (tokens.isEmpty) return null;
+  if (RegExp(r'^\d{1,3}$').hasMatch(tokens.first)) return tokens.first;
+
+  final maxWindow = tokens.length < 5 ? tokens.length : 5;
+  for (var size = maxWindow; size >= 1; size--) {
+    final candidate = tokens.take(size).join(' ');
+    final parsed = _parseSpanishNumberWords(candidate);
+    if (parsed != null) return parsed;
+  }
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
