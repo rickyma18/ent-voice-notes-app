@@ -131,11 +131,83 @@ final _kPlanRescuePatterns = [
     caseSensitive: false,
   ),
   RegExp(
-    r'(antihistam[ií]nico\b.+)',
+    r'(antihistam[íi]nico\b.+)',
     caseSensitive: false,
   ),
   RegExp(
     r'(analg[ée]sico\b.+)',
+    caseSensitive: false,
+  ),
+];
+
+/// Additional sentence-level cues for plan items within transcripts.
+/// Each matches an individual plan action that may appear mid-paragraph.
+final _kPlanSentenceCues = [
+  // Medication instructions.
+  RegExp(
+    r'(?:puede\s+tomar|debe\s+tomar|tomar)\s+(.+?)(?:\.|$)',
+    caseSensitive: false,
+  ),
+  // Follow-up / control.
+  RegExp(
+    r'(control\s+en\s+.+?)(?:\.|$)',
+    caseSensitive: false,
+  ),
+  RegExp(
+    r'(cita\s+de\s+control.+?)(?:\.|$)',
+    caseSensitive: false,
+  ),
+  RegExp(
+    r'(seguimiento\s+en\s+.+?)(?:\.|$)',
+    caseSensitive: false,
+  ),
+  // Warning signs.
+  RegExp(
+    r'(acudir\s+a\s+urgencias\s+si\s+.+?)(?:\.|$)',
+    caseSensitive: false,
+  ),
+  // Non-pharmacological.
+  RegExp(
+    r'(evitar\s+.+?)(?:\.|$)',
+    caseSensitive: false,
+  ),
+  RegExp(
+    r'(restricciones?\s+posicionales?\s+.+?)(?:\.|$)',
+    caseSensitive: false,
+  ),
+  // Explicit prescriptions.
+  RegExp(
+    r'((?:amoxicilina|azitromicina|ciprofloxacino|prednisona|'
+    r'fluticasona|loratadina|paracetamol|ibuprofeno|dimenhidrinato|'
+    r'omeprazol|metformina)\s+.+?)(?:\.|$)',
+    caseSensitive: false,
+  ),
+  // Referral.
+  RegExp(
+    r'(referencia\s+a\s+.+?)(?:\.|$)',
+    caseSensitive: false,
+  ),
+  // "Maniobra" / procedure performed.
+  RegExp(
+    r'(maniobra\s+de\s+\w+\s+realizada\b.*)(?:\.|$)',
+    caseSensitive: false,
+  ),
+  // Hygiene / therapy.
+  RegExp(
+    r'(terapia\s+(?:de\s+)?rehabilitaci[óo]n\s+.+?)(?:\.|$)',
+    caseSensitive: false,
+  ),
+  RegExp(
+    r'(higiene\s+vocal\b.*)(?:\.|$)',
+    caseSensitive: false,
+  ),
+  // Audiometry / imaging.
+  RegExp(
+    r'(audiometr[íi]a\s+.+?)(?:\.|$)',
+    caseSensitive: false,
+  ),
+  RegExp(
+    r'(medidas\s+de\s+control\s+ambiental\b.*)(?:\.|$)',
     caseSensitive: false,
   ),
 ];
@@ -191,6 +263,17 @@ Map<String, dynamic> sanitizeAssessmentFields(Map<String, dynamic> raw) {
   if (rescuedPronostico.isNotEmpty) {
     out['pronostico'] = rescuedPronostico;
   }
+
+  // 6. If we have a diagnosis but no plan, attempt sentence-level rescue.
+  if (out.containsKey('diagnostico') && !out.containsKey('plan_tratamiento')) {
+    final sentencePlan = _rescuePlanSentenceCues(transcript);
+    if (sentencePlan.isNotEmpty) {
+      out['plan_tratamiento'] = sentencePlan;
+    }
+  }
+
+  // 7. Strip LLM garbage tokens from all string values.
+  _stripAssessmentGarbageTokens(out);
 
   Log.info(
     '[ASSESSMENT-SANITIZER] keys_out=${out.keys.toList()}',
@@ -470,6 +553,41 @@ String _rescuePlanTratamiento(String transcript) {
   return rescued.join('\n');
 }
 
+/// Rescues plan items from transcript using sentence-level cue patterns.
+///
+/// Unlike [_rescuePlanTratamiento] which matches broad patterns, this
+/// scans for individual actionable items (medications, follow-up, warnings)
+/// that may appear mid-paragraph.
+String _rescuePlanSentenceCues(String transcript) {
+  if (transcript.isEmpty) return '';
+
+  final rescued = <String>{}; // Use set to avoid duplicates.
+
+  for (final pattern in _kPlanSentenceCues) {
+    for (final match in pattern.allMatches(transcript)) {
+      final captured =
+          (match.groupCount >= 1 ? match.group(1) : match.group(0))
+              ?.trim() ??
+          '';
+      if (captured.isNotEmpty && captured.length >= 5) {
+        final cleaned = _cleanPlanItem(captured);
+        if (cleaned.isNotEmpty && !_isGarbage(cleaned)) {
+          rescued.add(cleaned);
+        }
+      }
+    }
+  }
+
+  if (rescued.isNotEmpty) {
+    Log.info(
+      '[ASSESSMENT-SANITIZER] sentence_cue_rescue=true '
+      'items=${rescued.length}',
+    );
+  }
+
+  return rescued.join('\n');
+}
+
 /// Rescues pronóstico from transcript text.
 String _rescuePronostico(String transcript) {
   if (transcript.isEmpty) return '';
@@ -530,4 +648,47 @@ bool _isGarbage(String text) {
 String _capitalizeFirst(String s) {
   if (s.isEmpty) return s;
   return s[0].toUpperCase() + s.substring(1);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LLM garbage-token stripping
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// LLM output artifact patterns to strip from clinical text.
+final _kAssessmentGarbagePatterns = [
+  RegExp(r'\[.*?\]'),            // Bracketed placeholders.
+  RegExp(r'<.*?>'),              // HTML/XML tags.
+  RegExp(r'\{.*?\}'),            // Template braces.
+  RegExp(r'###\s*'),             // Markdown headers.
+  RegExp(r'\*\*'),               // Bold markdown markers.
+  RegExp(r'(?:TODO|FIXME|HACK)\b', caseSensitive: false),
+];
+
+/// Strips LLM garbage tokens from all string values in [out].
+void _stripAssessmentGarbageTokens(Map<String, dynamic> out) {
+  final keysToRemove = <String>[];
+  final updates = <String, String>{};
+
+  for (final entry in out.entries) {
+    if (entry.value is! String) continue;
+    final original = entry.value as String;
+    var cleaned = original;
+    for (final pattern in _kAssessmentGarbagePatterns) {
+      cleaned = cleaned.replaceAll(pattern, '');
+    }
+    cleaned = cleaned.replaceAll(RegExp(r'\s{2,}'), ' ').trim();
+
+    if (cleaned.isEmpty) {
+      keysToRemove.add(entry.key);
+    } else if (cleaned != original) {
+      updates[entry.key] = cleaned;
+    }
+  }
+
+  for (final key in keysToRemove) {
+    out.remove(key);
+  }
+  for (final entry in updates.entries) {
+    out[entry.key] = entry.value;
+  }
 }

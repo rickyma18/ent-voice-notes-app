@@ -456,6 +456,20 @@ const _kGenericMotivoTokens = [
   'malestar',
   'síntoma',
   'sintoma',
+  'pérdida',
+  'perdida',
+  'sensación',
+  'sensacion',
+  'infección',
+  'infeccion',
+  'problema',
+  'sangrado',
+  'ronquera',
+  'disminución',
+  'disminucion',
+  'mareo',
+  'congestión',
+  'congestion',
 ];
 
 /// Keyword roots that identify a line as surgical history.
@@ -1143,6 +1157,10 @@ Map<String, dynamic> sanitizeInterviewFields(Map<String, dynamic> raw) {
 
   // 17a. Remove garbage pat lines and collapse surgical duplicates.
   _cleanGarbageAndCollapseSurgicalPat(out);
+
+  // 18. Strip LLM output garbage tokens (brackets, markdown, etc.)
+  //     from all string values.
+  _stripGarbageTokensFromAll(out);
 
   // Final: remove internal stash keys before returning.
   out.remove('_raw_motivo_consulta');
@@ -3595,9 +3613,28 @@ const _kGenericMotivoNormRules = <(String, List<String>, String)>[
   ),
   (
     'mareo',
-    ['vueltas', 'gira', 'vértigo', 'vertigo', 'rotatorio'],
+    ['vueltas', 'gira', 'vértigo', 'vertigo', 'rotatorio', 'posicional'],
     'Vértigo',
   ),
+  // New rules for benchmark-identified generic patterns.
+  ('sangrado', ['nariz', 'nasal', 'epistaxis', 'fosa'], 'Epistaxis'),
+  ('ronquera', ['voz', 'disfonía', 'disfonia', 'afónica', 'afonico', 'cuerda'], 'Disfonía'),
+  (
+    'pérdida',
+    ['audición', 'audicion', 'oído', 'oido', 'escuchar'],
+    'Hipoacusia',
+  ),
+  (
+    'perdida',
+    ['audición', 'audicion', 'oído', 'oido', 'escuchar'],
+    'Hipoacusia',
+  ),
+  ('sensación', ['tapado', 'oído', 'oido', 'presión', 'presion', 'plenitud'], 'Plenitud ótica'),
+  ('sensacion', ['tapado', 'oído', 'oido', 'presión', 'presion', 'plenitud'], 'Plenitud ótica'),
+  ('infección', ['oído', 'oido', 'otitis'], 'Otalgia'),
+  ('infeccion', ['oído', 'oido', 'otitis'], 'Otalgia'),
+  ('infección', ['garganta', 'amígdala', 'amigdala', 'faringitis'], 'Odinofagia'),
+  ('infeccion', ['garganta', 'amígdala', 'amigdala', 'faringitis'], 'Odinofagia'),
 ];
 
 /// Multiword motivo normalization rules.
@@ -3625,6 +3662,56 @@ const _kMultiwordMotivoNormRules = <(String, List<String>, String)>[
     'dolor de oido',
     ['oído', 'oido', 'otalgia'],
     'Otalgia',
+  ),
+  // "Dolor de garganta" → "Odinofagia"
+  (
+    'dolor de garganta',
+    ['garganta', 'faringe', 'tragar', 'amígdala', 'amigdala'],
+    'Odinofagia',
+  ),
+  // "Nariz tapada" → "Obstrucción nasal"
+  (
+    'nariz tapada',
+    ['nariz', 'nasal', 'congestión', 'congestion', 'tapada', 'tapado'],
+    'Obstrucción nasal',
+  ),
+  // "Sangrado nasal" → "Epistaxis"
+  (
+    'sangrado nasal',
+    ['nariz', 'nasal', 'sangre', 'epistaxis'],
+    'Epistaxis',
+  ),
+  (
+    'sangre de la nariz',
+    ['nariz', 'nasal', 'sangre', 'epistaxis'],
+    'Epistaxis',
+  ),
+  // "Pérdida auditiva" / "Pérdida de audición" → "Hipoacusia"
+  (
+    'pérdida auditiva',
+    ['audición', 'audicion', 'oído', 'oido', 'escuchar'],
+    'Hipoacusia',
+  ),
+  (
+    'perdida auditiva',
+    ['audición', 'audicion', 'oído', 'oido', 'escuchar'],
+    'Hipoacusia',
+  ),
+  (
+    'pérdida de audición',
+    ['audición', 'audicion', 'oído', 'oido'],
+    'Hipoacusia',
+  ),
+  (
+    'perdida de audicion',
+    ['audición', 'audicion', 'oído', 'oido'],
+    'Hipoacusia',
+  ),
+  // "Ronquera progresiva" → "Disfonía"
+  (
+    'ronquera',
+    ['voz', 'disfonía', 'disfonia', 'cuerda', 'laringoscop'],
+    'Disfonía',
   ),
 ];
 
@@ -4031,4 +4118,62 @@ void _copyIfPresent(
   if (v == null) return;
   if (v is String && v.trim().isEmpty) return;
   dst[key] = v;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LLM garbage-token stripping
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// LLM output artifact patterns to strip from clinical text.
+final _kLlmGarbagePatterns = [
+  RegExp(r'\[.*?\]'),            // Bracketed placeholders.
+  RegExp(r'<.*?>'),              // HTML/XML tags.
+  RegExp(r'\{.*?\}'),            // Template braces.
+  RegExp(r'###\s*'),             // Markdown headers.
+  RegExp(r'\*\*'),               // Bold markdown markers.
+  RegExp(r'(?:TODO|FIXME|HACK)\b', caseSensitive: false), // Dev markers.
+];
+
+/// Strips LLM garbage tokens from all string values in [out],
+/// including nested antecedentes sub-map.
+///
+/// Removes fields that become empty after stripping.
+void _stripGarbageTokensFromAll(Map<String, dynamic> out) {
+  _stripGarbageFromStringFields(out);
+
+  final ante = out['antecedentes'];
+  if (ante is Map<String, dynamic>) {
+    _stripGarbageFromStringFields(ante);
+    if (ante.isEmpty) out.remove('antecedentes');
+  }
+}
+
+/// Strips garbage patterns from all string values in [map].
+void _stripGarbageFromStringFields(Map<String, dynamic> map) {
+  final keysToRemove = <String>[];
+  final updates = <String, String>{};
+
+  for (final entry in map.entries) {
+    if (entry.value is! String) continue;
+    final original = entry.value as String;
+    var cleaned = original;
+    for (final pattern in _kLlmGarbagePatterns) {
+      cleaned = cleaned.replaceAll(pattern, '');
+    }
+    // Collapse multiple spaces and trim.
+    cleaned = cleaned.replaceAll(RegExp(r'\s{2,}'), ' ').trim();
+
+    if (cleaned.isEmpty) {
+      keysToRemove.add(entry.key);
+    } else if (cleaned != original) {
+      updates[entry.key] = cleaned;
+    }
+  }
+
+  for (final key in keysToRemove) {
+    map.remove(key);
+  }
+  for (final entry in updates.entries) {
+    map[entry.key] = entry.value;
+  }
 }

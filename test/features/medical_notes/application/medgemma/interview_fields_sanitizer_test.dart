@@ -5088,4 +5088,141 @@ void main() {
       );
     });
   });
+
+  // ═════════════════════════════════════════════════════════════════
+  // Generic motivo enrichment from PA (Fix 1)
+  // ═════════════════════════════════════════════════════════════════
+
+  group('sanitizeInterviewFields (generic motivo enrichment)', () {
+    test('"Congestión" + PA mentions nasal → "Congestión nasal"', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Congestión',
+        'padecimiento_actual':
+            'Paciente con rinorrea hialina y congestión nasal de 5 días.',
+      });
+
+      expect(result['motivo_consulta'], 'Congestión nasal');
+    });
+
+    test('"Disminución" + PA mentions oído → "Hipoacusia"', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Disminución',
+        'padecimiento_actual':
+            'Refiere disminución de la audición del oído izquierdo.',
+      });
+
+      final motivo = result['motivo_consulta'] as String;
+      expect(motivo, contains('Hipoacusia'));
+    });
+
+    test('"Mareo" + PA mentions vértigo/rotatorio → "Vértigo"', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Mareo',
+        'padecimiento_actual':
+            'Mareo rotatorio al cambiar de posición desde ayer.',
+      });
+
+      final motivo = result['motivo_consulta'] as String;
+      expect(motivo, contains('Vértigo'));
+    });
+
+    test('"Sangrado" + PA mentions nasal → "Epistaxis"', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Sangrado',
+        'padecimiento_actual':
+            'Sangrado nasal recurrente, mayor en fosa derecha.',
+      });
+
+      expect(result['motivo_consulta'], 'Epistaxis');
+    });
+
+    test('"Ronquera" + PA mentions voz → "Disfonía"', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Ronquera',
+        'padecimiento_actual':
+            'Cambio de voz progresivo de 3 semanas.',
+      });
+
+      final motivo = result['motivo_consulta'] as String;
+      expect(motivo, contains('Disfonía'));
+    });
+
+    test('"Dolor de garganta" + PA mentions garganta → "Odinofagia"', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Dolor de garganta',
+        'padecimiento_actual':
+            'Dolor al tragar de 3 días con garganta inflamada.',
+      });
+
+      final motivo = result['motivo_consulta'] as String;
+      expect(motivo, contains('Odinofagia'));
+    });
+
+    test('non-generic motivo is NOT changed', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia derecha',
+        'padecimiento_actual':
+            'Dolor de oído derecho de 3 días con fiebre.',
+      });
+
+      final motivo = result['motivo_consulta'] as String;
+      expect(motivo, contains('Otalgia'));
+    });
+  });
+
+  // ═════════════════════════════════════════════════════════════════
+  // Garbage token stripping (Fix 3)
+  // ═════════════════════════════════════════════════════════════════
+
+  group('sanitizeInterviewFields (garbage token stripping)', () {
+    test('strips bracketed placeholders from motivo', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia [pendiente de confirmar]',
+        'padecimiento_actual': 'Dolor de oído de 3 días.',
+      });
+
+      final motivo = result['motivo_consulta'] as String;
+      expect(motivo, isNot(contains('[')));
+      expect(motivo, isNot(contains(']')));
+      expect(motivo, contains('Otalgia'));
+    });
+
+    test('strips HTML tags from padecimiento', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia',
+        'padecimiento_actual': 'Dolor <b>intenso</b> de oído derecho.',
+      });
+
+      final pa = result['padecimiento_actual'] as String;
+      expect(pa, isNot(contains('<b>')));
+      expect(pa, isNot(contains('</b>')));
+    });
+
+    test('strips markdown bold from antecedentes', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia',
+        'antecedentes': {
+          'patologicos': '**Niega** diabetes.',
+        },
+      });
+
+      final ante = result['antecedentes'] as Map<String, dynamic>;
+      final pat = ante['patologicos'] as String;
+      expect(pat, isNot(contains('**')));
+    });
+
+    test('preserves valid content after stripping garbage', () {
+      final result = sanitizeInterviewFields({
+        'motivo_consulta': 'Otalgia',
+        'padecimiento_actual':
+            'Dolor de oído {placeholder} derecho de 3 días. ###Notas: nada.',
+      });
+
+      final pa = result['padecimiento_actual'] as String;
+      expect(pa, isNot(contains('{')));
+      expect(pa, isNot(contains('###')));
+      expect(pa, contains('Dolor'));
+      expect(pa, contains('3 días'));
+    });
+  });
 }

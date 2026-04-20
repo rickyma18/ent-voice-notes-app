@@ -207,7 +207,8 @@ void main() {
 
     test('rescues "pronóstico favorable" as canonical Favorable.', () {
       final raw = {
-        'transcript': 'Se documenta pronóstico favorable para la recuperación.',
+        'transcript':
+            'Se documenta pronóstico favorable para la recuperación.',
       };
       final result = sanitizeAssessmentFields(raw);
 
@@ -261,6 +262,86 @@ void main() {
       final result = sanitizeAssessmentFields(raw);
 
       expect(result.containsKey('diagnostico'), isFalse);
+    });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 19. Plan rescued from single-paragraph assessment (Fix 2)
+    // ─────────────────────────────────────────────────────────────────────
+    test('rescues plan from transcript when dx exists but plan is empty', () {
+      final raw = {
+        'diagnostico': 'otitis externa derecha',
+        'transcript':
+            'Otitis externa derecha. Se indica gotas óticas ciprofloxacino '
+            'por 7 días. Control en una semana. Evitar agua en oído.',
+      };
+      final result = sanitizeAssessmentFields(raw);
+
+      expect(result.containsKey('plan_tratamiento'), isTrue);
+      final plan = result['plan_tratamiento'] as String;
+      expect(plan.isNotEmpty, isTrue);
+    });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 20. Sentence-level cues: "puede tomar" + "control en" (Fix 2)
+    // ─────────────────────────────────────────────────────────────────────
+    test('rescues plan from puede tomar and control en cues', () {
+      final raw = {
+        'diagnostico': 'faringoamigdalitis aguda',
+        'transcript':
+            'Diagnóstico faringoamigdalitis aguda. '
+            'Puede tomar amoxicilina 500mg cada 8 horas por 7 días. '
+            'Control en 5 días. '
+            'Acudir a urgencias si fiebre mayor a 39 grados.',
+      };
+      final result = sanitizeAssessmentFields(raw);
+
+      expect(result.containsKey('plan_tratamiento'), isTrue);
+      final plan = result['plan_tratamiento'] as String;
+      final lines = plan.split('\n');
+      expect(lines.length, greaterThanOrEqualTo(2));
+    });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 21. Dx without explicit plan but with "evitar" recommendation (Fix 2)
+    // ─────────────────────────────────────────────────────────────────────
+    test('rescues plan from evitar recommendation when plan empty', () {
+      final raw = {
+        'diagnostico': 'tapón de cerumen bilateral',
+        'transcript':
+            'Tapón de cerumen bilateral. Evitar hisopos. '
+            'Control en 2 semanas para lavado.',
+      };
+      final result = sanitizeAssessmentFields(raw);
+
+      expect(result.containsKey('plan_tratamiento'), isTrue);
+      final plan = result['plan_tratamiento'] as String;
+      expect(plan.isNotEmpty, isTrue);
+    });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // 22. Garbage token stripping (Fix 3)
+    // ─────────────────────────────────────────────────────────────────────
+    test('strips bracketed placeholders from diagnostico', () {
+      final raw = {
+        'diagnostico': 'Otitis externa [CIE-10] derecha',
+      };
+      final result = sanitizeAssessmentFields(raw);
+
+      final dx = result['diagnostico'] as String;
+      expect(dx, isNot(contains('[')));
+      expect(dx, isNot(contains(']')));
+      expect(dx, contains('Otitis'));
+    });
+
+    test('strips markdown from plan_tratamiento', () {
+      final raw = {
+        'plan_tratamiento': '**Gotas óticas** por 7 días',
+      };
+      final result = sanitizeAssessmentFields(raw);
+
+      final plan = result['plan_tratamiento'] as String;
+      expect(plan, isNot(contains('**')));
+      expect(plan, contains('otas'));
     });
   });
 }

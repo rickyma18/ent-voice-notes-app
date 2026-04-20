@@ -219,6 +219,123 @@ TranscriptHarnessResult runTranscriptHarnessPipeline({
   throw StateError('Unhandled scope: $normalizedScope');
 }
 
+/// Like [runTranscriptHarnessPipeline] but accepts a pre-built [rawInput]
+/// map instead of constructing one from the transcript.
+///
+/// This allows the benchmark to inject structured-like input (with negations
+/// list, antecedentes fields, etc.) instead of feeding the raw transcript
+/// into every field.
+TranscriptHarnessResult runTranscriptHarnessPipelineWithInput({
+  required String scope,
+  required String transcript,
+  required Map<String, dynamic> rawInput,
+}) {
+  final normalizedScope = scope.trim().toLowerCase();
+  if (!_kAllowedScopes.contains(normalizedScope)) {
+    throw ArgumentError.value(
+      scope,
+      'scope',
+      'Expected one of: interview | exam | assessment | full',
+    );
+  }
+
+  final normalizedTranscript = transcript.trim();
+
+  switch (normalizedScope) {
+    case 'interview':
+      final interview = sanitizeInterviewFields(rawInput);
+      final quality = evaluateClinicalOutputQuality(
+        scope: 'interview',
+        structured: interview,
+      );
+      final consistency = evaluateClinicalConsistency(interview: interview);
+      return TranscriptHarnessResult(
+        scope: normalizedScope,
+        transcript: normalizedTranscript,
+        interview: interview,
+        quality: quality,
+        consistency: consistency,
+      );
+    case 'exam':
+      final exam = sanitizeExamFields(rawInput);
+      final quality = evaluateClinicalOutputQuality(
+        scope: 'exam',
+        structured: exam,
+      );
+      final consistency = evaluateClinicalConsistency(exam: exam);
+      return TranscriptHarnessResult(
+        scope: normalizedScope,
+        transcript: normalizedTranscript,
+        exam: exam,
+        quality: quality,
+        consistency: consistency,
+      );
+    case 'assessment':
+      final assessment = sanitizeAssessmentFields(rawInput);
+      final quality = evaluateClinicalOutputQuality(
+        scope: 'assessment',
+        structured: assessment,
+      );
+      final consistency = evaluateClinicalConsistency(assessment: assessment);
+      return TranscriptHarnessResult(
+        scope: normalizedScope,
+        transcript: normalizedTranscript,
+        assessment: assessment,
+        quality: quality,
+        consistency: consistency,
+      );
+    case 'full':
+      final interview = sanitizeInterviewFields(rawInput);
+      final exam = sanitizeExamFields(rawInput);
+      final assessment = sanitizeAssessmentFields(rawInput);
+
+      final interviewQ = evaluateClinicalOutputQuality(
+        scope: 'interview',
+        structured: interview,
+      );
+      final examQ = evaluateClinicalOutputQuality(
+        scope: 'exam',
+        structured: exam,
+      );
+      final assessmentQ = evaluateClinicalOutputQuality(
+        scope: 'assessment',
+        structured: assessment,
+      );
+      final quality = _aggregateQuality(
+        interviewQ: interviewQ,
+        examQ: examQ,
+        assessmentQ: assessmentQ,
+      );
+
+      final consistency = evaluateClinicalConsistency(
+        interview: interview,
+        exam: exam,
+        assessment: assessment,
+      );
+
+      final finalNote = _composeFinalNote(
+        interview: interview,
+        exam: exam,
+        assessment: assessment,
+        quality: quality,
+        consistency: consistency,
+      );
+
+      return TranscriptHarnessResult(
+        scope: normalizedScope,
+        transcript: normalizedTranscript,
+        interview: interview,
+        exam: exam,
+        assessment: assessment,
+        quality: quality,
+        consistency: consistency,
+        finalNote: finalNote,
+      );
+  }
+
+  throw StateError('Unhandled scope: $normalizedScope');
+}
+
 Map<String, dynamic> _aggregateQuality({
   required Map<String, dynamic> interviewQ,
   required Map<String, dynamic> examQ,
