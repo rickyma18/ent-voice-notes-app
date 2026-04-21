@@ -1,8 +1,10 @@
 # 🩺 DocSoft – Medical Notes Management System
 
-DocSoft is a modern medical notes management platform designed to streamline the creation, organization, and accessibility of clinical documentation.
+<p align="center">
+  <img src="assets/screenshots/home.png" width="600"/>
+</p>
 
-The system enables healthcare professionals to generate notes manually or through voice dictation, manage patient records, and access information in a structured and efficient way.
+DocSoft is a modern medical notes management platform designed to streamline the creation, organization, and accessibility of clinical documentation.
 
 ---
 
@@ -12,76 +14,101 @@ The system enables healthcare professionals to generate notes manually or throug
 * 🎙️ Voice dictation for clinical notes
 * 👥 Patient management system
 * 📂 Organized notes history
-* 🔍 Physical exploration module
-* 🧾 Digital note signing
+* 🔬 Physical exploration module
+* ✍️ Digital note signing
 * 📤 PDF export and sharing
-* 🌐 Cross-platform architecture (Mobile + Web)
+* 🌐 Cross-platform (Mobile + Web)
+
+---
+
+## 📸 App Screens
+
+### 🎙️ Voice Dictation
+
+<p align="center">
+  <img src="assets/screenshots/dictation.png" width="500"/>
+</p>
+
+---
+
+### 📝 Medical Note (Voice Input)
+
+<p align="center">
+  <img src="assets/screenshots/medical_note_voice.png" width="500"/>
+</p>
+
+---
+
+### 📋 Notes Management
+
+<p align="center">
+  <img src="assets/screenshots/notes.png" width="500"/>
+</p>
+
+---
+
+### 👥 Patients Module
+
+<p align="center">
+  <img src="assets/screenshots/patients.png" width="500"/>
+</p>
+
+---
+
+### 🔬 Physical Exploration
+
+<p align="center">
+  <img src="assets/screenshots/physical_explore.png" width="500"/>
+</p>
+
+---
+
+### 👤 Profile
+
+<p align="center">
+  <img src="assets/screenshots/profile.png" width="500"/>
+</p>
+
+---
+
+### 📤 Share PDF
+
+<p align="center">
+  <img src="assets/screenshots/share_pdf.png" width="500"/>
+</p>
+
+---
+
+### ✍️ Sign Note
+
+<p align="center">
+  <img src="assets/screenshots/sign_note.png" width="500"/>
+</p>
 
 ---
 
 ## 🧠 Architecture
 
-This project follows a **Layered Clean Architecture**, ensuring scalability, maintainability, and separation of concerns.
+This project follows **Clean Architecture**:
 
-* **Presentation Layer** → UI & state management
-* **Domain Layer** → Business logic & use cases
-* **Data Layer** → API integration & data sources
-
----
-
-## 📸 Screenshots
-
-### 🏠 Home
-
-![Home](assets/screenshots/home.png)
-
-### 🎙️ Dictation
-
-![Dictation](assets/screenshots/dictation.png)
-
-### 📝 Medical Note (Voice)
-
-![Medical Note Voice](assets/screenshots/medical_note_voice.png)
-
-### 📋 Notes List
-
-![Notes](assets/screenshots/notes.png)
-
-### 👥 Patients
-
-![Patients](assets/screenshots/patients.png)
-
-### 🔬 Physical Exploration
-
-![Physical Exploration](assets/screenshots/physical_explore.png)
-
-### 👤 Profile
-
-![Profile](assets/screenshots/profile.png)
-
-### 📤 Share PDF
-
-![Share PDF](assets/screenshots/share_pdf.png)
-
-### ✍️ Sign Note
-
-![Sign Note](assets/screenshots/sign_note.png)
+* Presentation Layer (UI + BLoC)
+* Domain Layer (Business Logic)
+* Data Layer (Repositories & APIs)
 
 ---
 
 ## 🛠️ Tech Stack
 
-* **Frontend:** Flutter (Mobile + Web)
-* **Backend:** Node.js / API services
-* **Architecture:** Clean Architecture
-* **State Management:** BLoC
-* **AI Integration:** Voice-to-text (dictation service)
+* Flutter (Mobile & Web)
+* Node.js (Backend)
+* BLoC (State Management)
+* Voice-to-text integration
 
 ---
 
 ## 📦 Project Structure
 
-```
+```bash
 assets/
   screenshots/
 lib/
@@ -103,23 +130,13 @@ flutter run
 
 ---
 
-## 🎯 Future Improvements
-
-* Real-time sync between mobile and web
-* Cloud storage integration
-* Role-based access control (RBAC)
-* Advanced analytics for patient history
-* Offline-first capabilities
-
----
-
 ## 👨‍💻 Author
 
 **Ricardo Murillo**
-Software Engineer | Cybersecurity | Mobile & Backend Developer
+Software Engineer | Cybersecurity | Flutter Developer
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+MIT License
