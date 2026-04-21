@@ -122,8 +122,8 @@ lib/
 ## ⚙️ Getting Started
 
 ```bash
-git clone https://github.com/your-username/docsoft.git
-cd docsoft
+git clone https://github.com/rickyma18/ent-voice-notes-app
+cd ent-voice-notes-app
 flutter pub get
 flutter run
 ```
